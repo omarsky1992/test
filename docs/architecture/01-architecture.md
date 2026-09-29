@@ -11,7 +11,7 @@
 | الـ API المستقبلي | **Laravel Sanctum** + REST (`/api/v1`) | جاهز لتطبيق الموبايل والتكاملات دون تغيير منطق الأعمال |
 | الصلاحيات | `spatie/laravel-permission` | أدوار + صلاحيات مباشرة للمستخدم، قابلة للتوسع |
 | PDF / الطباعة | صفحة HTML للطباعة + **Chromium (Browsershot)** لتوليد PDF | تشكيل الحروف العربية صحيح (مكتبات PDF التقليدية تكسر العربية) |
-| الاستيراد / التصدير | OpenSpout أو Laravel Excel | استيراد Excel/CSV من موقع الشركة وتصدير التقارير |
+| الاستيراد / التصدير | OpenSpout أو Laravel Excel | قراءة الجداول الملصوقة من موقع الشركة، وتصدير التقارير إلى Excel |
 | الاختبارات | Pest / PHPUnit | اختبارات إلزامية لمنطق المال والتواريخ |
 | النشر | Docker على VPS (Ubuntu) + Nginx + HTTPS + نسخ احتياطي يومي مشفّر خارج الخادم | بسيط ورخيص وقابل للنقل إلى خادم محلي إذا لزم |
 
@@ -77,7 +77,8 @@ flowchart TB
 | **Subscribers** | المشتركون والحسابات والبحث | `subscribers`, `accounts` |
 | **Catalog** | الفئات والأسعار والعروض | `service_plans`, `promotions` |
 | **Activations** | التفعيل والإكمال والطابور والفترات | `activations`, `activation_periods` |
-| **Finance** | الديون، القبض، التخصيص، المناقلة، المصروفات، المبيعات، الصناديق، الدفتر | `debts`, `payments`, `payment_allocations`, `debt_transfers`, `expenses`, `device_sales`, `money_accounts`, `financial_transactions`, `ledger_entries` |
+| **Finance** | الديون، القبض، التخصيص، المناقلة، المصروفات، المبيعات، الصناديق، رصيد الشركة، الراجع، الدفتر | `debts`, `payments`, `payment_allocations`, `debt_transfers`, `expenses`, `device_sales`, `money_accounts`, `fund_transfers`, `company_settlements`, `settlement_distributions`, `financial_transactions`, `ledger_entries` |
+| **Follow-up** | قائمة المتابعة وسجل الاتصالات | `follow_ups` |
 | **Documents** | الترقيم وعرض السندات وطباعتها | `document_sequences` |
 | **Devices** | الأجهزة وملاحظاتها الفنية | `devices`, `device_notes`, `device_types` |
 | **Reporting** | التقارير والتصدير (قراءة فقط) | Views + استعلامات على الدفتر |
@@ -103,7 +104,7 @@ sequenceDiagram
     E->>UI: يسجل التفعيل (حساب، فئة، وقت البداية)
     UI->>ACT: execute(idempotency_key)
     ACT->>ACT: قفل الحساب، حساب البداية (طابور) والنهاية
-    ACT->>FIN: إنشاء دين ثانوي + قيد (مدين ذمم ثانوية / دائن إيراد)
+    ACT->>FIN: إنشاء دين ثانوي + قيد (مدين ديون ثانوية / دائن رصيد الشركة)
     ACT->>AUD: activation.created, debt.created
     Note over E,UI: خلال 7 أيام أو بعدها
     alt سدّد نقداً أو إلكترونياً
@@ -121,7 +122,7 @@ sequenceDiagram
 ### الاستيراد من موقع الشركة
 
 ```
-ملف Excel/CSV ← Adapter ← Staging (sync_items) ← Normalizer ← Matcher (external_id / username / serial)
+جدول ملصوق من موقع الشركة ← Adapter ← Staging (sync_items) ← Normalizer ← Matcher (اليوزر للحساب / الهاتف للمشترك)
 ← Diff + Conflicts ← مراجعة المدير ← Apply (نفس Actions) ← external_links + audit_logs
 ```
 
@@ -145,6 +146,9 @@ sequenceDiagram
 | `TransferDebt` | المناقلة (مفردة أو جماعية) | `POST /transfers` |
 | `VoidDocument` | إلغاء أي مستند بقيد عكسي | `POST /{doc}/{id}/void` |
 | `RecordExpense` / `RecordDeviceSale` | المصروفات والمبيعات | `POST /expenses`, `POST /sales` |
+| `TransferFunds` | تحويل بين الصناديق وشحن رصيد الشركة | `POST /fund-transfers` |
+| `RecordCompanySettlement` / `DistributeSettlement` | الراجع وتقسيمه | `POST /settlements`, `POST /settlements/{id}/distributions` |
+| `LogFollowUp` | تسجيل نتيجة اتصال | `POST /follow-ups` |
 | `LedgerPoster` | إنشاء قيد متوازن (داخلي) | — |
 | `DocumentSequencer` | الترقيم (داخلي) | — |
 | `ReceiptRenderer` | HTML / PDF للسند | `GET /payments/{id}/receipt.pdf` |

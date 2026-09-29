@@ -37,15 +37,16 @@ erDiagram
     USERS ||--o{ ACTIVATIONS : "نفّذ"
     USERS ||--o{ PAYMENTS : "استلم"
     USERS ||--o{ DEBT_TRANSFERS : "نفّذ"
+    ACCOUNTS ||--o{ FOLLOW_UPS : "متابعة واتصال"
+    ACTIVATIONS |o--o{ FOLLOW_UPS : "بخصوص"
 
     SUBSCRIBERS {
         bigint id PK
         bigint branch_id FK
         varchar code UK "C-000123"
-        varchar external_code UK "رقم الشركة إن وجد"
         varchar full_name
         varchar name_search "مطبّع للبحث"
-        varchar phone_normalized
+        varchar phone_normalized "رقم المشترك في الشركة"
         varchar status
     }
     ACCOUNTS {
@@ -67,9 +68,20 @@ erDiagram
         bigint price "35000 45000 65000 100000"
         smallint duration_days "30"
     }
+    FOLLOW_UPS {
+        bigint id PK
+        bigint account_id FK
+        bigint activation_id FK
+        varchar channel "call whatsapp visit"
+        varchar outcome
+        timestamptz promised_at
+        timestamptz next_follow_up_at
+        bigint created_by FK
+    }
     PROMOTIONS {
         bigint id PK
         varchar audience "new existing all"
+        varchar funded_by "company agent"
         bigint plan_id FK
         varchar discount_type
         bigint discount_value
@@ -155,7 +167,7 @@ erDiagram
     }
     MONEY_ACCOUNTS {
         bigint id PK
-        varchar kind "cash electronic"
+        varchar kind "cash electronic company"
         varchar name
         varchar holder_name
         bigint ledger_account_id FK
@@ -185,10 +197,15 @@ erDiagram
     }
 ```
 
-## 3.2 المصروفات والمبيعات والأجهزة
+## 3.2 الصناديق والراجع والمصروفات والمبيعات والأجهزة
 
 ```mermaid
 erDiagram
+    MONEY_ACCOUNTS ||--o{ FUND_TRANSFERS : "من / إلى (شحن رصيد الشركة)"
+    MONEY_ACCOUNTS ||--o{ COMPANY_SETTLEMENTS : "دخل الراجع إلى"
+    COMPANY_SETTLEMENTS ||--o{ SETTLEMENT_DISTRIBUTIONS : "تقسيم"
+    FUND_TRANSFERS ||--|| FINANCIAL_TRANSACTIONS : "قيد"
+    COMPANY_SETTLEMENTS ||--|| FINANCIAL_TRANSACTIONS : "قيد"
     EXPENSE_CATEGORIES ||--o{ EXPENSES : "تصنيف"
     MONEY_ACCOUNTS ||--o{ EXPENSES : "دُفع من"
     EXPENSES |o--o{ DEVICE_SALES : "كلفة الشراء"
@@ -203,6 +220,30 @@ erDiagram
     EXPENSES ||--|| FINANCIAL_TRANSACTIONS : "قيد"
     DEVICE_SALES ||--|| FINANCIAL_TRANSACTIONS : "قيد"
 
+    FUND_TRANSFERS {
+        bigint id PK
+        varchar number UK "F-..."
+        bigint from_money_account_id FK
+        bigint to_money_account_id FK
+        bigint amount
+        timestamptz transferred_at
+    }
+    COMPANY_SETTLEMENTS {
+        bigint id PK
+        varchar number UK "K-..."
+        date period_from
+        date period_to
+        bigint amount "الراجع"
+        bigint received_into_money_account_id FK
+        int activations_count
+    }
+    SETTLEMENT_DISTRIBUTIONS {
+        bigint id PK
+        bigint settlement_id FK
+        varchar kind "zone_fund partner salary other"
+        varchar beneficiary
+        bigint amount
+    }
     EXPENSES {
         bigint id PK
         varchar number UK "E-..."

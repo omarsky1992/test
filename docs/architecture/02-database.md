@@ -84,12 +84,12 @@
 ### `document_sequences` — ترقيم بلا فجوات
 | الحقل | النوع | القيود |
 |-------|------|--------|
-| doc_type | VARCHAR(20) | `receipt`, `debt`, `activation`, `transfer`, `expense`, `sale` |
+| doc_type | VARCHAR(20) | `receipt`, `debt`, `activation`, `transfer`, `expense`, `sale`, `fund_transfer`, `settlement` |
 | year | SMALLINT | |
 | last_value | BIGINT | NOT NULL |
 | | | PK (doc_type, year) |
 
-يُقفل الصف (`FOR UPDATE`) ويُزاد **داخل نفس معاملة** إنشاء المستند. إذا فشلت المعاملة يُلغى الرقم معها، فلا تحدث فجوات. البادئات: `R` سند قبض، `D` دين، `A` تفعيل، `T` مناقلة، `E` مصروف، `S` مبيعات.
+يُقفل الصف (`FOR UPDATE`) ويُزاد **داخل نفس معاملة** إنشاء المستند. إذا فشلت المعاملة يُلغى الرقم معها، فلا تحدث فجوات. البادئات: `R` سند قبض، `D` دين، `A` تفعيل، `T` مناقلة، `E` مصروف، `S` مبيعات، `F` تحويل بين الصناديق، `K` راجع الشركة.
 
 ---
 
@@ -101,10 +101,9 @@
 | id | BIGINT | PK |
 | branch_id | BIGINT | FK → branches, NOT NULL |
 | code | VARCHAR(30) | UNIQUE, NOT NULL. رقم داخلي `C-000123` |
-| external_code | VARCHAR(50) | UNIQUE NULL: رقم المشترك من الشركة إن وُجد (Q6) |
 | full_name | VARCHAR(150) | NOT NULL |
 | name_search | VARCHAR(150) | NOT NULL، مطبَّع |
-| phone | VARCHAR(20) | NOT NULL |
+| phone | VARCHAR(20) | NOT NULL: **رقم الهاتف المسجل في الشركة**، وهو «رقم المشترك» (Q6) |
 | phone_normalized | VARCHAR(15) | NOT NULL |
 | alt_phone | VARCHAR(20) | |
 | address | TEXT | |
@@ -114,7 +113,7 @@
 | created_at, updated_at, updated_by | | |
 
 **الفهارس:** `GIN(name_search gin_trgm_ops)`، `(phone_normalized)`، `(branch_id, status)`.
-**لماذا لا يكون الهاتف UNIQUE؟** قد يسجّل أفراد العائلة بنفس الرقم، فيكتفي النظام بتحذير عند التكرار.
+**لماذا لا يكون الهاتف UNIQUE رغم أنه رقم المشترك؟** قد يسجّل أفراد عائلة بنفس الرقم في الشركة. عند إدخال رقم موجود، يقترح النظام **إضافة حساب جديد للمشترك الموجود** بدل إنشاء مشترك مكرر، ويسمح بالتكرار بتأكيد صريح. المشترك له أيضاً `code` داخلي ثابت لأن الهاتف قد يتغير.
 
 ### `accounts` — الحساب (الاشتراك / اليوزر على بيت)
 | الحقل | النوع | القيود |
@@ -140,6 +139,23 @@
 **الفهارس:** `(subscriber_id)`، `GIN(username gin_trgm_ops)`، `(phone_normalized)`، `(fat_code)`، `(pole_number)`، `(service_ends_at)` لقائمة «تنتهي قريباً».
 **لماذا جدول مستقل؟** العلاقة 1 ← N دون حد في قاعدة البيانات. الحد (2) تحذير في الإعدادات وليس قيداً، حسب إجابة السؤال 2.
 **الـ External ID للمزامنة** لا يُخزَّن هنا، بل في `external_links`، حتى لا ترتبط الجداول الأساسية بموقع الشركة.
+
+### `follow_ups` — سجل المتابعة والاتصال (Q1)
+| الحقل | النوع | القيود |
+|-------|------|--------|
+| id | BIGINT | PK |
+| account_id | BIGINT | FK → accounts, NOT NULL |
+| subscriber_id | BIGINT | FK, NOT NULL |
+| activation_id | BIGINT | FK NULL (تفعيل الـ7 أيام المعني) |
+| debt_id | BIGINT | FK NULL |
+| channel | VARCHAR(12) | CHECK IN (`call`, `whatsapp`, `visit`, `sms`) |
+| outcome | VARCHAR(20) | CHECK IN (`no_answer`, `promised_to_pay`, `will_pay_today`, `refused`, `wrong_number`, `other`) |
+| promised_at | TIMESTAMPTZ | NULL: موعد الدفع الذي وعد به |
+| next_follow_up_at | TIMESTAMPTZ | NULL: متى نتصل مرة أخرى |
+| note | TEXT | |
+| created_by, created_at | | للإضافة فقط |
+
+**الفهارس:** `(account_id, created_at DESC)`، `(next_follow_up_at)`.
 
 ---
 
@@ -169,6 +185,7 @@
 | discount_type | VARCHAR(20) | CHECK IN (`fixed_price`, `amount_off`, `percent_off`) |
 | discount_value | BIGINT | CHECK > 0. النسبة ≤ 100 |
 | starts_at, ends_at | TIMESTAMPTZ | CHECK ends_at > starts_at |
+| funded_by | VARCHAR(10) | CHECK IN (`company`, `agent`): من يتحمّل الخصم (Q14) |
 | is_active | BOOLEAN | |
 | created_by, created_at | | |
 
@@ -255,11 +272,15 @@ EXCLUDE USING gist (account_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH 
 | `AR_SECONDARY` | الديون الثانوية | asset |
 | `AR_PRIMARY` | الديون الأولية | asset |
 | `CUSTOMER_CREDIT` | دفعات مقدمة (أرصدة دائنة للمشتركين) | liability |
-| `CASH:<branch>` | قاصة الفرع | asset |
+| `CASH:<branch>` | قاصة الفرع / «الزون» (صندوق الشراء والتفعيل) | asset |
+| `COMPANY_BALANCE` | رصيد الوكيل لدى الشركة (مدفوع مسبقاً، Q11) | asset |
 | `WALLET:<id>` | محفظة إلكترونية لكل مستلم | asset |
-| `REV_SUBSCRIPTIONS` | إيراد التفعيلات | revenue |
+| `REV_COMMISSION` | الراجع من الشركة | revenue |
+| `REV_OTHER` | إيرادات أخرى (أجور تنصيب في دين يدوي…) | revenue |
 | `REV_DEVICE_SALES` | إيراد مبيعات الأجهزة | revenue |
 | `EXP_GENERAL` | المصروفات (تفصيلها بالفئة في جدول `expenses`) | expense |
+| `EXP_PROMO_DISCOUNT` | خصومات العروض التي يتحملها الوكيل | expense |
+| `DISTRIBUTIONS` | توزيعات الراجع (سحوبات شركاء، رواتب) | equity |
 | `OPENING_EQUITY` | الرصيد الابتدائي / رأس المال | equity |
 
 ### `money_accounts` — الصناديق والمحافظ
@@ -267,8 +288,8 @@ EXCLUDE USING gist (account_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH 
 |-------|------|--------|
 | id | BIGINT | PK |
 | branch_id | BIGINT | FK |
-| kind | VARCHAR(12) | CHECK IN (`cash`, `electronic`) |
-| name | VARCHAR(100) | «قاصة الفرع الرئيسي»، «زين كاش – أحمد» |
+| kind | VARCHAR(12) | CHECK IN (`cash`, `electronic`, `company`) |
+| name | VARCHAR(100) | «الزون – قاصة الفرع الرئيسي»، «زين كاش – أحمد»، «رصيد الشركة» |
 | holder_name | VARCHAR(100) | اسم المستلم |
 | ledger_account_id | BIGINT | FK → ledger_accounts, UNIQUE |
 | is_active | BOOLEAN | |
@@ -277,7 +298,7 @@ EXCLUDE USING gist (account_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH 
 | الحقل | النوع | القيود |
 |-------|------|--------|
 | id | BIGINT | PK |
-| txn_type | VARCHAR(30) | `activation_charge`, `manual_debt`, `opening_debt`, `payment`, `credit_application`, `debt_transfer`, `expense`, `device_sale`, `opening_balance`, `reversal` |
+| txn_type | VARCHAR(30) | `activation_charge`, `manual_debt`, `opening_debt`, `payment`, `credit_application`, `debt_transfer`, `expense`, `device_sale`, `fund_transfer`, `company_settlement`, `distribution`, `opening_balance`, `reversal` |
 | occurred_at | TIMESTAMPTZ | وقت العملية المالية |
 | branch_id | BIGINT | FK |
 | source_type, source_id | VARCHAR, BIGINT | المستند المصدر (دين، سند، مناقلة…) |
@@ -445,6 +466,53 @@ EXCLUDE USING gist (account_id WITH =, tstzrange(starts_at, ends_at, '[)') WITH 
 
 **الربح** = `total_amount − cost_amount`، ويدخل الرصيد عبر حسابات الإيراد والمصروف. التفاصيل في منطق التقارير.
 
+### `fund_transfers` — التحويل بين الصناديق
+يشمل **شحن رصيد الشركة** من القاصة، ونقل مال من محفظة إلكترونية إلى القاصة.
+
+| الحقل | النوع | القيود |
+|-------|------|--------|
+| id | BIGINT | PK |
+| number | VARCHAR(20) | UNIQUE (`F-…`) |
+| from_money_account_id | BIGINT | FK → money_accounts, NOT NULL |
+| to_money_account_id | BIGINT | FK → money_accounts, NOT NULL, CHECK ≠ from |
+| amount | BIGINT | CHECK > 0 |
+| currency_code | CHAR(3) | |
+| transferred_at | TIMESTAMPTZ | |
+| reference | VARCHAR(100) | رقم عملية الشحن إن وُجد |
+| status, voided_* | | |
+| txn_id | BIGINT | FK |
+| notes, created_by, created_at | | |
+
+### `company_settlements` — الراجع من الشركة (Q12)
+| الحقل | النوع | القيود |
+|-------|------|--------|
+| id | BIGINT | PK |
+| number | VARCHAR(20) | UNIQUE (`K-…`) |
+| period_from, period_to | DATE | الفترة التي يغطيها الراجع |
+| amount | BIGINT | CHECK > 0 |
+| currency_code | CHAR(3) | |
+| received_into_money_account_id | BIGINT | FK: القاصة، أو رصيد الشركة إذا أضافته الشركة لرصيدكم |
+| received_at | TIMESTAMPTZ | |
+| activations_count | INT | عدد التفعيلات في الفترة (محسوب للعرض والمقارنة) |
+| status, voided_* | | |
+| txn_id | BIGINT | FK |
+| notes, created_by, created_at | | |
+
+### `settlement_distributions` — تقسيم الراجع (Q13)
+| الحقل | النوع | القيود |
+|-------|------|--------|
+| id | BIGINT | PK |
+| settlement_id | BIGINT | FK → company_settlements, NOT NULL |
+| kind | VARCHAR(15) | CHECK IN (`zone_fund`, `partner`, `salary`, `other`) |
+| beneficiary | VARCHAR(120) | اسم الشريك أو الموظف (لغير `zone_fund`) |
+| amount | BIGINT | CHECK > 0 |
+| from_money_account_id | BIGINT | FK: الصندوق الذي خرج منه المبلغ |
+| to_money_account_id | BIGINT | FK NULL: صندوق «الزون» إذا `zone_fund` |
+| txn_id | BIGINT | FK |
+| created_by, created_at | | |
+
+**القاعدة:** Σ التوزيعات ≤ مبلغ الراجع، ويظهر المتبقي غير الموزع في شاشة الراجع.
+
 ---
 
 ## 2.7 الأجهزة
@@ -517,21 +585,29 @@ id, device_id (FK), note (TEXT, NOT NULL), created_by, created_at. للإضاف�
 
 ## 2.10 أمثلة القيود المحاسبية
 
-| العملية | مدين | دائن | ربط السطر |
-|---------|------|------|-----------|
-| تفعيل 7 أيام (35,000) | `AR_SECONDARY` 35,000 | `REV_SUBSCRIPTIONS` 35,000 | debt_id, account_id |
-| تفعيل 30 يوم آجل | `AR_PRIMARY` | `REV_SUBSCRIPTIONS` | debt_id |
-| تفعيل 30 يوم مدفوع | قيدان في نفس المعاملة: (1) `AR_PRIMARY` / `REV_SUBSCRIPTIONS`، ثم (2) `CASH` أو `WALLET` / `AR_PRIMARY` | | دين يُنشأ ويُسدَّد فوراً بسند، لتوحيد التتبع: كل تفعيل له دين وكل قبض له سند |
-| قبض لتسديد دين | `CASH` / `WALLET` | `AR_SECONDARY` أو `AR_PRIMARY` | debt_id |
-| دفع مقدم | `CASH` / `WALLET` | `CUSTOMER_CREDIT` | account_id |
-| استخدام الرصيد المقدم لدين | `CUSTOMER_CREDIT` | `AR_*` | debt_id |
-| مناقلة | `AR_PRIMARY` | `AR_SECONDARY` | debt_id |
-| دين يدوي | `AR_PRIMARY` (افتراضياً) | `REV_SUBSCRIPTIONS` | debt_id |
-| دين افتتاحي (قديم قبل النظام) | `AR_PRIMARY` | `OPENING_EQUITY` | debt_id |
-| مصروف | `EXP_GENERAL` | `CASH` / `WALLET` | — |
-| بيع جهاز نقداً | `CASH` | `REV_DEVICE_SALES` | — |
-| بيع جهاز آجل | `AR_PRIMARY` | `REV_DEVICE_SALES` | debt_id |
-| رصيد ابتدائي | `CASH` | `OPENING_EQUITY` | — |
+| العملية | مدين | دائن | ملاحظة |
+|---------|------|------|--------|
+| رصيد ابتدائي للقاصة | `CASH` | `OPENING_EQUITY` | مرة واحدة |
+| شحن رصيد الشركة | `COMPANY_BALANCE` | `CASH` / `WALLET` | `fund_transfer` |
+| تفعيل 7 أيام (35,000) | `AR_SECONDARY` 35,000 | `COMPANY_BALANCE` 35,000 | **ليس إيراداً**: الشركة خصمت السعر من رصيدكم، والمشترك مدين به |
+| تفعيل 30 يوم آجل | `AR_PRIMARY` | `COMPANY_BALANCE` | |
+| تفعيل 30 يوم مدفوع | قيدان في نفس المعاملة: (1) `AR_PRIMARY` / `COMPANY_BALANCE`، ثم (2) `CASH` أو `WALLET` / `AR_PRIMARY` | | كل تفعيل له دين، وكل قبض له سند |
+| عرض يتحمّله الوكيل (سعر 35,000، المشترك يدفع 30,000) | `AR_*` 30,000 + `EXP_PROMO_DISCOUNT` 5,000 | `COMPANY_BALANCE` 35,000 | عرض الشركة: السطران بالسعر المخفض فقط |
+| قبض لتسديد دين | `CASH` / `WALLET` | `AR_SECONDARY` أو `AR_PRIMARY` | |
+| دفع مقدم | `CASH` / `WALLET` | `CUSTOMER_CREDIT` | |
+| استخدام الرصيد المقدم لدين | `CUSTOMER_CREDIT` | `AR_*` | |
+| مناقلة | `AR_PRIMARY` | `AR_SECONDARY` | |
+| دين يدوي (أجور تنصيب مثلاً) | `AR_PRIMARY` (افتراضياً) | `REV_OTHER` | |
+| دين افتتاحي (قديم قبل النظام) | `AR_PRIMARY` | `OPENING_EQUITY` | |
+| الراجع من الشركة | `CASH` أو `COMPANY_BALANCE` | `REV_COMMISSION` | **هذا هو الربح من التفعيلات** |
+| تقسيم الراجع: جزء للزون | `CASH:zone` | `CASH` أو `COMPANY_BALANCE` (المصدر) | تحويل داخلي |
+| تقسيم الراجع: شريك أو راتب | `DISTRIBUTIONS` | `CASH` | |
+| مصروف | `EXP_GENERAL` | `CASH` / `WALLET` | |
+| بيع جهاز نقداً | `CASH` | `REV_DEVICE_SALES` | |
+| بيع جهاز آجل | `AR_PRIMARY` | `REV_DEVICE_SALES` | |
 | إلغاء أي عملية | عكس سطور القيد الأصلي تماماً | | `reverses_txn_id` |
 
-**النتيجة:** إجمالي الديون الثانوية = رصيد `AR_SECONDARY`. في مثال أحمد وعلي (تفعيل 7 أيام لكل منهما) = 70,000 تلقائياً.
+**النتائج المباشرة من الدفتر:**
+- إجمالي الديون الثانوية = رصيد `AR_SECONDARY`. في مثال أحمد وعلي = 70,000 تلقائياً.
+- رصيد الشركة المتبقي = رصيد `COMPANY_BALANCE`، ويجب أن يطابق ما يظهر على موقع الشركة (مطابقة يدوية دورية).
+- الربح = `REV_COMMISSION` + `REV_DEVICE_SALES` + `REV_OTHER` − `EXP_*`.
