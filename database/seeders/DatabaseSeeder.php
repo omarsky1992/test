@@ -15,6 +15,7 @@ use App\Services\Ledger;
 use App\Services\TreasuryService;
 use App\Support\Permissions;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Str;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -72,14 +73,18 @@ class DatabaseSeeder extends Seeder
         Role::findOrCreate('employee', 'web')->syncPermissions(Permissions::employeeDefaults());
 
         if (! User::exists()) {
+            $password = config('app.admin_password') ?: Str::password(14, symbols: false);
             $admin = User::create([
                 'branch_id' => $branch->id,
                 'name' => 'المدير',
-                'username' => env('ADMIN_USERNAME', 'admin'),
-                'password' => env('ADMIN_PASSWORD', 'ChangeMe-2026'),
+                'username' => config('app.admin_username'),
+                'password' => $password,
                 'is_active' => true,
             ]);
             $admin->assignRole('admin');
+            if (! config('app.admin_password')) {
+                $this->command?->warn("Admin user «{$admin->username}» created with password: {$password}");
+            }
         }
     }
 }

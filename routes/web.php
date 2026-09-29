@@ -1,7 +1,8 @@
 <?php
 
+use App\Http\Controllers\ReceiptController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
+Route::middleware('auth')->group(function () {
+    Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
 });
