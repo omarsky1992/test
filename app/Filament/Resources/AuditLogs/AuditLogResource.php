@@ -41,6 +41,7 @@ class AuditLogResource extends Resource
         'fund_transfer.created' => 'تحويل بين الصناديق', 'settlement.created' => 'راجع الشركة', 'settlement.distributed' => 'تقسيم الراجع',
         'money_account.created' => 'صندوق جديد', 'money_account.opening_balance' => 'رصيد ابتدائي',
         'plan.created' => 'فئة جديدة', 'plan.updated' => 'تعديل فئة', 'promotion.created' => 'عرض جديد', 'promotion.updated' => 'تعديل عرض',
+        'backup.completed' => 'نسخة احتياطية', 'backup.failed' => 'فشل نسخة احتياطية', 'backup.drive_connected' => 'ربط Google Drive', 'backup.drive_disconnected' => 'فصل Google Drive',
         'user.created' => 'مستخدم جديد', 'user.updated' => 'تعديل مستخدم', 'settings.updated' => 'تعديل الإعدادات',
     ];
 

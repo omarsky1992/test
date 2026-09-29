@@ -1,0 +1,57 @@
+# Render Blueprint: Dashboard → New → Blueprint → choose this repository.
+# The database is NOT on Render: Render's free PostgreSQL is deleted after 30 days.
+# Use a free Neon database and paste its connection string into DB_URL (see docs/free-hosting.md).
+services:
+  - type: web
+    name: subs
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /up
+    autoDeploy: true
+    envVars:
+      - key: APP_KEY
+        generateValue: true
+      - key: BACKUP_TRIGGER_TOKEN
+        generateValue: true
+      - key: DB_URL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PORT
+        value: "8080"
+      - key: APP_NAME
+        value: نظام المشتركين
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: "false"
+      - key: APP_LOCALE
+        value: ar
+      - key: APP_FALLBACK_LOCALE
+        value: ar
+      - key: APP_TIMEZONE
+        value: Asia/Baghdad
+      - key: DB_CONNECTION
+        value: pgsql
+      - key: SESSION_DRIVER
+        value: database
+      - key: SESSION_LIFETIME
+        value: "30"
+      - key: SESSION_SECURE_COOKIE
+        value: "true"
+      - key: CACHE_STORE
+        value: database
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: LOG_CHANNEL
+        value: stderr
+      - key: LOG_LEVEL
+        value: warning
+      - key: ADMIN_USERNAME
+        value: admin

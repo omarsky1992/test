@@ -28,7 +28,11 @@ class Settings
 
     public function set(string $key, mixed $value): void
     {
-        Setting::updateOrCreate(['key' => $key], ['value' => $value, 'updated_at' => now(), 'updated_by' => auth()->id()]);
+        if ($value === null) {
+            Setting::whereKey($key)->delete();
+        } else {
+            Setting::updateOrCreate(['key' => $key], ['value' => $value, 'updated_at' => now(), 'updated_by' => auth()->id()]);
+        }
         $this->cache = null;
     }
 

@@ -70,7 +70,11 @@ class DatabaseSeeder extends Seeder
             Permission::findOrCreate($name, 'web');
         }
         Role::findOrCreate('admin', 'web');
-        Role::findOrCreate('employee', 'web')->syncPermissions(Permissions::employeeDefaults());
+        // Default employee permissions are set once; later changes by the admin are kept on every deploy.
+        $employee = Role::where('name', 'employee')->first();
+        if ($employee === null) {
+            Role::create(['name' => 'employee', 'guard_name' => 'web'])->syncPermissions(Permissions::employeeDefaults());
+        }
 
         if (! User::exists()) {
             $password = config('app.admin_password') ?: Str::password(14, symbols: false);

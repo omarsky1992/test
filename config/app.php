@@ -52,7 +52,8 @@ return [
     |
     */
 
-    'url' => env('APP_URL', 'http://localhost'),
+    // On Render the public address is provided as RENDER_EXTERNAL_URL.
+    'url' => env('APP_URL', env('RENDER_EXTERNAL_URL', 'http://localhost')),
 
     /*
     |--------------------------------------------------------------------------
@@ -101,7 +102,14 @@ return [
 
     'cipher' => 'AES-256-CBC',
 
-    'key' => env('APP_KEY'),
+    // Accepts Laravel's "base64:…" form and also a bare base64 value (what Render's generateValue produces).
+    'key' => (static function (?string $key): ?string {
+        if ($key && ! str_starts_with($key, 'base64:') && strlen($key) !== 32 && strlen((string) base64_decode($key, true)) === 32) {
+            return 'base64:'.$key;
+        }
+
+        return $key;
+    })(env('APP_KEY')),
 
     'previous_keys' => [
         ...array_filter(
