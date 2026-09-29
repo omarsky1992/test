@@ -1,0 +1,29 @@
+# Free hosts have no scheduler, so GitHub calls the app once a day to run the backup.
+# Needs two repository secrets: APP_URL (e.g. https://subs.onrender.com) and BACKUP_TRIGGER_TOKEN.
+name: Daily backup
+
+on:
+  schedule:
+    - cron: '0 0 * * *'   # 03:00 Baghdad time
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the app and run the backup
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          TOKEN: ${{ secrets.BACKUP_TRIGGER_TOKEN }}
+        run: |
+          if [ -z "$APP_URL" ] || [ -z "$TOKEN" ]; then
+            echo "::error::Add the APP_URL and BACKUP_TRIGGER_TOKEN repository secrets."
+            exit 1
+          fi
+          # A sleeping free instance needs about a minute to start, hence the retries.
+          curl --fail-with-body --silent --show-error \
+            --retry 6 --retry-delay 30 --retry-all-errors --max-time 900 \
+            -X POST -H "X-Backup-Token: $TOKEN" -H "Accept: application/json" \
+            "$APP_URL/internal/backup"
