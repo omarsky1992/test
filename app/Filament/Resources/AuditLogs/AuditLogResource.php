@@ -42,6 +42,9 @@ class AuditLogResource extends Resource
         'money_account.created' => 'صندوق جديد', 'money_account.opening_balance' => 'رصيد ابتدائي',
         'plan.created' => 'فئة جديدة', 'plan.updated' => 'تعديل فئة', 'promotion.created' => 'عرض جديد', 'promotion.updated' => 'تعديل عرض',
         'backup.completed' => 'نسخة احتياطية', 'backup.failed' => 'فشل نسخة احتياطية', 'backup.drive_connected' => 'ربط Google Drive', 'backup.drive_disconnected' => 'فصل Google Drive',
+        'payment_method.created' => 'طريقة دفع جديدة', 'payment_method.updated' => 'تعديل طريقة دفع',
+        'subscribers.imported' => 'استيراد مشتركين', 'subscribers.import_failed' => 'فشل استيراد', 'subscriber.imported' => 'مشترك مستورد', 'account.imported' => 'حساب مستورد',
+        'sale.created' => 'بيع جهاز', 'sale.voided' => 'إلغاء بيع',
         'user.created' => 'مستخدم جديد', 'user.updated' => 'تعديل مستخدم', 'settings.updated' => 'تعديل الإعدادات',
     ];
 

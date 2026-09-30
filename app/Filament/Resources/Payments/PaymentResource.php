@@ -10,6 +10,7 @@ use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
+use App\Models\PaymentMethodType;
 use App\Models\User;
 use App\Support\Money;
 use BackedEnum;
@@ -54,7 +55,7 @@ class PaymentResource extends Resource
     public static function buildTable(Table $table, bool $showSubscriber): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'moneyAccount', 'creator']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'moneyAccount', 'creator', 'lines.method']))
             ->defaultSort('received_at', 'desc')
             ->columns([
                 TextColumn::make('receipt_number')->label('رقم السند')->searchable()->weight('bold'),
@@ -64,7 +65,7 @@ class PaymentResource extends Resource
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('payment_type')->label('النوع')->badge(),
                 TextColumn::make('method')->label('الطريقة')->badge()
-                    ->description(fn (Payment $r) => $r->receiver_name),
+                    ->description(fn (Payment $r) => $r->lines->map(fn ($l) => $l->method->name_ar.($r->lines->count() > 1 ? ' '.Money::format($l->amount, false) : '').($l->receiver_name ? " ({$l->receiver_name})" : ''))->join(' + ')),
                 TextColumn::make('moneyAccount.name')->label('الصندوق')->toggleable(),
                 TextColumn::make('amount')->label('المبلغ')->weight('bold')->sortable()
                     ->formatStateUsing(fn ($state) => Money::format($state, false))
@@ -80,7 +81,11 @@ class PaymentResource extends Resource
                 ])->query(fn (Builder $query, array $data) => $query
                     ->when($data['from'] ?? null, fn ($query, $d) => $query->where('received_at', '>=', $d))
                     ->when($data['until'] ?? null, fn ($query, $d) => $query->where('received_at', '<', now()->parse($d)->addDay()))),
-                SelectFilter::make('method')->label('الطريقة')->options(PaymentMethod::class),
+                SelectFilter::make('method')->label('نوع الطريقة')->options(PaymentMethod::class),
+                SelectFilter::make('payment_method')->label('طريقة الدفع')
+                    ->options(fn () => PaymentMethodType::orderBy('sort_order')->pluck('name_ar', 'id'))
+                    ->query(fn (Builder $query, array $data) => $query->when($data['value'] ?? null,
+                        fn ($query, $id) => $query->whereHas('lines', fn ($l) => $l->where('payment_method_id', $id)))),
                 SelectFilter::make('payment_type')->label('النوع')->options(PaymentType::class),
                 SelectFilter::make('money_account_id')->label('الصندوق')->options(fn () => MoneyAccount::pluck('name', 'id')),
                 SelectFilter::make('created_by')->label('الموظف')->options(fn () => User::pluck('name', 'id')),

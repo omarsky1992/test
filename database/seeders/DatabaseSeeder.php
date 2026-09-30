@@ -9,6 +9,7 @@ use App\Models\DeviceType;
 use App\Models\ExpenseCategory;
 use App\Models\LedgerAccount;
 use App\Models\MoneyAccount;
+use App\Models\PaymentMethodType;
 use App\Models\ServicePlan;
 use App\Models\User;
 use App\Services\Ledger;
@@ -52,6 +53,20 @@ class DatabaseSeeder extends Seeder
         }
         if (! MoneyAccount::where('branch_id', $branch->id)->where('kind', MoneyAccountKind::Company)->exists()) {
             $treasury->createMoneyAccount($branch->id, MoneyAccountKind::Company, 'رصيد الشركة');
+        }
+
+        $cashBox = MoneyAccount::where('branch_id', $branch->id)->where('kind', MoneyAccountKind::Cash)->first();
+        foreach ([
+            ['cash', 'نقدي', 'cash', false, false, $cashBox?->id, 1],
+            ['zain_cash', 'زين كاش', 'electronic', true, false, null, 2],
+            ['asia_hawala', 'آسيا حوالة', 'electronic', true, false, null, 3],
+            ['qi_card', 'كي كارد / ماستر', 'card', false, true, null, 4],
+            ['bank_transfer', 'تحويل مصرفي', 'bank', false, true, null, 5],
+        ] as [$code, $name, $category, $receiver, $reference, $box, $order]) {
+            PaymentMethodType::firstOrCreate(['code' => $code], [
+                'name_ar' => $name, 'category' => $category, 'requires_receiver' => $receiver,
+                'requires_reference' => $reference, 'money_account_id' => $box, 'sort_order' => $order,
+            ]);
         }
 
         foreach ([['basic', 'أساسي', 35000, 1], ['plus', 'بلس', 45000, 2], ['turbo', 'تيربو', 65000, 3], ['pro_max', 'برو ماكس', 100000, 4]] as [$code, $name, $price, $order]) {

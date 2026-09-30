@@ -15,7 +15,7 @@ class ReceiptController extends Controller
     {
         abort_unless(auth()->user()->can('receipts.print'), 403);
 
-        $payment->load(['subscriber', 'account', 'moneyAccount', 'creator', 'voider', 'allocations.debt.activation']);
+        $payment->load(['subscriber', 'account', 'moneyAccount', 'creator', 'voider', 'allocations.debt.activation', 'lines.method', 'lines.moneyAccount']);
         $audit->log('receipt.viewed', $payment, subscriberId: $payment->subscriber_id);
 
         $openDebt = (int) $payment->account->debts()->whereIn('status', ['open', 'partial'])->sum('balance');

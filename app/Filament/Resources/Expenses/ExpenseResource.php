@@ -36,7 +36,7 @@ class ExpenseResource extends Resource
 
     protected static ?string $modelLabel = 'مصروف';
 
-    protected static ?string $pluralModelLabel = 'المصروفات';
+    protected static ?string $pluralModelLabel = 'المشتريات والمصروفات';
 
     public static function canCreate(): bool
     {

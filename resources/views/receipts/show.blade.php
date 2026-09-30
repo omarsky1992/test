@@ -55,10 +55,14 @@
     <div class="row"><span>رقم المشترك (الهاتف)</span><span class="ltr">{{ $payment->subscriber->phone }}</span></div>
     <div class="row"><span>الحساب</span><span class="ltr">{{ $payment->account->username }}</span></div>
     <div class="row"><span>نوع القبض</span><span>{{ $payment->payment_type->getLabel() }}</span></div>
-    <div class="row"><span>الطريقة</span><span>{{ $payment->method->getLabel() }} · {{ $payment->moneyAccount->name }}@if ($payment->receiver_name) · {{ $payment->receiver_name }}@endif</span></div>
-    @if ($payment->external_reference)
-        <div class="row"><span>رقم الحوالة</span><span class="ltr">{{ $payment->external_reference }}</span></div>
-    @endif
+    @forelse ($payment->lines as $line)
+        <div class="row">
+            <span>{{ $loop->first ? 'طريقة الدفع' : '' }}</span>
+            <span>{{ $line->method->name_ar }} · {{ $line->moneyAccount->name }}@if ($line->receiver_name) · {{ $line->receiver_name }}@endif @if ($line->reference)<span class="ltr">({{ $line->reference }})</span>@endif @if ($payment->lines->count() > 1) — {{ Money::format($line->amount, false) }}@endif</span>
+        </div>
+    @empty
+        <div class="row"><span>الطريقة</span><span>{{ $payment->method->getLabel() }} · {{ $payment->moneyAccount->name }}</span></div>
+    @endforelse
 
     <div class="amount">
         <div class="sub">المبلغ</div>

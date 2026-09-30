@@ -295,16 +295,26 @@ class ActivationService
         });
     }
 
+    /**
+     * When the account's current service ends: the latest period recorded here, or the end date the
+     * company reported in the last import if that is later (a subscription started before this system).
+     */
     public function lastEnd(Account $account): ?CarbonImmutable
     {
         $end = ActivationPeriod::where('account_id', $account->id)->where('is_void', false)->max('ends_at');
+        $end = $end ? CarbonImmutable::parse($end) : null;
+        $external = $account->external_ends_at;
 
-        return $end ? CarbonImmutable::parse($end) : null;
+        return match (true) {
+            $external === null => $end,
+            $end === null => $external,
+            default => $external->greaterThan($end) ? $external : $end,
+        };
     }
 
     public function refreshAccountEnd(Account $account): void
     {
-        $account->update(['service_ends_at' => $this->lastEnd($account)]);
+        $account->update(['service_ends_at' => $this->lastEnd($account->fresh())]);
     }
 
     public function companyMoneyAccount(int $branchId): MoneyAccount

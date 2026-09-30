@@ -6,7 +6,14 @@ use App\Enums\DistributionKind;
 use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
+use App\Enums\DebtBucket;
+use App\Enums\DebtSource;
+use App\Enums\DebtStatus;
+use App\Models\Account;
 use App\Models\Activation;
+use App\Models\Debt;
+use App\Models\DeviceSale;
+use App\Models\DeviceType;
 use App\Models\CompanySettlement;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
@@ -242,6 +249,111 @@ class TreasuryService
             $this->audit->log('expense.voided', $expense, null, ['number' => $expense->number], $reason);
 
             return $expense;
+        });
+    }
+
+    /**
+     * Sells a device (router, ONT…): paid now into a box, or as a primary debt on an account.
+     * The profit (price − cost) reaches the balance through the ledger.
+     */
+    public function recordDeviceSale(
+        DeviceType $type,
+        string $description,
+        int $unitPrice,
+        int $quantity = 1,
+        ?int $cost = null,
+        ?MoneyAccount $into = null,
+        ?Account $account = null,
+        ?string $buyerName = null,
+        ?string $serial = null,
+        ?string $notes = null,
+    ): DeviceSale {
+        if ($unitPrice <= 0 || $quantity <= 0) {
+            throw new BusinessRuleException('السعر والكمية يجب أن يكونا أكبر من صفر.');
+        }
+        if ($into === null && $account === null) {
+            throw new BusinessRuleException('اختر صندوق الاستلام، أو حساب المشترك للبيع بالدين.');
+        }
+        if ($into?->kind === MoneyAccountKind::Company) {
+            throw new BusinessRuleException('لا يُستلم ثمن البيع في رصيد الشركة.');
+        }
+
+        return DB::transaction(function () use ($type, $description, $unitPrice, $quantity, $cost, $into, $account, $buyerName, $serial, $notes) {
+            $now = CarbonImmutable::now();
+            $total = $unitPrice * $quantity;
+            $sale = DeviceSale::create([
+                'number' => $this->sequencer->next('sale', $now),
+                'branch_id' => $into?->branch_id ?? $account->branch_id,
+                'subscriber_id' => $account?->subscriber_id,
+                'account_id' => $account?->id,
+                'buyer_name' => $buyerName,
+                'item_type_id' => $type->id,
+                'description' => $description,
+                'serial_number' => $serial,
+                'quantity' => $quantity,
+                'unit_price' => $unitPrice,
+                'total_amount' => $total,
+                'cost_amount' => $cost,
+                'settlement' => $into ? 'paid' : 'debt',
+                'money_account_id' => $into?->id,
+                'sold_at' => $now,
+                'status' => DocumentStatus::Posted,
+                'notes' => $notes,
+                'created_by' => Auth::id(),
+            ]);
+
+            if ($into) {
+                $lines = [
+                    ['account' => $into->ledger_account_id, 'debit' => $total],
+                    ['account' => Ledger::REV_DEVICE_SALES, 'credit' => $total],
+                ];
+            } else {
+                $debt = Debt::create([
+                    'number' => $this->sequencer->next('debt', $now),
+                    'account_id' => $account->id,
+                    'subscriber_id' => $account->subscriber_id,
+                    'branch_id' => $account->branch_id,
+                    'source' => DebtSource::DeviceSale,
+                    'device_sale_id' => $sale->id,
+                    'bucket' => DebtBucket::Primary,
+                    'original_amount' => $total,
+                    'paid_amount' => 0,
+                    'balance' => $total,
+                    'debt_date' => $now,
+                    'status' => DebtStatus::Open,
+                    'notes' => "بيع {$description}",
+                    'created_by' => Auth::id(),
+                ]);
+                $lines = [
+                    ['account' => Ledger::AR_PRIMARY, 'debit' => $total, 'subscriber_id' => $account->subscriber_id, 'account_id' => $account->id, 'debt_id' => $debt->id],
+                    ['account' => Ledger::REV_DEVICE_SALES, 'credit' => $total],
+                ];
+            }
+            $txn = $this->ledger->post('device_sale', $now, $lines, $sale, "بيع {$sale->number}", $sale->branch_id);
+            $sale->update(['txn_id' => $txn->id]);
+            $this->audit->log('sale.created', $sale, null, ['description' => $description, 'total' => $total, 'settlement' => $sale->settlement], subscriberId: $account?->subscriber_id);
+
+            return $sale;
+        });
+    }
+
+    public function voidDeviceSale(DeviceSale $sale, string $reason): DeviceSale
+    {
+        return DB::transaction(function () use ($sale, $reason) {
+            $sale = DeviceSale::whereKey($sale->id)->lockForUpdate()->firstOrFail();
+            if ($sale->status === DocumentStatus::Voided) {
+                throw new BusinessRuleException('البيع ملغى مسبقاً.');
+            }
+            $debt = Debt::where('device_sale_id', $sale->id)->first();
+            if ($debt && $debt->paid_amount > 0) {
+                throw new BusinessRuleException('على دين هذا البيع تسديدات. ألغِ سندات القبض أولاً.');
+            }
+            $this->ledger->reverse(FinancialTransaction::findOrFail($sale->txn_id), CarbonImmutable::now(), "إلغاء البيع {$sale->number}");
+            $debt?->update(['status' => DebtStatus::Voided, 'voided_at' => now(), 'voided_by' => Auth::id(), 'void_reason' => $reason]);
+            $sale->update(['status' => DocumentStatus::Voided, 'voided_at' => now(), 'voided_by' => Auth::id(), 'void_reason' => $reason]);
+            $this->audit->log('sale.voided', $sale, null, ['number' => $sale->number], $reason, $sale->subscriber_id);
+
+            return $sale;
         });
     }
 

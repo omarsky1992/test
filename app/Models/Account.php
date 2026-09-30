@@ -18,6 +18,8 @@ class Account extends Model
         return [
             'status' => AccountStatus::class,
             'service_ends_at' => 'immutable_datetime',
+            'external_ends_at' => 'immutable_datetime',
+            'external_synced_at' => 'immutable_datetime',
         ];
     }
 

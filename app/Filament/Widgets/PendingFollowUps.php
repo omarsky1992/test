@@ -14,7 +14,7 @@ use Filament\Widgets\TableWidget;
 
 class PendingFollowUps extends TableWidget
 {
-    protected static ?int $sort = 2;
+    protected static ?int $sort = 6;
 
     protected int|string|array $columnSpan = 'full';
 

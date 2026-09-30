@@ -84,6 +84,11 @@ class DemoSeeder extends Seeder
         $activations->activate($people->create(['full_name' => 'حسين علي', 'phone' => '07815550192'], ['username' => 'hussein.a44', 'secret' => 'h44'])->accounts()->first(),
             $plan('turbo'), ActivationKind::Full30, settlement: Settlement::Paid, moneyAccount: $cash);
         $treasury->recordExpense(\App\Models\ExpenseCategory::where('name_ar', 'راوتر وأجهزة')->first(), 'شراء راوتر TP-Link', 42000, $cash, 'محل الأمين');
+        $treasury->recordDeviceSale(\App\Models\DeviceType::where('key', 'router')->first(), 'راوتر TP-Link', 55000, cost: 42000, into: $cash, buyerName: 'زبون محل');
+        $payments->record($acc($zainab), lines: [
+            ['method' => \App\Models\PaymentMethodType::where('code', 'cash')->first(), 'amount' => 25000],
+            ['method' => \App\Models\PaymentMethodType::where('code', 'zain_cash')->first(), 'money_account' => $wallet, 'amount' => 20000, 'receiver' => 'المدير', 'reference' => 'ZC-55120'],
+        ]);
 
         $this->travel($real);
         auth()->logout();

@@ -20,6 +20,7 @@ use App\Models\Activation;
 use App\Models\Debt;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
+use App\Models\PaymentMethodType;
 use App\Models\Promotion;
 use App\Models\ServicePlan;
 use App\Services\ActivationService;
@@ -36,6 +37,7 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -164,9 +166,7 @@ class Operations
             ->fillForm(fn (?Model $record) => [
                 'account_id' => self::accountOf($record)?->id,
                 'payment_type' => PaymentType::DebtPayment->value,
-                'method' => PaymentMethod::Cash->value,
-                'money_account_id' => self::defaultBox(PaymentMethod::Cash),
-                'amount' => $record instanceof Debt ? $record->balance : null,
+                'lines' => [self::defaultLine($record instanceof Debt ? $record->balance : null)],
                 'debt_ids' => $record instanceof Debt ? [$record->id] : [],
                 'idempotency_key' => (string) Str::uuid(),
             ])
@@ -175,31 +175,47 @@ class Operations
                 self::accountField()->hidden(self::accountOf($record) !== null),
                 Grid::make(2)->schema([
                     ToggleButtons::make('payment_type')->label('نوع القبض')->options(Options::of(PaymentType::class))->inline()->required()->live(),
-                    ToggleButtons::make('method')
-                        ->label('الطريقة')
-                        ->options(Options::of(PaymentMethod::class))
-                        ->inline()
-                        ->required()
-                        ->live()
-                        ->afterStateUpdated(fn (Set $set, ?string $state) => $set('money_account_id', self::defaultBox(PaymentMethod::tryFrom((string) $state) ?? PaymentMethod::Cash))),
-                    Select::make('money_account_id')
-                        ->label(fn (Get $get) => $get('method') === PaymentMethod::Electronic->value ? 'المحفظة' : 'القاصة')
-                        ->options(fn (Get $get) => self::receivingBoxes(PaymentMethod::tryFrom((string) $get('method'))))
-                        ->required()
-                        ->live()
-                        ->afterStateUpdated(fn (Set $set, $state) => $set('receiver_name', MoneyAccount::find($state)?->holder_name)),
-                    TextInput::make('receiver_name')
-                        ->label('اسم المستلم')
-                        ->visible(fn (Get $get) => $get('method') === PaymentMethod::Electronic->value)
-                        ->required(fn (Get $get) => $get('method') === PaymentMethod::Electronic->value),
-                    TextInput::make('amount')->label('المبلغ')->integer()->minValue(1)->suffix('د.ع')->required()->live(onBlur: true),
-                    TextInput::make('external_reference')->label('رقم الحوالة')->visible(fn (Get $get) => $get('method') === PaymentMethod::Electronic->value),
                     DateTimePicker::make('received_at')
                         ->label('وقت القبض')
                         ->seconds(false)
                         ->placeholder('الآن')
                         ->visible(fn () => auth()->user()->can('payments.backdate')),
                 ]),
+                Repeater::make('lines')
+                    ->label('طرق الدفع')
+                    ->helperText('يمكن تقسيم المبلغ على أكثر من طريقة، مثلاً جزء نقدي وجزء زين كاش.')
+                    ->addActionLabel('إضافة طريقة دفع')
+                    ->minItems(1)
+                    ->defaultItems(1)
+                    ->reorderable(false)
+                    ->live()
+                    ->columns(4)
+                    ->schema([
+                        Select::make('method_id')
+                            ->label('الطريقة')
+                            ->options(fn () => self::methodOptions())
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(function (Set $set, $state) {
+                                $method = PaymentMethodType::find($state);
+                                $set('money_account_id', $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash));
+                            }),
+                        Select::make('money_account_id')
+                            ->label('استُلم في')
+                            ->options(fn () => self::receivingBoxes())
+                            ->required()
+                            ->live()
+                            ->afterStateUpdated(fn (Set $set, $state) => $set('receiver', MoneyAccount::find($state)?->holder_name)),
+                        TextInput::make('amount')->label('المبلغ')->integer()->minValue(1)->suffix('د.ع')->required()->live(onBlur: true),
+                        TextInput::make('receiver')
+                            ->label('اسم المستلم')
+                            ->visible(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_receiver)
+                            ->required(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_receiver),
+                        TextInput::make('reference')
+                            ->label('رقم العملية / الحوالة')
+                            ->required(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_reference)
+                            ->columnSpan(2),
+                    ]),
                 CheckboxList::make('debt_ids')
                     ->label('الديون المفتوحة')
                     ->helperText('بدون اختيار يُسدَّد الأقدم أولاً، والزيادة تصير رصيداً مقدماً.')
@@ -217,17 +233,19 @@ class Operations
                     $account = self::accountOf($record) ?? Account::findOrFail($data['account_id']);
                     $payment = app(PaymentService::class)->record(
                         account: $account,
-                        amount: (int) $data['amount'],
-                        method: PaymentMethod::from($data['method']),
-                        moneyAccount: MoneyAccount::findOrFail($data['money_account_id']),
                         type: PaymentType::from($data['payment_type']),
-                        receiverName: $data['receiver_name'] ?? null,
-                        reference: $data['external_reference'] ?? null,
                         debtIds: array_map('intval', $data['debt_ids'] ?? []) ?: null,
                         receivedAt: filled($data['received_at'] ?? null) ? CarbonImmutable::parse($data['received_at']) : null,
                         notes: $data['notes'] ?? null,
                         transferRemainder: (bool) ($data['transfer_remainder'] ?? false),
                         idempotencyKey: $data['idempotency_key'] ?? null,
+                        lines: array_map(fn (array $l) => [
+                            'method' => (int) $l['method_id'],
+                            'money_account' => (int) $l['money_account_id'],
+                            'amount' => (int) $l['amount'],
+                            'receiver' => $l['receiver'] ?? null,
+                            'reference' => $l['reference'] ?? null,
+                        ], array_values($data['lines'] ?? [])),
                     );
                     Notification::make()
                         ->success()
@@ -238,6 +256,30 @@ class Operations
                         ->send();
                 });
             });
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private static function methodOptions(): array
+    {
+        return PaymentMethodType::where('is_active', true)->orderBy('sort_order')->pluck('name_ar', 'id')->all();
+    }
+
+    /**
+     * @return array{method_id: ?int, money_account_id: ?int, amount: ?int, receiver: ?string, reference: null}
+     */
+    private static function defaultLine(?int $amount): array
+    {
+        $method = PaymentMethodType::where('is_active', true)->orderBy('sort_order')->first();
+
+        return [
+            'method_id' => $method?->id,
+            'money_account_id' => $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash),
+            'amount' => $amount,
+            'receiver' => null,
+            'reference' => null,
+        ];
     }
 
     public static function transfer(): Action
@@ -464,10 +506,11 @@ class Operations
      */
     private static function receivingBoxes(?PaymentMethod $method = null): array
     {
+        // Non-cash methods (wallets, cards, bank transfers) land in electronic boxes.
         $kinds = match ($method) {
             PaymentMethod::Cash => [MoneyAccountKind::Cash],
-            PaymentMethod::Electronic => [MoneyAccountKind::Electronic],
             null => [MoneyAccountKind::Cash, MoneyAccountKind::Electronic],
+            default => [MoneyAccountKind::Electronic],
         };
 
         return MoneyAccount::where('is_active', true)->whereIn('kind', $kinds)->orderBy('name')->pluck('name', 'id')->all();
@@ -535,7 +578,7 @@ class Operations
     private static function paymentPreview(Get $get): ?HtmlString
     {
         $account = $get('account_id') ? Account::find($get('account_id')) : null;
-        $amount = (int) $get('amount');
+        $amount = (int) collect($get('lines') ?? [])->sum(fn ($l) => (int) ($l['amount'] ?? 0));
         if (! $account || $amount <= 0) {
             return null;
         }

@@ -27,7 +27,7 @@ class PanelTest extends TestCase
         return array_map(fn ($p) => [$p], [
             '/', '/subscribers', '/subscribers/create', '/accounts', '/activations', '/follow-ups', '/debts', '/payments',
             '/debt-transfers', '/money-accounts', '/company-settlements', '/expenses', '/service-plans', '/promotions',
-            '/users', '/audit-logs', '/daily-report', '/settings',
+            '/users', '/audit-logs', '/daily-report', '/settings', '/payment-methods', '/device-sales', '/import-subscribers', '/backups',
         ]);
     }
 
@@ -107,9 +107,7 @@ class PanelTest extends TestCase
             ->callAction('newPayment', data: [
                 'account_id' => $account->id,
                 'payment_type' => 'debt_payment',
-                'method' => 'cash',
-                'money_account_id' => $this->cash()->id,
-                'amount' => 20000,
+                'lines' => [['method_id' => \App\Models\PaymentMethodType::where('code', 'cash')->value('id'), 'money_account_id' => $this->cash()->id, 'amount' => 20000]],
                 'transfer_remainder' => true,
             ])
             ->assertHasNoActionErrors();

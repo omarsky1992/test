@@ -39,6 +39,11 @@ class Payment extends Model
         return $this->belongsTo(MoneyAccount::class);
     }
 
+    public function lines(): HasMany
+    {
+        return $this->hasMany(PaymentLine::class);
+    }
+
     public function allocations(): HasMany
     {
         return $this->hasMany(PaymentAllocation::class);

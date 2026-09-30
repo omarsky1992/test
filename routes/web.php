@@ -7,6 +7,13 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('auth')->group(function () {
     Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
+    Route::get('/import/subscribers/template', function (App\Imports\SubscriberImporter $importer) {
+        abort_unless(auth()->user()->can('subscribers.create'), 403);
+        $path = tempnam(sys_get_temp_dir(), 'tpl').'.xlsx';
+        $importer->writeTemplate($path);
+
+        return response()->download($path, 'قالب-استيراد-المشتركين.xlsx')->deleteFileAfterSend();
+    })->name('import.subscribers.template');
     Route::get('/backup/google/connect', [BackupController::class, 'connect'])->name('backup.google.connect');
     Route::get('/backup/google/callback', [BackupController::class, 'callback'])->name('backup.google.callback');
 });
