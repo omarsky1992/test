@@ -23,7 +23,7 @@
 ## الخطوة 1: قاعدة البيانات على Neon
 
 1. سجّل في **neon.com** (بحساب Google أو GitHub).
-2. **Create project**: الاسم `subs`، والمنطقة الأقرب لكم (مثلاً Frankfurt).
+2. **Create project**: الاسم `subs`، والمنطقة **AWS Europe Central 1 (Frankfurt)**. لازم تكون نفس منطقة Render (Frankfurt)، وإلا يصير كل استعلام يعبر المحيط والنظام يبطأ كثيراً.
 3. من **Connection details**: أطفئ خيار **Connection pooling**، وانسخ **Connection string**. شكله:
    `postgresql://USER:PASSWORD@ep-xxxx.eu-central-1.aws.neon.tech/neondb?sslmode=require`
 4. احفظ هذا النص. هو قيمة `DB_URL` في الخطوة 3.
@@ -85,6 +85,16 @@ Google لا يسمح لأي نظام بالكتابة في Drive بالإيمي�
 ## الخطوة 6: على الموبايل
 
 افتح الرابط في Chrome (أندرويد) أو Safari (آيفون) ← **إضافة إلى الشاشة الرئيسية**.
+
+## تسريع النظام
+
+1. **نفس المنطقة:** Render على Frankfurt، وقاعدة Neon لازم تكون `eu-central-1` (تظهر داخل `DB_URL`). إذا كانت `us-east` أو غيرها، أنشئ مشروع Neon جديد على Frankfurt، وانقل البيانات إليه بنسخة احتياطية، ثم غيّر `DB_URL`.
+2. **متغيرات Render** (Environment): `SESSION_DRIVER=cookie` و`CACHE_STORE=file`. هكذا لا يسأل النظام قاعدة البيانات عن الجلسة مع كل نقرة.
+3. **منع النوم:** السيرفر المجاني ينام بعد 15 دقيقة، وأول فتحة بعدها تنتظر حوالي دقيقة. الحل واحد من هذين:
+   - سجّل مجاناً في **uptimerobot.com** ← **New monitor** ← HTTP(s)، والرابط `https://اسم-موقعك.onrender.com/up`، وكل 5 دقائق.
+   - أو ملف `.github/workflows/keep-awake.yml` الموجود بالمشروع. يعمل وحده بعد دمج الكود في الفرع الرئيسي `main`، ويحتاج سر `APP_URL`.
+   الساعات المجانية في Render (750 ساعة بالشهر) تكفي خدمة واحدة تعمل طول الشهر.
+4. **الحد الأعلى:** السيرفر المجاني قوته 0.1 معالج فقط. إذا بقي بطيئاً بعد كل هذا، فالخطة **Starter** (7 دولار بالشهر) أسرع بحوالي 5 مرات ولا تنام أبداً. تغيّرها من Settings ← Instance Type، بدون أي تعديل بالكود.
 
 ---
 

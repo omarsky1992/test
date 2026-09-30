@@ -25,6 +25,9 @@ class ReceiptsLog extends TableWidget
 
     protected static ?int $sort = 5;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
     protected int|string|array $columnSpan = 'full';
 
     public function table(Table $table): Table

@@ -15,6 +15,9 @@ class BalanceOverview extends Widget
 
     protected static ?int $sort = 1;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
     protected int|string|array $columnSpan = 'full';
 
     public bool $hidden = false;

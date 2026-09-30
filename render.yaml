@@ -39,14 +39,16 @@ services:
         value: Asia/Baghdad
       - key: DB_CONNECTION
         value: pgsql
+      # Sessions in an encrypted cookie and cache in local files: no database round trip
+      # to Neon on every click, and logins survive restarts of the free instance.
       - key: SESSION_DRIVER
-        value: database
+        value: cookie
       - key: SESSION_LIFETIME
         value: "30"
       - key: SESSION_SECURE_COOKIE
         value: "true"
       - key: CACHE_STORE
-        value: database
+        value: file
       - key: QUEUE_CONNECTION
         value: sync
       - key: LOG_CHANNEL

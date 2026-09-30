@@ -15,7 +15,7 @@ RUN install-php-extensions intl \
     && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chmod=755 deploy/entrypoint.d/60-seed.sh /etc/entrypoint.d/60-seed.sh
+COPY --chmod=755 deploy/entrypoint.d/ /etc/entrypoint.d/
 
 USER www-data
 WORKDIR /var/www/html

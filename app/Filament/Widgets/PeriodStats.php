@@ -14,6 +14,12 @@ class PeriodStats extends StatsOverviewWidget
 
     protected static ?int $sort = 2;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
+    // No auto-refresh every 5 seconds; it loads the small free server and keeps the database awake.
+    protected ?string $pollingInterval = null;
+
     protected int|string|array $columnSpan = 'full';
 
     protected function getColumns(): int

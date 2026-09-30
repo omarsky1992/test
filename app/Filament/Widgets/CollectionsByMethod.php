@@ -14,6 +14,9 @@ class CollectionsByMethod extends Widget
 
     protected static ?int $sort = 4;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
     protected function getViewData(): array
     {
         [$from, $to, $label] = ReportService::periodRange($this->pageFilters);

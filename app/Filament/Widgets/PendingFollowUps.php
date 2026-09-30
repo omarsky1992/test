@@ -16,6 +16,9 @@ class PendingFollowUps extends TableWidget
 {
     protected static ?int $sort = 6;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
     protected int|string|array $columnSpan = 'full';
 
     protected static ?string $heading = 'متابعة الـ7 أيام: منتهية أو تنتهي اليوم وغداً';

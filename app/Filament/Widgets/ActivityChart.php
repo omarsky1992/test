@@ -16,6 +16,12 @@ class ActivityChart extends ChartWidget
 
     protected static ?int $sort = 3;
 
+    // Render with the page in one request instead of one request per widget.
+    protected static bool $isLazy = false;
+
+    // No auto-refresh every 5 seconds; it loads the small free server and keeps the database awake.
+    protected ?string $pollingInterval = null;
+
     protected ?string $heading = 'المقبوضات والمبيعات والمشتريات يومياً';
 
     protected ?string $maxHeight = '280px';
