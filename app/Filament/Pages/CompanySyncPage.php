@@ -49,9 +49,9 @@ class CompanySyncPage extends Page
     {
         return [
             Action::make('syncNow')
-                ->label('مزامنة الآن')
+                ->label('مزامنة مباشرة من السيرفر')
                 ->icon(Heroicon::OutlinedArrowPath)
-                ->color('success')
+                ->color('gray')
                 ->authorize('sync.run')
                 ->requiresConfirmation()
                 ->modalDescription('يجلب النظام صفحة المشتركين من موقع الشركة ويحدّث البيانات الحالية. لا يُحذف شيء ولا يُعدَّل السجل المالي. التجديد (0 يوم ← أكثر من 0) يُنشئ ديناً ثانوياً مرة واحدة.')
@@ -80,7 +80,7 @@ class CompanySyncPage extends Page
                     }
                 }),
             Action::make('settings')
-                ->label('إعدادات الاتصال')
+                ->label('إعدادات الاتصال المباشر')
                 ->icon(Heroicon::OutlinedCog6Tooth)
                 ->color('gray')
                 ->authorize('settings.manage')
@@ -162,6 +162,8 @@ class CompanySyncPage extends Page
             'interval' => (int) $s->get('sync.interval_minutes'),
             'configured' => filled($s->get('sync.client_id')) && (filled($s->get('sync.password')) || filled($s->get('sync.refresh_token'))),
             'hasRefreshToken' => filled($s->get('sync.refresh_token')),
+            'bookmarklet' => \App\Sync\Bookmarklet::href(request()->getSchemeAndHttpHost(), (string) $s->get('sync.client_app')),
+            'lastBrowser' => SyncRun::where('trigger', 'browser')->where('status', 'success')->latest('started_at')->first(),
             'refreshedAt' => filled($s->get('sync.refreshed_at')) ? \Carbon\CarbonImmutable::parse($s->get('sync.refreshed_at')) : null,
             'last' => SyncRun::where('status', 'success')->latest('started_at')->first(),
             'runs' => SyncRun::with('creator')->latest('started_at')->limit(20)->get(),

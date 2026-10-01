@@ -6,14 +6,29 @@
     $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top';
 @endphp
 <x-filament-panels::page>
-    @unless ($configured)
-        <x-filament::section icon="heroicon-o-exclamation-triangle" icon-color="warning" heading="لم تُضبط المزامنة بعد">
-            <p style="font-size:14px;line-height:1.8">
-                اضغط <b>إعدادات الاتصال</b> وأدخل يوزر وباسورد موقع الشركة ومعرّف العميل (client_id)، ثم جرّب <b>معاينة بدون حفظ</b>.
-                إذا ظهرت البيانات صحيحة، شغّل المزامنة التلقائية.
-            </p>
-        </x-filament::section>
-    @endunless
+    <x-filament::section icon="heroicon-o-bookmark" icon-color="primary" heading="المزامنة من المتصفح (الطريقة المعتمدة)">
+        <p style="font-size:14px;line-height:1.9;margin:0">
+            موقع الشركة لا يقبل الاتصال من سيرفرات خارج العراق، لذلك تتم المزامنة من متصفحك وأنت مسجّل الدخول في موقع الشركة.
+            لا يُحفظ أي باسورد، ولا تُرسَل إلى الموقع إلا طلبات قراءة.
+        </p>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:14px 0">
+            <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات المرجعية في كروم، ثم اضغطه وأنت في صفحة موقع الشركة.')"
+               style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">
+                ⟳ مزامنة المشتركين
+            </a>
+            <span style="font-size:13px;color:rgb(120 113 108)">← اسحب هذا الزر بالماوس إلى شريط الإشارات في كروم (مرة واحدة فقط)</span>
+        </div>
+        <ol style="font-size:14px;line-height:2;margin:0;padding-inline-start:20px">
+            <li>إذا لم يظهر شريط الإشارات: اضغط <b dir="ltr">Ctrl+Shift+B</b>.</li>
+            <li>افتح <b dir="ltr">admin.ftth.iq</b> وسجّل الدخول كالمعتاد.</li>
+            <li>اضغط زر <b>مزامنة المشتركين</b> من شريط الإشارات. تفتح نافذة صغيرة من النظام وتظهر خانة خضراء في صفحة الشركة تبيّن التقدم.</li>
+            <li>اترك الصفحتين حتى تظهر «تمت ✓» (دقيقة إلى دقيقتين). يُنصح بالمزامنة مرتين يومياً.</li>
+        </ol>
+        <p style="font-size:13px;color:rgb(120 113 108);margin:10px 0 0">
+            آخر مزامنة من المتصفح: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
+            · إذا تغيّر عنوان النظام (الدومين) اسحب الزر من جديد.
+        </p>
+    </x-filament::section>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
         <x-filament::section>

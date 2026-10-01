@@ -13,6 +13,7 @@ use App\Support\Arabic;
 use App\Support\CompanyData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -96,6 +97,41 @@ class CompanySync
         }
 
         return $rows;
+    }
+
+    /**
+     * The customers whose details (phone, GPS, ONT, FAT, port) should be fetched on this run:
+     * new accounts or accounts missing them. A customer checked in the last week is skipped,
+     * so ones the site has no GPS for are not asked for again and again.
+     *
+     * @return array<int, string>
+     */
+    public function customersNeedingDetails(CompanyClient $client, int $limit): array
+    {
+        $this->preload();
+        $ids = [];
+        foreach ($client->records() as $record) {
+            $id = $record['customer_id'];
+            if ($id === null || isset($ids[$id]) || Cache::has("sync.details_checked.{$id}") || ! $this->needsDetails($record)) {
+                continue;
+            }
+            $ids[$id] = true;
+            if (count($ids) >= $limit) {
+                break;
+            }
+        }
+
+        return array_map('strval', array_keys($ids));
+    }
+
+    /**
+     * @param  array<int, string>  $customerIds
+     */
+    public static function markDetailsChecked(array $customerIds): void
+    {
+        foreach ($customerIds as $id) {
+            Cache::put("sync.details_checked.{$id}", true, now()->addDays(7));
+        }
     }
 
     private function apply(array $record, SyncRun $run, CarbonImmutable $now): void
