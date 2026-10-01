@@ -19,6 +19,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/sync/extension.zip', [BrowserSyncController::class, 'extension'])->name('sync.extension');
     Route::post('/sync/browser/plan', [BrowserSyncController::class, 'plan'])->name('sync.browser.plan');
     Route::post('/sync/browser/run', [BrowserSyncController::class, 'run'])->name('sync.browser.run');
+    Route::get('/backup/download', function (App\Services\BackupService $backups) {
+        abort_unless(auth()->user()->can('settings.manage'), 403);
+        @set_time_limit(900);
+        $file = $backups->dumpForDownload();
+
+        return response()->download($file['path'], $file['name'])->deleteFileAfterSend();
+    })->name('backup.download');
+    Route::get('/backup/server/{kind}/{file}', function (App\Services\BackupService $backups, string $kind, string $file) {
+        abort_unless(auth()->user()->can('settings.manage'), 403);
+        $path = $backups->serverBackupPath("{$kind}/{$file}") ?? abort(404);
+        app(App\Services\Audit::class)->log('backup.downloaded', 'backup', null, ['file' => "{$kind}/{$file}", 'source' => 'server']);
+
+        return response()->download($path, $file);
+    })->where(['kind' => 'daily|weekly|monthly', 'file' => '[A-Za-z0-9._-]+'])->name('backup.server');
     Route::get('/backup/google/connect', [BackupController::class, 'connect'])->name('backup.google.connect');
     Route::get('/backup/google/callback', [BackupController::class, 'callback'])->name('backup.google.callback');
 });

@@ -146,4 +146,31 @@ class BackupTest extends TestCase
     {
         $this->get('/backups')->assertOk()->assertSee('النسخ الاحتياطي');
     }
+
+    public function test_a_backup_can_be_downloaded_now_without_google_drive(): void
+    {
+        $response = $this->get('/backup/download');
+
+        $response->assertOk();
+        $this->assertStringContainsString('subs-backup-', (string) $response->headers->get('content-disposition'));
+        $this->assertSame('PGDMP', substr(file_get_contents($response->baseResponse->getFile()->getPathname()), 0, 5));
+        $this->assertTrue(\App\Models\BackupRun::where('trigger', 'download')->where('status', 'success')->exists());
+    }
+
+    public function test_the_servers_daily_backups_are_listed_and_downloadable(): void
+    {
+        $dir = sys_get_temp_dir().'/server-backups-'.uniqid();
+        mkdir("{$dir}/daily", 0777, true);
+        file_put_contents("{$dir}/daily/subs-20261001.sql.gz", gzencode('-- dump'));
+        config(['backup.server_dir' => $dir]);
+
+        $this->get('/backups')->assertOk()->assertSee('subs-20261001.sql.gz');
+        $this->get('/backup/server/daily/subs-20261001.sql.gz')->assertOk()->assertDownload('subs-20261001.sql.gz');
+        $this->get('/backup/server/daily/..%2F..%2Fetc%2Fpasswd')->assertNotFound();
+        $this->get('/backup/server/daily/missing.sql.gz')->assertNotFound();
+
+        array_map('unlink', glob("{$dir}/daily/*"));
+        rmdir("{$dir}/daily");
+        rmdir($dir);
+    }
 }

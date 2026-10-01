@@ -63,6 +63,64 @@ class BackupService
         return $run->fresh();
     }
 
+    /**
+     * A full dump for the user to download right now, with no Google Drive needed.
+     * The caller sends the file and deletes it.
+     *
+     * @return array{path: string, name: string}
+     */
+    public function dumpForDownload(): array
+    {
+        $name = 'subs-backup-'.now()->format('Y-m-d_Hi').'.dump';
+        $path = $this->dump($name);
+        BackupRun::create([
+            'trigger' => 'download', 'status' => 'success', 'file_name' => $name, 'size_bytes' => filesize($path),
+            'triggered_by' => Auth::id(), 'started_at' => now(), 'finished_at' => now(),
+        ]);
+        $this->audit->log('backup.downloaded', 'backup', null, ['file' => $name, 'size' => filesize($path)]);
+
+        return ['path' => $path, 'name' => $name];
+    }
+
+    /**
+     * The server's automatic daily dumps (newest first), if their folder is mounted.
+     *
+     * @return array<int, array{id: string, name: string, kind: string, size: int, at: \Carbon\CarbonImmutable}>
+     */
+    public function serverBackups(): array
+    {
+        $dir = rtrim((string) config('backup.server_dir'), '/');
+        if ($dir === '' || ! is_dir($dir)) {
+            return [];
+        }
+        $files = [];
+        foreach (['daily' => 'يومية', 'weekly' => 'أسبوعية', 'monthly' => 'شهرية'] as $sub => $kind) {
+            foreach (glob("{$dir}/{$sub}/*.sql.gz") ?: [] as $file) {
+                if (is_file($file) && ! is_link($file)) {
+                    $files[] = ['id' => $sub.'/'.basename($file), 'name' => basename($file), 'kind' => $kind, 'size' => filesize($file),
+                        'at' => \Carbon\CarbonImmutable::createFromTimestamp(filemtime($file))->setTimezone(config('app.timezone'))];
+                }
+            }
+        }
+        usort($files, fn ($a, $b) => $b['at'] <=> $a['at']);
+
+        return $files;
+    }
+
+    /**
+     * Resolves a server backup by the id shown in the list, refusing anything outside its folder.
+     */
+    public function serverBackupPath(string $id): ?string
+    {
+        foreach ($this->serverBackups() as $file) {
+            if ($file['id'] === $id) {
+                return rtrim((string) config('backup.server_dir'), '/').'/'.$id;
+            }
+        }
+
+        return null;
+    }
+
     public function lastSuccess(): ?BackupRun
     {
         return BackupRun::where('status', 'success')->latest('started_at')->first();

@@ -40,6 +40,11 @@ class Backups extends Page
         $drive = app(GoogleDrive::class);
 
         return [
+            Action::make('download')
+                ->label('تنزيل نسخة الآن')
+                ->icon(Heroicon::OutlinedArrowDownTray)
+                ->color('primary')
+                ->url(route('backup.download')),
             Action::make('connect')
                 ->label(fn () => $drive->isConnected() ? 'تغيير حساب Google Drive' : 'ربط Google Drive')
                 ->icon(Heroicon::OutlinedLink)
@@ -102,6 +107,7 @@ class Backups extends Page
             'last' => app(BackupService::class)->lastSuccess(),
             'runs' => BackupRun::with('user')->latest('started_at')->limit(30)->get(),
             'keepDays' => config('backup.keep_days'),
+            'serverBackups' => array_slice(app(BackupService::class)->serverBackups(), 0, 40),
         ];
     }
 }
