@@ -20,7 +20,28 @@ class Account extends Model
             'service_ends_at' => 'immutable_datetime',
             'external_ends_at' => 'immutable_datetime',
             'external_synced_at' => 'immutable_datetime',
+            'company_synced_at' => 'immutable_datetime',
+            'company_days_left' => 'integer',
         ];
+    }
+
+    public function renewals(): HasMany
+    {
+        return $this->hasMany(AccountRenewal::class)->orderByDesc('detected_at');
+    }
+
+    /**
+     * Whole days left before a company end date, counting the last partial day as 0, so a
+     * subscription that ends today reads 0 and its renewal is caught.
+     */
+    public static function daysLeft(?\DateTimeInterface $endsAt, ?\DateTimeInterface $now = null): ?int
+    {
+        if ($endsAt === null) {
+            return null;
+        }
+        $seconds = $endsAt->getTimestamp() - ($now ?? now())->getTimestamp();
+
+        return $seconds <= 0 ? 0 : min(32767, intdiv($seconds, 86400));
     }
 
     public function subscriber(): BelongsTo

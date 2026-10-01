@@ -113,8 +113,8 @@ class SubscriberService
         return [
             'full_name' => trim($data['full_name']),
             'name_search' => Arabic::normalize($data['full_name']),
-            'phone' => trim($data['phone']),
-            'phone_normalized' => Arabic::phone($data['phone']),
+            'phone' => filled($data['phone'] ?? null) ? trim($data['phone']) : null,
+            'phone_normalized' => filled($data['phone'] ?? null) ? Arabic::phone($data['phone']) : null,
             'alt_phone' => $data['alt_phone'] ?? null,
             'address' => $data['address'] ?? null,
             'notes' => $data['notes'] ?? null,

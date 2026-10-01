@@ -6,8 +6,8 @@ use App\Services\ReportService;
 use Filament\Widgets\Widget;
 
 /**
- * The total balance (cash boxes, wallets and the company balance) with a hide/show toggle,
- * and the debts shown beside it for information only: they are money owed, not money held.
+ * The total balance (cash boxes, wallets, employees' custody and the company balance) with a
+ * hide/show toggle, and beside it, for information only, what is owed: debts and employee advances.
  */
 class BalanceOverview extends Widget
 {
@@ -38,7 +38,12 @@ class BalanceOverview extends Widget
         $b = app(ReportService::class)->balances();
 
         return [
-            'total' => $b['cash'] + $b['electronic'] + $b['company'],
+            'total' => $b['cash'] + $b['electronic'] + $b['company'] + $b['custody'],
+            'custody' => $b['custody'],
+            'custodyHolders' => $b['custody_holders'],
+            'advances' => $b['advances'],
+            'advancesCount' => $b['advances_count'],
+            'showEmployees' => auth()->user()->can('employees.view'),
             'cash' => $b['cash'],
             'electronic' => $b['electronic'],
             'company' => $b['company'],

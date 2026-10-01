@@ -8,12 +8,15 @@ use Filament\Panel;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Enums\MoneyAccountKind;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['branch_id', 'name', 'username', 'email', 'phone', 'password', 'is_active'])]
+#[Fillable(['branch_id', 'name', 'username', 'email', 'phone', 'password', 'is_active', 'collects_to_custody'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
@@ -28,12 +31,23 @@ class User extends Authenticatable implements FilamentUser
             'password_changed_at' => 'immutable_datetime',
             'password' => 'hashed',
             'is_active' => 'boolean',
+            'collects_to_custody' => 'boolean',
         ];
     }
 
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function custodyAccount(): HasOne
+    {
+        return $this->hasOne(MoneyAccount::class)->where('kind', MoneyAccountKind::Custody);
+    }
+
+    public function advances(): HasMany
+    {
+        return $this->hasMany(EmployeeAdvance::class);
     }
 
     public function canAccessPanel(Panel $panel): bool

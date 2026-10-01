@@ -9,6 +9,7 @@ use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -46,8 +47,19 @@ class AdminPanelProvider extends PanelProvider
             ->navigationGroups([
                 NavigationGroup::make('العمليات اليومية'),
                 NavigationGroup::make('المالية'),
+                NavigationGroup::make('الموظفون'),
                 NavigationGroup::make('التقارير'),
                 NavigationGroup::make('الإدارة')->collapsed(),
+            ])
+            ->navigationItems([
+                // A direct way to the secondary debts (renewals and 7-day activations), kept apart from the primary ones.
+                NavigationItem::make('الديون الثانوية')
+                    ->group('المالية')
+                    ->sort(2)
+                    ->icon('heroicon-o-clock')
+                    ->url(fn (): string => \App\Filament\Resources\Debts\DebtResource::getUrl('index', ['tab' => 'secondary']))
+                    ->isActiveWhen(fn (): bool => request()->routeIs('filament.admin.resources.debts.index') && request()->query('tab') === 'secondary')
+                    ->visible(fn (): bool => auth()->user()?->can('debts.view') ?? false),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')
             ->discoverPages(in: app_path('Filament/Pages'), for: 'App\Filament\Pages')

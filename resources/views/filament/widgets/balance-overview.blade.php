@@ -19,8 +19,29 @@
                 <span>القاصة: <b>{{ $mask($cash) }}</b></span>
                 <span>المحافظ: <b>{{ $mask($electronic) }}</b></span>
                 <span>رصيد الشركة: <b>{{ $mask($company) }}</b></span>
+                <span>عهد الموظفين: <b>{{ $mask($custody) }}</b></span>
             </div>
         </x-filament::section>
+
+        @if ($showEmployees)
+            <x-filament::section>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:600;color:rgb(180 83 9)">العهد مع الموظفين</span>
+                    <x-filament::badge color="gray" size="sm" style="margin-inline-start:auto">ضمن الرصيد الكلي</x-filament::badge>
+                </div>
+                <div style="font-size:26px;font-weight:700;margin-top:6px">{{ $mask($custody) }}</div>
+                <div style="font-size:12.5px;color:rgb(120 113 108);margin-top:6px">مع {{ $custodyHolders }} موظف · لم تُسلَّم للصندوق بعد</div>
+            </x-filament::section>
+
+            <x-filament::section>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <span style="font-size:13px;font-weight:600;color:rgb(185 28 28)">السلف المستحقة على الموظفين</span>
+                    <x-filament::badge color="gray" size="sm" style="margin-inline-start:auto">للعرض فقط</x-filament::badge>
+                </div>
+                <div style="font-size:26px;font-weight:700;margin-top:6px">{{ $mask($advances) }}</div>
+                <div style="font-size:12.5px;color:rgb(120 113 108);margin-top:6px">{{ $advancesCount }} سلفة · غير داخلة في الرصيد الكلي</div>
+            </x-filament::section>
+        @endif
 
         <x-filament::section>
             <div style="display:flex;align-items:center;gap:8px">

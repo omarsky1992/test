@@ -27,6 +27,8 @@ class Ledger
     public const EXP_PROMO_DISCOUNT = 'EXP_PROMO_DISCOUNT';
     public const DISTRIBUTIONS = 'DISTRIBUTIONS';
     public const OPENING_EQUITY = 'OPENING_EQUITY';
+    public const RENEWALS_CLEARING = 'RENEWALS_CLEARING';
+    public const EMPLOYEE_ADVANCES = 'EMPLOYEE_ADVANCES';
 
     /** @var array<string, int> */
     private array $idsByCode = [];

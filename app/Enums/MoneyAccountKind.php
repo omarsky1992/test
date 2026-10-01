@@ -10,6 +10,7 @@ enum MoneyAccountKind: string implements HasColor, HasLabel
     case Cash = 'cash';
     case Electronic = 'electronic';
     case Company = 'company';
+    case Custody = 'custody';
 
     public function getLabel(): string
     {
@@ -17,6 +18,7 @@ enum MoneyAccountKind: string implements HasColor, HasLabel
             self::Cash => 'قاصة نقدية',
             self::Electronic => 'محفظة إلكترونية',
             self::Company => 'رصيد الشركة',
+            self::Custody => 'عهدة موظف',
         };
     }
 
@@ -26,6 +28,7 @@ enum MoneyAccountKind: string implements HasColor, HasLabel
             self::Cash => 'success',
             self::Electronic => 'info',
             self::Company => 'warning',
+            self::Custody => 'primary',
         };
     }
 }

@@ -60,6 +60,8 @@ class UserResource extends Resource
                     ->dehydrated(fn (?string $state) => filled($state))
                     ->helperText(fn (string $operation) => $operation === 'edit' ? 'اتركها فارغة للإبقاء على الحالية.' : null),
                 Toggle::make('is_active')->label('فعّال')->default(true),
+                Toggle::make('collects_to_custody')->label('النقد الذي يستلمه يدخل في عهدته')->default(true)
+                    ->helperText('يبقى المبلغ على الموظف حتى يسلّمه للصندوق. أطفئه للمدير الذي يستلم في القاصة مباشرة.'),
                 Select::make('roles')->label('الدور')->relationship('roles', 'name')->multiple()->preload()
                     ->getOptionLabelFromRecordUsing(fn ($record) => ['admin' => 'مدير', 'employee' => 'موظف'][$record->name] ?? $record->name),
             ]),

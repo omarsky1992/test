@@ -43,6 +43,8 @@ class DatabaseSeeder extends Seeder
             [Ledger::EXP_PROMO_DISCOUNT, 'خصومات عروض على الوكيل', 'expense'],
             [Ledger::DISTRIBUTIONS, 'توزيعات الراجع', 'equity'],
             [Ledger::OPENING_EQUITY, 'الرصيد الابتدائي', 'equity'],
+            [Ledger::RENEWALS_CLEARING, 'تجديدات مكتشفة من موقع الشركة', 'liability'],
+            [Ledger::EMPLOYEE_ADVANCES, 'سلف الموظفين', 'asset'],
         ] as [$code, $name, $type]) {
             LedgerAccount::firstOrCreate(['code' => $code], ['name_ar' => $name, 'type' => $type, 'is_system' => true]);
         }
@@ -62,6 +64,7 @@ class DatabaseSeeder extends Seeder
             ['asia_hawala', 'آسيا حوالة', 'electronic', true, false, null, 3],
             ['qi_card', 'كي كارد / ماستر', 'card', false, true, null, 4],
             ['bank_transfer', 'تحويل مصرفي', 'bank', false, true, null, 5],
+            ['super_key', 'سوبر كي', 'electronic', false, true, null, 6],
         ] as [$code, $name, $category, $receiver, $reference, $box, $order]) {
             PaymentMethodType::firstOrCreate(['code' => $code], [
                 'name_ar' => $name, 'category' => $category, 'requires_receiver' => $receiver,
@@ -99,6 +102,7 @@ class DatabaseSeeder extends Seeder
                 'username' => config('app.admin_username'),
                 'password' => $password,
                 'is_active' => true,
+                'collects_to_custody' => false,
             ]);
             $admin->assignRole('admin');
             if (! config('app.admin_password')) {

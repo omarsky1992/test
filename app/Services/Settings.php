@@ -14,6 +14,14 @@ class Settings
         'company.name' => '[اسم الوكيل]',
         'company.address' => '',
         'company.phone' => '',
+        'sync.enabled' => false,
+        'sync.interval_minutes' => 60,
+        'sync.base_url' => 'https://admin.ftth.iq',
+        'sync.token_url' => 'https://sso.earthlink.iq/auth/realms/el_int/protocol/openid-connect/token',
+        'sync.client_id' => '',
+        'sync.client_app' => '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f',
+        'sync.hierarchy_level' => '',
+        'sync.detail_limit' => 200,
     ];
 
     /** @var array<string, mixed>|null */

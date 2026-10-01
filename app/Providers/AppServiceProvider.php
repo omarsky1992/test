@@ -19,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(Ledger::class);
         $this->app->scoped(Audit::class);
         $this->app->scoped(Settings::class);
+        $this->app->bind(\App\Sync\CompanyClient::class, \App\Sync\FtthApiClient::class);
     }
 
     public function boot(): void

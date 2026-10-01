@@ -11,6 +11,7 @@ enum DebtSource: string implements HasColor, HasLabel
     case Manual = 'manual';
     case Opening = 'opening';
     case DeviceSale = 'device_sale';
+    case Renewal = 'renewal';
 
     public function getLabel(): string
     {
@@ -19,6 +20,7 @@ enum DebtSource: string implements HasColor, HasLabel
             self::Manual => 'يدوي',
             self::Opening => 'افتتاحي',
             self::DeviceSale => 'بيع جهاز',
+            self::Renewal => 'تجديد تلقائي',
         };
     }
 
@@ -29,6 +31,7 @@ enum DebtSource: string implements HasColor, HasLabel
             self::Manual => 'gray',
             self::Opening => 'gray',
             self::DeviceSale => 'info',
+            self::Renewal => 'warning',
         };
     }
 }

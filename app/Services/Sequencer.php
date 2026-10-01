@@ -20,6 +20,8 @@ class Sequencer
         'sale' => 'S',
         'fund_transfer' => 'F',
         'settlement' => 'K',
+        'advance' => 'L',
+        'advance_repayment' => 'LR',
     ];
 
     public function next(string $docType, DateTimeInterface $at): string

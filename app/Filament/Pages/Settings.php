@@ -6,6 +6,7 @@ use App\Services\Audit;
 use App\Services\Settings as SettingsService;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
@@ -43,6 +44,40 @@ class Settings extends Page
     public static function canAccess(): bool
     {
         return auth()->user()->can('settings.manage');
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('resetSystem')
+                ->label('تصفير النظام')
+                ->icon(Heroicon::OutlinedExclamationTriangle)
+                ->color('danger')
+                ->visible(fn () => auth()->user()->isAdmin())
+                ->modalIcon(Heroicon::OutlinedExclamationTriangle)
+                ->modalIconColor('danger')
+                ->modalHeading('تصفير النظام')
+                ->modalDescription('تحذير: تُحذف نهائياً كل الحركات المالية والتجريبية: السندات، الديون، التفعيلات، المناقلات، المصروفات، مبيعات الأجهزة، الراجع، عهد الموظفين، السلف وتسديداتها، والتجديدات. تبقى: حسابات المستخدمين والمدير، الإعدادات، الفئات، العروض، طرق الدفع، الصناديق (بأرصدة صفر) وسجل العمليات. لا يمكن التراجع، فخذ نسخة احتياطية أولاً.')
+                ->modalSubmitActionLabel('تصفير نهائي')
+                ->schema([
+                    Checkbox::make('with_subscribers')->label('حذف المشتركين واليوزرات أيضاً (لإعادة استيرادهم من Excel)')->default(true),
+                    TextInput::make('password')->label('كلمة مرور المدير')->password()->required()->autocomplete('current-password'),
+                    TextInput::make('confirm')->label('للتأكيد النهائي اكتب: تصفير')->required()
+                        ->rules([fn () => fn (string $attribute, $value, \Closure $fail) => trim((string) $value) === 'تصفير' ? null : $fail('اكتب كلمة «تصفير» كما هي.')]),
+                ])
+                ->action(function (array $data, Action $action) {
+                    try {
+                        $counts = app(\App\Services\SystemReset::class)->run(auth()->user(), $data['password'], (bool) ($data['with_subscribers'] ?? false));
+                    } catch (\App\Exceptions\BusinessRuleException $e) {
+                        Notification::make()->danger()->title($e->getMessage())->send();
+                        $action->halt();
+
+                        return;
+                    }
+                    Notification::make()->success()->title('تم تصفير النظام')
+                        ->body('حُذف '.number_format(array_sum($counts)).' سجل. يمكنك الآن استيراد المشتركين من Excel.')->persistent()->send();
+                }),
+        ];
     }
 
     public function mount(): void

@@ -36,13 +36,14 @@ class TreasuryService
     {
     }
 
-    public function createMoneyAccount(int $branchId, MoneyAccountKind $kind, string $name, ?string $holderName = null): MoneyAccount
+    public function createMoneyAccount(int $branchId, MoneyAccountKind $kind, string $name, ?string $holderName = null, ?int $userId = null): MoneyAccount
     {
-        return DB::transaction(function () use ($branchId, $kind, $name, $holderName) {
+        return DB::transaction(function () use ($branchId, $kind, $name, $holderName, $userId) {
             $prefix = match ($kind) {
                 MoneyAccountKind::Cash => 'CASH',
                 MoneyAccountKind::Electronic => 'WALLET',
                 MoneyAccountKind::Company => 'COMPANY',
+                MoneyAccountKind::Custody => 'CUSTODY',
             };
             $ledgerAccount = LedgerAccount::create([
                 'code' => $prefix.':'.uniqid(),
@@ -58,6 +59,7 @@ class TreasuryService
                 'kind' => $kind,
                 'name' => $name,
                 'holder_name' => $holderName,
+                'user_id' => $userId,
                 'ledger_account_id' => $ledgerAccount->id,
             ]);
             $this->audit->log('money_account.created', $moneyAccount, null, ['name' => $name, 'kind' => $kind->value]);
@@ -357,7 +359,7 @@ class TreasuryService
         });
     }
 
-    private function ensureCovers(MoneyAccount $from, int $amount): void
+    public function ensureCovers(MoneyAccount $from, int $amount): void
     {
         if ($from->kind !== MoneyAccountKind::Company && $this->balance($from) < $amount) {
             throw new BusinessRuleException("رصيد «{$from->name}» غير كافٍ.");

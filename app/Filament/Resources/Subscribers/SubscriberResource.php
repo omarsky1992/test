@@ -79,7 +79,6 @@ class SubscriberResource extends Resource
                 TextInput::make('phone')
                     ->label('رقم الهاتف المسجل في الشركة')
                     ->tel()
-                    ->required()
                     ->maxLength(20)
                     ->live(onBlur: true)
                     ->hint(fn (?string $state, ?Subscriber $record) => self::duplicatePhoneHint($state, $record))

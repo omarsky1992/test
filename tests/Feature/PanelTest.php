@@ -28,6 +28,7 @@ class PanelTest extends TestCase
             '/', '/subscribers', '/subscribers/create', '/accounts', '/activations', '/follow-ups', '/debts', '/payments',
             '/debt-transfers', '/money-accounts', '/company-settlements', '/expenses', '/service-plans', '/promotions',
             '/users', '/audit-logs', '/daily-report', '/settings', '/payment-methods', '/device-sales', '/import-subscribers', '/backups',
+            '/company-sync', '/employees', '/advances', '/employee-statement', '/employee-reports', '/debts?tab=secondary',
         ]);
     }
 

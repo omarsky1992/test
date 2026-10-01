@@ -47,6 +47,10 @@ class Permissions
         'users.manage' => ['المستخدمون والصلاحيات', false],
         'audit.view' => ['سجل العمليات', false],
         'settings.manage' => ['الإعدادات', false],
+        'sync.run' => ['مزامنة المشتركين من موقع الشركة', false],
+        'employees.view' => ['عرض الموظفين وكشوف حساباتهم', false],
+        'custody.settle' => ['تسديد عهدة موظف للصندوق', false],
+        'advances.manage' => ['تسجيل السلف وتسديدها', false],
     ];
 
     public static function employeeDefaults(): array

@@ -42,6 +42,12 @@ class ReportService
             'cash' => MoneyAccount::where('kind', MoneyAccountKind::Cash)->get()->sum(fn ($m) => $this->treasury->balance($m)),
             'electronic' => MoneyAccount::where('kind', MoneyAccountKind::Electronic)->get()->sum(fn ($m) => $this->treasury->balance($m)),
             'company' => MoneyAccount::where('kind', MoneyAccountKind::Company)->get()->sum(fn ($m) => $this->treasury->balance($m)),
+            // Cash collected by employees and not yet handed over: still the company's money.
+            'custody' => MoneyAccount::where('kind', MoneyAccountKind::Custody)->get()->sum(fn ($m) => $this->treasury->balance($m)),
+            'custody_holders' => MoneyAccount::where('kind', MoneyAccountKind::Custody)->get()->filter(fn ($m) => $this->treasury->balance($m) !== 0)->count(),
+            // Owed by employees: shown beside the balance, like the debts, not inside it.
+            'advances' => $this->ledger->balance(Ledger::EMPLOYEE_ADVANCES),
+            'advances_count' => \App\Models\EmployeeAdvance::where('balance', '>', 0)->count(),
         ];
     }
 

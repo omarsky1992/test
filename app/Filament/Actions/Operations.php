@@ -197,8 +197,7 @@ class Operations
                             ->required()
                             ->live()
                             ->afterStateUpdated(function (Set $set, $state) {
-                                $method = PaymentMethodType::find($state);
-                                $set('money_account_id', $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash));
+                                $set('money_account_id', self::boxFor(PaymentMethodType::find($state)));
                             }),
                         Select::make('money_account_id')
                             ->label('استُلم في')
@@ -275,7 +274,7 @@ class Operations
 
         return [
             'method_id' => $method?->id,
-            'money_account_id' => $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash),
+            'money_account_id' => self::boxFor($method),
             'amount' => $amount,
             'receiver' => null,
             'reference' => null,
@@ -513,7 +512,30 @@ class Operations
             default => [MoneyAccountKind::Electronic],
         };
 
-        return MoneyAccount::where('is_active', true)->whereIn('kind', $kinds)->orderBy('name')->pluck('name', 'id')->all();
+        $boxes = MoneyAccount::where('is_active', true)->whereIn('kind', $kinds)->orderBy('name')->pluck('name', 'id')->all();
+        if (in_array(MoneyAccountKind::Cash, $kinds, true)) {
+            // Cash can also go into an employee's custody: one's own, or anyone's for those who manage employees.
+            $custody = MoneyAccount::where('is_active', true)->where('kind', MoneyAccountKind::Custody)
+                ->when(! auth()->user()->can('employees.view'), fn ($query) => $query->where('user_id', auth()->id()))
+                ->orderBy('name')->pluck('name', 'id')->all();
+            $boxes += $custody;
+        }
+
+        return $boxes;
+    }
+
+    /**
+     * The box a payment line lands in by default. An employee who collects to custody gets their
+     * own custody box for cash; everyone else gets the method's box.
+     */
+    private static function boxFor(?PaymentMethodType $method): ?int
+    {
+        $user = auth()->user();
+        if (($method?->category ?? PaymentMethod::Cash) === PaymentMethod::Cash && $user?->collects_to_custody) {
+            return app(\App\Services\EmployeeFinance::class)->custodyAccount($user)->id;
+        }
+
+        return $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash);
     }
 
     private static function defaultBox(PaymentMethod $method): ?int

@@ -11,6 +11,7 @@ use App\Services\ActivationService;
 use App\Services\Audit;
 use App\Services\SubscriberService;
 use App\Support\Arabic;
+use App\Support\CompanyData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
@@ -40,19 +41,21 @@ class SubscriberImporter
         'serial_number' => ['السيريال (ONT)', ['تسلسل ont', 'السيريال', 'سيريال', 'serial', 'ont serial', 'ont', 'serial number']],
         'fat_code' => ['الفات', ['الفات', 'fat']],
         'pole_number' => ['رقم العامود', ['رقم العامود', 'العامود', 'pole', 'pole number']],
+        'port_number' => ['رقم المنفذ', ['رقم المنفذ', 'المنفذ', 'port', 'port number', 'fat port']],
         'zone_code' => ['المنطقة / FDT', ['المنطقة', 'fdt', 'zone']],
         'gps' => ['الموقع GPS', ['gps', 'الموقع', 'location', 'الاحداثيات']],
         'location_label' => ['البيت', ['البيت', 'وصف الموقع', 'house']],
         'plan' => ['الفئة / الاشتراك', ['اسم الاشتراك', 'الفئة', 'الاشتراك', 'الباقة', 'plan', 'package', 'subscription']],
         'external_status' => ['حالة الاشتراك', ['الحالة', 'حالة الاشتراك', 'status']],
+        'days_left' => ['الأيام المتبقية', ['الأيام المتبقية', 'الايام المتبقية', 'المتبقي', 'days left', 'remaining days']],
         'external_ends_at' => ['تاريخ الانتهاء', ['تاريخ الانتهاء', 'تاريخ انتهاء الصلاحية', 'الانتهاء', 'expiry', 'expiry date', 'expires', 'end date']],
         'external_subscription_id' => ['معرف الاشتراك', ['معرف الاشتراك', 'رقم الاشتراك', 'subscription id']],
         'notes' => ['ملاحظات', ['ملاحظات', 'notes']],
     ];
 
     private const SUBSCRIBER_FIELDS = ['full_name', 'phone', 'alt_phone', 'address', 'external_id'];
-    private const ACCOUNT_FIELDS = ['secret', 'serial_number', 'fat_code', 'pole_number', 'zone_code', 'gps', 'location_label'];
-    private const COMPANY_FIELDS = ['external_plan', 'external_status', 'external_ends_at', 'external_subscription_id', 'current_plan_id'];
+    private const ACCOUNT_FIELDS = ['secret', 'serial_number', 'fat_code', 'pole_number', 'port_number', 'zone_code', 'gps', 'location_label'];
+    private const COMPANY_FIELDS = ['external_plan', 'external_status', 'external_ends_at', 'external_subscription_id', 'current_plan_id', 'company_days_left'];
 
     /** @var array<int, array<string, mixed>> */
     private array $auditBuffer = [];
@@ -228,13 +231,21 @@ class SubscriberImporter
             }
         }
 
-        $status = strtolower($values['external_status']);
-        $status = match (true) {
-            $status === '' => null,
-            in_array($status, ['active', 'فعال', 'فعّال', 'نشط'], true) => 'active',
-            in_array($status, ['expired', 'منتهي', 'منتهية', 'منتهية الصلاحية'], true) => 'expired',
-            default => mb_substr($status, 0, 30),
-        };
+        $status = CompanyData::status($values['external_status']);
+
+        // The days left when the file was exported. With no such column they come from the end date.
+        $daysLeft = null;
+        if ($values['days_left'] !== '') {
+            $digits = strtr($values['days_left'], ['٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4', '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9']);
+            $daysLeft = is_numeric($digits) ? max(0, (int) $digits) : null;
+            if ($daysLeft === null) {
+                $warnings[] = "الأيام المتبقية «{$values['days_left']}» ليست رقماً (تُحسب من تاريخ الانتهاء)";
+            }
+        }
+        $daysLeft ??= Account::daysLeft($endsAt);
+        if ($daysLeft !== null && CompanyData::isExpiredStatus($status)) {
+            $daysLeft = 0;
+        }
 
         $error = match (true) {
             $values['external_id'] === '' && $phoneNormalized === '' => 'لا يوجد رقم مشترك ولا رقم هاتف للتعرّف على المشترك',
@@ -252,6 +263,7 @@ class SubscriberImporter
             'phone_normalized' => $phoneNormalized,
             'plan_id' => $planId,
             'ends_at' => $endsAt,
+            'days_left' => $daysLeft,
             'status' => $status,
             'warnings' => $warnings,
             'error' => $error,
@@ -391,11 +403,13 @@ class SubscriberImporter
                 'external_ends_at' => $row['ends_at'],
                 'external_subscription_id' => $row['values']['external_subscription_id'] ?: null,
                 'current_plan_id' => $row['plan_id'],
+                'company_days_left' => $row['days_left'],
             ], fn ($v) => $v !== null);
 
             if ($entry['error'] === null && $account !== null) {
                 $entry['changes'] = $this->changes($account, array_intersect_key($row['values'], array_flip(self::ACCOUNT_FIELDS)), $plan->mode);
-                $entry['company'] = $plan->updateCompanyData ? $this->companyChanges($account, $company) : [];
+                // Once the live sync has updated an account, the site is newer than any file.
+                $entry['company'] = $plan->updateCompanyData && $account->company_synced_at === null ? $this->companyChanges($account, $company) : [];
                 $entry['action'] = ($entry['changes'] || $entry['company']) ? 'update' : 'same';
             } elseif ($entry['error'] === null) {
                 $entry['company'] = $company;
@@ -515,6 +529,7 @@ class SubscriberImporter
                     'serial_number' => $values['serial_number'] ?: null,
                     'fat_code' => $values['fat_code'] ?: null,
                     'pole_number' => $values['pole_number'] ?: null,
+                    'port_number' => $values['port_number'] ?: null,
                     'location_label' => $values['location_label'] ?: null,
                     'zone_code' => $values['zone_code'] ?: null,
                     'gps' => $values['gps'] ?: null,
@@ -523,6 +538,7 @@ class SubscriberImporter
                     'external_status' => $company['external_status'] ?? null,
                     'external_subscription_id' => $company['external_subscription_id'] ?? null,
                     'external_ends_at' => $company['external_ends_at'] ?? null,
+                    'company_days_left' => $company['company_days_left'] ?? null,
                     // A new account has no periods yet, so its service end is the company's date.
                     'service_ends_at' => $company['external_ends_at'] ?? null,
                     'external_synced_at' => now(),
@@ -610,24 +626,14 @@ class SubscriberImporter
         }, ARRAY_FILTER_USE_BOTH);
     }
 
-    /**
-     * @return array<string, int> normalized plan name => plan id
-     */
     private function planIndex(): array
     {
-        $index = [];
-        foreach (ServicePlan::all() as $plan) {
-            $index[$this->planKey($plan->code)] = $plan->id;
-            $index[$this->planKey($plan->name_ar)] = $plan->id;
-            $index[$this->planKey('ftth_'.$plan->code)] = $plan->id;
-        }
-
-        return $index;
+        return CompanyData::planIndex();
     }
 
     private function planKey(string $name): string
     {
-        return preg_replace('/[^\p{L}\p{N}]/u', '', mb_strtolower(Arabic::normalize($name)));
+        return CompanyData::planKey($name);
     }
 
     private function key(string $header): string
@@ -686,11 +692,11 @@ class SubscriberImporter
      */
     public function writeTemplate(string $path): void
     {
-        $fields = ['external_id', 'full_name', 'phone', 'username', 'secret', 'serial_number', 'fat_code', 'pole_number', 'zone_code', 'location_label', 'address', 'plan', 'external_status', 'external_ends_at', 'notes'];
+        $fields = ['external_id', 'full_name', 'phone', 'username', 'secret', 'serial_number', 'fat_code', 'pole_number', 'port_number', 'zone_code', 'location_label', 'address', 'plan', 'external_status', 'external_ends_at', 'notes'];
         $headers = array_map(fn ($f) => self::FIELDS[$f][1][0], $fields);
         $examples = [
-            ['2825350', 'أحمد كريم حسن', '07701234567', 'FBG876F33P08', 'pass123', 'TDTC35980DF8', 'FAT33', '45', 'FBG0876-2', 'البيت الأول', 'حي الجامعة', 'BASIC', 'Active', '2026-10-21', ''],
-            ['2825350', 'أحمد كريم حسن', '07701234567', 'FBG876F33P09', '', 'HWTC7B02D4E8', 'FAT07', '118', 'FBG0876-2', 'البيت الثاني', '', 'PLUS', 'Active', '2026-10-04', 'نفس المشترك، بيت ثانٍ'],
+            ['2825350', 'أحمد كريم حسن', '07701234567', 'FBG876F33P08', 'pass123', 'TDTC35980DF8', 'FAT33', '45', '3', 'FBG0876-2', 'البيت الأول', 'حي الجامعة', 'BASIC', 'Active', '2026-10-21', ''],
+            ['2825350', 'أحمد كريم حسن', '07701234567', 'FBG876F33P09', '', 'HWTC7B02D4E8', 'FAT07', '118', '5', 'FBG0876-2', 'البيت الثاني', '', 'PLUS', 'Active', '2026-10-04', 'نفس المشترك، بيت ثانٍ'],
         ];
         $instructions = [
             'تعليمات ملف استيراد المشتركين',
