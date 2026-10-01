@@ -22,6 +22,9 @@ services:
     restart: unless-stopped
     env_file: .env
     command: ["php", "/var/www/html/artisan", "schedule:work"]
+    # The image's health check probes PHP-FPM, which this container doesn't run.
+    healthcheck:
+      disable: true
     environment:
       DB_CONNECTION: pgsql
       DB_HOST: db
