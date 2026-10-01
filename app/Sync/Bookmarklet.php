@@ -70,8 +70,17 @@ class Bookmarklet
 
   try {
     const customers = (await all('/api/customers', 'جلب المشتركين')).map((c) => pick(c, ['id', 'self', 'displayValue', 'name', 'primaryPhone']));
+    // Reuse the exact query the subscriptions page (admin.ftth.iq/subscriptions) sent for its own list.
+    const queries = [];
+    const seen = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => /\/api\/subscriptions\?/.test(n)).pop();
+    if (seen) {
+      const params = new URL(seen).searchParams;
+      params.delete('pageSize'); params.delete('pageNumber');
+      queries.push('?' + params.toString());
+    }
+    queries.push('', '?hierarchyLevel=0', '?hierarchyLevel=1', '?hierarchyLevel=2');
     let subscriptions = null, lastError = null;
-    for (const q of ['', '?hierarchyLevel=0', '?hierarchyLevel=1', '?hierarchyLevel=2']) {
+    for (const q of queries) {
       try { subscriptions = await all('/api/subscriptions' + q, 'جلب الاشتراكات'); break; } catch (e) { lastError = e; }
     }
     if (!subscriptions) throw lastError;
