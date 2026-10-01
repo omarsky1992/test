@@ -261,14 +261,14 @@ class CompanySyncTest extends TestCase
         $this->site->set();
         $this->sync();
 
-        // Renewed: back in the list with 30 days. Its saved end date has passed, so it was at 0.
-        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        // Renewed: back in the list with 7 days. Its saved end date has passed, so it was at 0.
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
         $this->sync();
         $this->sync();
 
         $renewal = AccountRenewal::sole();
         $this->assertSame(0, $renewal->previous_days);
-        $this->assertSame(30, $renewal->new_days);
+        $this->assertSame(7, $renewal->new_days);
         $this->assertSame(1, Debt::count());
     }
 
@@ -289,7 +289,7 @@ class CompanySyncTest extends TestCase
         $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
         $this->sync();
         Account::query()->update(['company_days_left' => null]);
-        $renewed = $this->siteRecord(['ends_at' => $this->endsIn(30)]);
+        $renewed = $this->siteRecord(['ends_at' => $this->endsIn(7)]);
         // Simulate the old behaviour: dates updated, nothing recorded.
         $account = Account::sole();
         $this->site->set($renewed);
@@ -313,7 +313,7 @@ class CompanySyncTest extends TestCase
     {
         $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z']));
         $this->sync();
-        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(6)]));
         $this->sync();
         AccountRenewal::query()->delete();
 
@@ -321,5 +321,41 @@ class CompanySyncTest extends TestCase
             ->callAction('missedRenewals')
             ->assertNotified('سُجّل 1 تجديد و1 دين ثانوي');
         $this->assertSame(1, AccountRenewal::count());
+    }
+
+    public function test_more_than_seven_days_is_a_full_activation_with_no_debt(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $run = $this->sync();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame('activated', $renewal->status);
+        $this->assertSame(30, $renewal->new_days);
+        $this->assertNull($renewal->debt_id);
+        $this->assertSame(0, Debt::count());
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+        $this->assertSame(1, $run->stats['activations']);
+        $this->assertSame(0, $run->stats['debts_created']);
+    }
+
+    public function test_a_debt_recorded_earlier_for_a_full_activation_is_voided(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z']));
+        $this->sync();
+        // As before the rule: a 30-day renewal recorded with a debt.
+        $this->app->make(\App\Services\Settings::class)->set('activation.partial_days', 40);
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $this->assertSame(1, Debt::where('status', 'open')->count());
+        $this->app->make(\App\Services\Settings::class)->set('activation.partial_days', 7);
+
+        $result = app(\App\Services\RenewalService::class)->reclassifyFullActivations();
+
+        $this->assertSame(['fixed' => 1, 'kept_paid' => 0], $result);
+        $this->assertSame('activated', AccountRenewal::sole()->status);
+        $this->assertSame('voided', Debt::sole()->status->value);
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
     }
 }

@@ -95,7 +95,7 @@
         </x-filament::section>
         <x-filament::section>
             <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">قاعدة التجديد</div>
-            <div style="font-size:13.5px;margin-top:4px;line-height:1.7">آخر أيام محفوظة = 0 والموقع الآن أكثر من 0 ← تجديد + دين ثانوي بسعر الفئة، مرة واحدة لكل تجديد.</div>
+            <div style="font-size:13.5px;margin-top:4px;line-height:1.7">آخر أيام = 0 ثم: 7 أيام أو أقل ← دين ثانوي بسعر الفئة · أكثر من 7 أيام ← تفعيل بدون دين. مرة واحدة لكل تجديد.</div>
         </x-filament::section>
     </div>
 
@@ -143,7 +143,9 @@
                                 <td style="{{ $td }}">{{ $r->previous_days }} ← {{ $r->new_days }}</td>
                                 <td style="{{ $td }}">{{ $r->plan_name ?? '—' }}</td>
                                 <td style="{{ $td }}">
-                                    @if ($r->debt)
+                                    @if ($r->status === 'activated')
+                                        <x-filament::badge color="success">تفعيل كامل – بدون دين</x-filament::badge>
+                                    @elseif ($r->debt)
                                         {{ $r->debt->number }} · {{ Money::format($r->amount) }}
                                     @else
                                         <x-filament::badge color="warning">بدون دين: الفئة غير معروفة</x-filament::badge>

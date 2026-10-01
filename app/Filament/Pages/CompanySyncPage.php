@@ -77,14 +77,17 @@ class CompanySyncPage extends Page
                     if ($found === []) {
                         return 'لا توجد تجديدات فائتة. كل التجديدات مسجّلة.';
                     }
-                    $amount = array_sum(array_map(fn ($f) => (int) $f['amount'], $found));
-                    $noPrice = count(array_filter($found, fn ($f) => $f['amount'] === null));
-                    $names = implode('، ', array_map(fn ($f) => $f['account']->username, array_slice($found, 0, 8)));
+                    $short = array_filter($found, fn ($f) => ! $f['full']);
+                    $amount = array_sum(array_map(fn ($f) => (int) $f['amount'], $short));
+                    $noPrice = count(array_filter($short, fn ($f) => $f['amount'] === null));
+                    $full = count($found) - count($short);
+                    $names = implode('، ', array_map(fn ($f) => $f['account']->username, array_slice(array_values($short), 0, 8)));
 
-                    return 'وُجد '.count($found).' تجديد طبّقته المزامنة على التواريخ ولم يُسجَّل له دين (كان الاشتراك منتهياً وأصبح فعّالاً). '
-                        .'سيُنشأ دين ثانوي واحد لكل تجديد بمجموع '.\App\Support\Money::format($amount)
-                        .($noPrice ? " ({$noPrice} بدون فئة معروفة: يُسجَّل التجديد بلا دين)" : '')
-                        .". أمثلة: {$names}. لا يتكرر الدين إذا ضغطت مرة ثانية.";
+                    return 'وُجد '.count($found).' تجديد طبّقته المزامنة على التواريخ ولم يُسجَّل (كان الاشتراك منتهياً وأصبح فعّالاً). '
+                        .count($short).' منها تفعيل 7 أيام أو أقل: يُنشأ لكل منها دين ثانوي بمجموع '.\App\Support\Money::format($amount)
+                        .($noPrice ? " ({$noPrice} بدون فئة معروفة: بلا دين)" : '')
+                        .($full ? ". و{$full} تفعيل كامل (أكثر من 7 أيام): يُسجَّل تفعيلاً بدون دين" : '')
+                        .($names ? ". أمثلة: {$names}" : '').'. لا يتكرر شيء إذا ضغطت مرة ثانية.';
                 })
                 ->modalSubmitActionLabel('إنشاء الديون')
                 ->action(function () {

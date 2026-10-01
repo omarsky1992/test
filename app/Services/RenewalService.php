@@ -21,8 +21,17 @@ use Illuminate\Support\Facades\DB;
  */
 class RenewalService
 {
-    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit)
+    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit, private Settings $settings)
     {
+    }
+
+    /**
+     * Up to the short activation (7 days, from the subscriber's app) the renewal is owed as a
+     * secondary debt. Longer than that is a full activation: recorded, with no debt.
+     */
+    public function isFullActivation(int $newDays): bool
+    {
+        return $newDays > $this->settings->partialDays();
     }
 
     public static function reference(Account $account, ?CarbonImmutable $newEndsAt, CarbonImmutable $detectedAt): string
@@ -51,7 +60,8 @@ class RenewalService
         try {
             return DB::transaction(function () use ($account, $previousDays, $newDays, $previousEndsAt, $newEndsAt, $planName, $run, $at, $reference) {
                 $plan = $account->current_plan_id ? ServicePlan::find($account->current_plan_id) : null;
-                $amount = $plan?->price > 0 ? (int) $plan->price : null;
+                $full = $this->isFullActivation($newDays);
+                $amount = ! $full && $plan?->price > 0 ? (int) $plan->price : null;
 
                 $renewal = AccountRenewal::create([
                     'reference' => $reference,
@@ -66,7 +76,7 @@ class RenewalService
                     'plan_id' => $plan?->id,
                     'plan_name' => $planName !== null ? mb_substr($planName, 0, 60) : $plan?->name_ar,
                     'amount' => $amount,
-                    'status' => $amount !== null ? 'debt_created' : 'no_price',
+                    'status' => $full ? 'activated' : ($amount !== null ? 'debt_created' : 'no_price'),
                 ]);
 
                 $debt = null;
@@ -96,7 +106,11 @@ class RenewalService
                 $this->audit->log('renewal.detected', $renewal, ['days_left' => $previousDays, 'ends_at' => $previousEndsAt], [
                     'days_left' => $newDays, 'ends_at' => $newEndsAt, 'plan' => $renewal->plan_name, 'amount' => $amount,
                     'debt' => $debt?->number, 'reference' => $reference,
-                ], $amount === null ? 'الفئة غير معروفة أو بلا سعر: لم يُنشأ دين' : null, $account->subscriber_id, 'sync');
+                ], match (true) {
+                    $full => "تفعيل كامل ({$newDays} يوم): يُسجَّل تفعيلاً بدون دين",
+                    $amount === null => 'الفئة غير معروفة أو بلا سعر: لم يُنشأ دين',
+                    default => null,
+                }, $account->subscriber_id, 'sync');
                 if ($debt !== null) {
                     $this->audit->log('debt.created', $debt, null, [
                         'number' => $debt->number, 'amount' => $amount, 'bucket' => 'secondary', 'source' => 'renewal', 'renewal' => $reference,
@@ -109,5 +123,35 @@ class RenewalService
             // Two scans raced on the same renewal; the other one recorded it.
             return AccountRenewal::where('reference', $reference)->firstOrFail();
         }
+    }
+
+    /**
+     * Renewals of more than the short activation that were recorded as debts before the full-activation
+     * rule: their debt is voided (only if nothing was paid on it) and they become activations.
+     *
+     * @return array{fixed: int, kept_paid: int}
+     */
+    public function reclassifyFullActivations(): array
+    {
+        $result = ['fixed' => 0, 'kept_paid' => 0];
+        $renewals = AccountRenewal::with('debt')->where('status', 'debt_created')->where('new_days', '>', $this->settings->partialDays())->get();
+        foreach ($renewals as $renewal) {
+            DB::transaction(function () use ($renewal, &$result) {
+                $debt = $renewal->debt;
+                if ($debt && $debt->status !== DebtStatus::Voided) {
+                    if ($debt->paid_amount > 0) {
+                        $result['kept_paid']++;
+
+                        return;
+                    }
+                    app(DebtService::class)->reverseAndVoid($debt, "تفعيل كامل ({$renewal->new_days} يوم): لا يُسجَّل ديناً");
+                }
+                $renewal->update(['status' => 'activated']);
+                $this->audit->log('renewal.reclassified', $renewal, ['status' => 'debt_created'], ['status' => 'activated', 'debt_voided' => $debt?->number], 'تفعيل أكثر من 7 أيام', $renewal->subscriber_id, 'system');
+                $result['fixed']++;
+            });
+        }
+
+        return $result;
     }
 }

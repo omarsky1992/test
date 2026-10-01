@@ -58,7 +58,7 @@ class CompanySync
     public function run(string $trigger = 'manual', ?CompanyClient $client = null): SyncRun
     {
         $run = SyncRun::create(['trigger' => $trigger, 'status' => 'running', 'started_at' => now(), 'created_by' => Auth::id()]);
-        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'renewals_without_price', 'skipped'], 0);
+        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'activations', 'renewals_without_price', 'skipped'], 0);
         $this->errors = [];
         $this->preload();
         $now = CarbonImmutable::now();
@@ -273,7 +273,11 @@ class CompanySync
             $renewal = $this->renewals->record($account, $previousDays, $newDays, $previousEndsAt, $endsAt, $record['plan'], $run, $now);
             if ($renewal->wasRecentlyCreated) {
                 $this->stats['renewals']++;
-                $renewal->debt_id !== null ? $this->stats['debts_created']++ : $this->stats['renewals_without_price']++;
+                match (true) {
+                    $renewal->debt_id !== null => $this->stats['debts_created']++,
+                    $renewal->status === 'activated' => $this->stats['activations']++,
+                    default => $this->stats['renewals_without_price']++,
+                };
             }
         }
     }

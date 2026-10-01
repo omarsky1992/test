@@ -47,7 +47,7 @@ class AuditLogResource extends Resource
         'sale.created' => 'بيع جهاز', 'sale.voided' => 'إلغاء بيع',
         'user.created' => 'مستخدم جديد', 'user.updated' => 'تعديل مستخدم', 'settings.updated' => 'تعديل الإعدادات',
         'company.synced' => 'مزامنة موقع الشركة', 'subscriber.synced_new' => 'مشترك جديد من الموقع', 'subscriber.synced' => 'تحديث مشترك من الموقع',
-        'account.synced_new' => 'حساب جديد من الموقع', 'account.synced' => 'تحديث حساب من الموقع', 'renewal.detected' => 'تجديد مكتشف',
+        'account.synced_new' => 'حساب جديد من الموقع', 'account.synced' => 'تحديث حساب من الموقع', 'renewal.detected' => 'تجديد مكتشف', 'renewal.reclassified' => 'تصحيح تجديد إلى تفعيل',
         'settings.sync_updated' => 'إعدادات المزامنة', 'custody.settled' => 'تسديد عهدة للصندوق', 'advance.created' => 'سلفة موظف',
         'advance.repaid' => 'تسديد سلفة', 'system.reset' => 'تصفير النظام',
     ];

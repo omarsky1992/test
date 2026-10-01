@@ -73,7 +73,7 @@ class BrowserSyncController extends Controller
 
         $s = $run->stats ?? [];
         $summary = $run->status === 'success'
-            ? "{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} · أخطاء ".count($s['errors'] ?? [])
+            ? "{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
             : (string) $run->error;
 
         return response()->json(['status' => $run->status, 'summary' => $summary, 'run_id' => $run->id], $run->status === 'success' ? 200 : 422);

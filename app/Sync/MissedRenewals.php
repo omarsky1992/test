@@ -49,9 +49,10 @@ class MissedRenewals
             if (AccountRenewal::where('reference', RenewalService::reference($account, $new, $at))->exists()) {
                 continue;
             }
+            $full = $this->renewals->isFullActivation($newDays);
             $found[] = [
-                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays,
-                'amount' => $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
+                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'full' => $full,
+                'amount' => ! $full && $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
             ];
         }
 
