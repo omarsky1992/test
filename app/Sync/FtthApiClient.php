@@ -259,7 +259,7 @@ class FtthApiClient implements CompanyClient
 
         try {
             $response = Http::asForm()->acceptJson()->timeout(30)
-                ->post((string) $this->settings->get('sync.token_url'), [...$form, 'client_id' => $clientId]);
+                ->post($this->tokenUrl($form['refresh_token'] ?? null), [...$form, 'client_id' => $clientId]);
         } catch (ConnectionException $e) {
             throw new CompanySyncException('تعذّر الاتصال بخادم تسجيل الدخول: '.$e->getMessage(), previous: $e);
         }
@@ -269,6 +269,24 @@ class FtthApiClient implements CompanyClient
         }
 
         return [null, ['status' => $response->status(), 'error' => $response->json('error'), 'description' => $response->json('error_description')]];
+    }
+
+    /**
+     * A refresh token names the realm that issued it (its iss claim); refreshing must go to that
+     * same realm. Only the company's own sign-in hosts are trusted.
+     */
+    private function tokenUrl(?string $refreshToken): string
+    {
+        if ($refreshToken !== null && count($parts = explode('.', $refreshToken)) === 3) {
+            $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+            $issuer = is_array($claims) ? ($claims['iss'] ?? null) : null;
+            $host = is_string($issuer) ? parse_url($issuer, PHP_URL_HOST) : null;
+            if ($host && preg_match('/(^|\.)(ftth\.iq|earthlink\.iq)$/', $host) && str_starts_with($issuer, 'https://')) {
+                return rtrim($issuer, '/').'/protocol/openid-connect/token';
+            }
+        }
+
+        return (string) $this->settings->get('sync.token_url');
     }
 
     private static function explain(?array $error, bool $refresh): string

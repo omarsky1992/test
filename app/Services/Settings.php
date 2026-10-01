@@ -17,7 +17,7 @@ class Settings
         'sync.enabled' => false,
         'sync.interval_minutes' => 60,
         'sync.base_url' => 'https://admin.ftth.iq',
-        'sync.token_url' => 'https://sso.earthlink.iq/auth/realms/el_int/protocol/openid-connect/token',
+        'sync.token_url' => 'https://sso.ftth.iq/auth/realms/Partners/protocol/openid-connect/token',
         'sync.client_id' => 'earthlink-portals',
         'sync.client_app' => '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f',
         'sync.hierarchy_level' => '',

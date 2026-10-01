@@ -26,7 +26,7 @@ class FtthApiClientTest extends TestCase
     private function fakeSite(): void
     {
         Http::fake([
-            'sso.earthlink.iq/*' => Http::response(['access_token' => 'AT', 'refresh_token' => 'RT', 'expires_in' => 3600]),
+            'sso.ftth.iq/*' => Http::response(['access_token' => 'AT', 'refresh_token' => 'RT', 'expires_in' => 3600]),
             'admin.ftth.iq/api/customers?*' => Http::response(['totalCount' => 1, 'items' => [
                 ['id' => '2825350', 'displayValue' => 'أحمد كريم', 'primaryPhone' => '07701234567'],
             ]]),
@@ -64,7 +64,7 @@ class FtthApiClientTest extends TestCase
             'serial' => 'TDTC35980DF8', 'fat' => 'FAT33', 'port' => '3', 'subscription_id' => '13525583',
         ], $records[0]);
 
-        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'sso.earthlink.iq') && $r['grant_type'] === 'password' && $r['client_id'] === 'admin-portal');
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'sso.ftth.iq') && $r['grant_type'] === 'password' && $r['client_id'] === 'admin-portal');
         Http::assertSent(fn (Request $r) => str_contains($r->url(), '/api/subscriptions') && $r->hasHeader('Authorization', 'Bearer AT')
             && $r->hasHeader('X-Client-App', '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f'));
         // Only reads: no POST to the panel.
@@ -87,7 +87,7 @@ class FtthApiClientTest extends TestCase
     public function test_a_refused_sign_in_explains_why(): void
     {
         $this->configure();
-        Http::fake(['sso.earthlink.iq/*' => Http::response(['error' => 'unauthorized_client', 'error_description' => 'Client not allowed for direct access grants'], 400)]);
+        Http::fake(['sso.ftth.iq/*' => Http::response(['error' => 'unauthorized_client', 'error_description' => 'Client not allowed for direct access grants'], 400)]);
 
         try {
             iterator_to_array(app(FtthApiClient::class)->records());
@@ -102,7 +102,7 @@ class FtthApiClientTest extends TestCase
     {
         $s = app(Settings::class);
         $s->set('sync.refresh_token', Crypt::encryptString('RT-from-browser'));
-        Http::fake(['sso.earthlink.iq/*' => Http::sequence()
+        Http::fake(['sso.ftth.iq/*' => Http::sequence()
             ->push(['access_token' => 'AT1', 'refresh_token' => 'RT2', 'expires_in' => 3600])
             ->push(['access_token' => 'AT2', 'refresh_token' => 'RT3', 'expires_in' => 3600])
             ->push(['access_token' => 'AT3', 'refresh_token' => 'RT4', 'expires_in' => 3600])]);
@@ -114,5 +114,17 @@ class FtthApiClientTest extends TestCase
         $this->assertTrue(app(FtthApiClient::class)->keepAlive());
         $this->assertSame('RT3', Crypt::decryptString(app(Settings::class)->get('sync.refresh_token')));
         $this->artisan('company:keep-session')->assertSuccessful();
+    }
+
+    public function test_a_refresh_token_is_renewed_at_the_realm_that_issued_it(): void
+    {
+        $claims = rtrim(strtr(base64_encode(json_encode(['iss' => 'https://sso.ftth.iq/auth/realms/Partners', 'typ' => 'Refresh'])), '+/', '-_'), '=');
+        app(Settings::class)->set('sync.token_url', 'https://wrong.example/token');
+        app(Settings::class)->set('sync.refresh_token', Crypt::encryptString("eyJhbGciOiJIUzI1NiJ9.{$claims}.sig"));
+        Http::fake(['sso.ftth.iq/*' => Http::response(['access_token' => 'AT', 'refresh_token' => 'RT2', 'expires_in' => 3600])]);
+
+        app(FtthApiClient::class)->keepAlive();
+
+        Http::assertSent(fn (Request $r) => $r->url() === 'https://sso.ftth.iq/auth/realms/Partners/protocol/openid-connect/token');
     }
 }
