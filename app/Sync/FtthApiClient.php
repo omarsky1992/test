@@ -185,21 +185,46 @@ class FtthApiClient implements CompanyClient
             return $token;
         }
 
-        $refresh = $this->secret('sync.refresh_token');
-        $body = $refresh ? $this->tokenRequest(['grant_type' => 'refresh_token', 'refresh_token' => $refresh]) : null;
+        return $this->signIn();
+    }
+
+    /**
+     * Gets a fresh access token: from the stored refresh token first, then from the username and
+     * password. Each step's refusal reason from EarthLink is kept, so the message says what to fix.
+     */
+    public function signIn(): string
+    {
+        $reasons = [];
+        $body = null;
+
+        if ($refresh = $this->secret('sync.refresh_token')) {
+            [$body, $error] = $this->tokenRequest(['grant_type' => 'refresh_token', 'refresh_token' => $refresh]);
+            if ($body === null) {
+                $this->settings->set('sync.refresh_token', null);
+                $reasons[] = 'مفتاح التجديد: '.self::explain($error, refresh: true);
+            }
+        }
 
         if ($body === null) {
             $username = (string) $this->settings->get('sync.username');
             $password = $this->secret('sync.password');
-            if ($username === '' || $password === null) {
-                throw new CompanySyncException('أدخل يوزر وباسورد موقع الشركة في صفحة المزامنة.');
+            if ($username !== '' && $password !== null) {
+                [$body, $error] = $this->tokenRequest(['grant_type' => 'password', 'username' => $username, 'password' => $password, 'scope' => 'openid']);
+                if ($body === null) {
+                    $reasons[] = 'اليوزر والباسورد: '.self::explain($error, refresh: false);
+                }
+            } elseif ($reasons === []) {
+                throw new CompanySyncException('أدخل يوزر وباسورد موقع الشركة، أو مفتاح التجديد، في إعدادات الاتصال.');
             }
-            $body = $this->tokenRequest(['grant_type' => 'password', 'username' => $username, 'password' => $password, 'scope' => 'openid'])
-                ?? throw new CompanySyncException('تعذّر تسجيل الدخول لموقع الشركة. تأكد من اليوزر والباسورد ومعرّف العميل (client_id).');
+        }
+
+        if ($body === null) {
+            throw new CompanySyncException('تعذّر تسجيل الدخول لموقع الشركة. '.implode(' · ', $reasons));
         }
 
         if (filled($body['refresh_token'] ?? null)) {
             $this->settings->set('sync.refresh_token', Crypt::encryptString($body['refresh_token']));
+            $this->settings->set('sync.refreshed_at', now()->toIso8601String());
         }
         $ttl = max(60, (int) ($body['expires_in'] ?? 300) - 60);
         Cache::put(self::TOKEN_CACHE, $body['access_token'], $ttl);
@@ -207,11 +232,29 @@ class FtthApiClient implements CompanyClient
         return $body['access_token'];
     }
 
-    private function tokenRequest(array $form): ?array
+    /**
+     * Renews the sign-in with the refresh token so the EarthLink session never goes idle.
+     * Returns false when there is no refresh token to renew.
+     */
+    public function keepAlive(): bool
+    {
+        if ($this->secret('sync.refresh_token') === null) {
+            return false;
+        }
+        Cache::forget(self::TOKEN_CACHE);
+        $this->signIn();
+
+        return true;
+    }
+
+    /**
+     * @return array{0: ?array, 1: ?array} [token response, error response]
+     */
+    private function tokenRequest(array $form): array
     {
         $clientId = (string) $this->settings->get('sync.client_id');
         if ($clientId === '') {
-            throw new CompanySyncException('أدخل معرّف العميل (client_id) في صفحة المزامنة.');
+            throw new CompanySyncException('أدخل معرّف العميل (client_id) في إعدادات الاتصال.');
         }
 
         try {
@@ -222,13 +265,25 @@ class FtthApiClient implements CompanyClient
         }
 
         if ($response->successful() && filled($response->json('access_token'))) {
-            return $response->json();
-        }
-        if ($form['grant_type'] === 'refresh_token') {
-            $this->settings->set('sync.refresh_token', null);
+            return [$response->json(), null];
         }
 
-        return null;
+        return [null, ['status' => $response->status(), 'error' => $response->json('error'), 'description' => $response->json('error_description')]];
+    }
+
+    private static function explain(?array $error, bool $refresh): string
+    {
+        $code = $error['error'] ?? null;
+        $text = match (true) {
+            $code === 'unauthorized_client' => 'EarthLink لا يسمح بالدخول المباشر بهذه الطريقة. استخدم «مفتاح التجديد».',
+            $code === 'invalid_grant' && $refresh => 'منتهي أو مُلغى. انسخ مفتاحاً جديداً من الموقع.',
+            $code === 'invalid_grant' => 'مرفوض: اليوزر أو الباسورد غير صحيح، أو الحساب يحتاج تحققاً إضافياً.',
+            $code === 'invalid_client' => 'معرّف العميل غير صحيح.',
+            default => 'رفض الخادم الطلب',
+        };
+        $details = array_filter([$code, $error['description'] ?? null, isset($error['status']) ? "HTTP {$error['status']}" : null]);
+
+        return $text.($details ? ' ('.implode(' – ', $details).')' : '');
     }
 
     private function secret(string $key): ?string

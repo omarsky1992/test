@@ -98,7 +98,7 @@ class CompanySyncPage extends Page
                                 ->placeholder(fn () => filled(app(Settings::class)->get('sync.password')) ? '•••••• (محفوظ)' : null),
                             TextInput::make('client_id')->label('معرّف العميل (client_id)')->helperText('القيمة الافتراضية earthlink-portals صحيحة لموقع admin.ftth.iq.')->required(),
                             TextInput::make('refresh_token')->label('مفتاح التجديد (اختياري)')->password()->autocomplete('off')
-                                ->helperText('بديل عن الباسورد إذا كان الدخول المباشر مقفولاً.'),
+                                ->helperText('إذا رفض EarthLink الدخول باليوزر والباسورد: بموقع الشركة اضغط F12 ← Console واكتب copy(localStorage.refresh_token) ثم الصقه هنا. يجدده النظام تلقائياً كل 10 دقائق.'),
                         ]),
                     Section::make('متقدم')->collapsed()->columns(2)->schema([
                         TextInput::make('base_url')->label('عنوان الموقع')->url()->required(),
@@ -161,6 +161,8 @@ class CompanySyncPage extends Page
             'enabled' => (bool) $s->get('sync.enabled'),
             'interval' => (int) $s->get('sync.interval_minutes'),
             'configured' => filled($s->get('sync.client_id')) && (filled($s->get('sync.password')) || filled($s->get('sync.refresh_token'))),
+            'hasRefreshToken' => filled($s->get('sync.refresh_token')),
+            'refreshedAt' => filled($s->get('sync.refreshed_at')) ? \Carbon\CarbonImmutable::parse($s->get('sync.refreshed_at')) : null,
             'last' => SyncRun::where('status', 'success')->latest('started_at')->first(),
             'runs' => SyncRun::with('creator')->latest('started_at')->limit(20)->get(),
             'renewals' => AccountRenewal::with(['account', 'subscriber', 'debt'])->latest('detected_at')->limit(30)->get(),

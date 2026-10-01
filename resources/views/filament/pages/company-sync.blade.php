@@ -28,6 +28,11 @@
             @endif
         </x-filament::section>
         <x-filament::section>
+            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">جلسة موقع الشركة</div>
+            <div style="font-size:18px;font-weight:700;margin-top:4px;color:{{ $hasRefreshToken ? 'rgb(21 128 61)' : 'rgb(120 113 108)' }}">{{ $hasRefreshToken ? 'متصلة' : 'غير متصلة' }}</div>
+            <div style="font-size:13px;color:rgb(120 113 108)" dir="ltr">{{ $refreshedAt ? 'آخر تجديد '.$refreshedAt->format('Y/m/d H:i') : '' }}</div>
+        </x-filament::section>
+        <x-filament::section>
             <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">قاعدة التجديد</div>
             <div style="font-size:13.5px;margin-top:4px;line-height:1.7">آخر أيام محفوظة = 0 والموقع الآن أكثر من 0 ← تجديد + دين ثانوي بسعر الفئة، مرة واحدة لكل تجديد.</div>
         </x-filament::section>

@@ -83,4 +83,36 @@ class FtthApiClientTest extends TestCase
 
         iterator_to_array(app(FtthApiClient::class)->records());
     }
+
+    public function test_a_refused_sign_in_explains_why(): void
+    {
+        $this->configure();
+        Http::fake(['sso.earthlink.iq/*' => Http::response(['error' => 'unauthorized_client', 'error_description' => 'Client not allowed for direct access grants'], 400)]);
+
+        try {
+            iterator_to_array(app(FtthApiClient::class)->records());
+            $this->fail('Sign-in should fail.');
+        } catch (CompanySyncException $e) {
+            $this->assertStringContainsString('مفتاح التجديد', $e->getMessage());
+            $this->assertStringContainsString('unauthorized_client', $e->getMessage());
+        }
+    }
+
+    public function test_a_pasted_refresh_token_signs_in_and_is_kept_alive(): void
+    {
+        $s = app(Settings::class);
+        $s->set('sync.refresh_token', Crypt::encryptString('RT-from-browser'));
+        Http::fake(['sso.earthlink.iq/*' => Http::sequence()
+            ->push(['access_token' => 'AT1', 'refresh_token' => 'RT2', 'expires_in' => 3600])
+            ->push(['access_token' => 'AT2', 'refresh_token' => 'RT3', 'expires_in' => 3600])
+            ->push(['access_token' => 'AT3', 'refresh_token' => 'RT4', 'expires_in' => 3600])]);
+
+        $this->assertTrue(app(FtthApiClient::class)->keepAlive());
+        $this->assertSame('RT2', Crypt::decryptString(app(Settings::class)->get('sync.refresh_token')));
+        Http::assertSent(fn (Request $r) => $r['grant_type'] === 'refresh_token' && $r['refresh_token'] === 'RT-from-browser' && $r['client_id'] === 'earthlink-portals');
+
+        $this->assertTrue(app(FtthApiClient::class)->keepAlive());
+        $this->assertSame('RT3', Crypt::decryptString(app(Settings::class)->get('sync.refresh_token')));
+        $this->artisan('company:keep-session')->assertSuccessful();
+    }
 }

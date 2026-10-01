@@ -4,6 +4,7 @@ use App\Models\SyncRun;
 use App\Services\BackupService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
+use App\Sync\FtthApiClient;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -37,3 +38,18 @@ Artisan::command('company:sync {--scheduled : Run only when automatic sync is on
 })->purpose('Update subscribers from the company site and detect renewals');
 
 Schedule::command('company:sync --scheduled')->everyFiveMinutes()->withoutOverlapping(30);
+
+Artisan::command('company:keep-session', function (FtthApiClient $client) {
+    try {
+        $client->keepAlive() ? $this->info('Company session renewed.') : $this->line('No refresh token stored.');
+    } catch (Throwable $e) {
+        $this->error($e->getMessage());
+
+        return 1;
+    }
+
+    return 0;
+})->purpose('Renew the company sign-in with the stored refresh token so it never expires from idleness');
+
+// EarthLink ends idle sign-ins after a while; renewing every 10 minutes keeps the refresh token valid.
+Schedule::command('company:keep-session')->everyTenMinutes()->withoutOverlapping(5);
