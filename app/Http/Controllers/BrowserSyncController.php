@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\Settings;
 use App\Sync\BrowserPayloadClient;
+use App\Sync\BrowserScripts;
 use App\Sync\CompanySync;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,23 @@ class BrowserSyncController extends Controller
         abort_unless(auth()->user()->can('sync.run'), 403);
 
         return view('sync.browser', ['panelOrigin' => self::PANEL_ORIGIN]);
+    }
+
+    /**
+     * The Chrome extension, built for the address this system is opened on.
+     */
+    public function extension(Request $request, Settings $settings)
+    {
+        abort_unless($request->user()->can('sync.run'), 403);
+        $app = $request->getSchemeAndHttpHost();
+        $path = tempnam(sys_get_temp_dir(), 'ext');
+        $zip = new \ZipArchive;
+        $zip->open($path, \ZipArchive::OVERWRITE);
+        $zip->addFromString('subs-sync/manifest.json', BrowserScripts::manifest($app));
+        $zip->addFromString('subs-sync/content.js', BrowserScripts::contentScript($app, (string) $settings->get('sync.client_app')));
+        $zip->close();
+
+        return response()->download($path, 'subs-sync-extension.zip', ['Content-Type' => 'application/zip'])->deleteFileAfterSend();
     }
 
     /**

@@ -6,29 +6,75 @@
     $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top';
 @endphp
 <x-filament-panels::page>
-    <x-filament::section icon="heroicon-o-bookmark" icon-color="primary" heading="المزامنة من المتصفح (الطريقة المعتمدة)">
+    <x-filament::section icon="heroicon-o-arrow-path" icon-color="primary" heading="المزامنة من موقع الشركة">
         <p style="font-size:14px;line-height:1.9;margin:0">
-            موقع الشركة لا يقبل الاتصال من سيرفرات خارج العراق، لذلك تتم المزامنة من متصفحك وأنت مسجّل الدخول في موقع الشركة.
+            موقع الشركة لا يقبل الاتصال من سيرفرات خارج العراق، لذلك تتم المزامنة من متصفحك بجلستك في موقع الشركة.
             لا يُحفظ أي باسورد، ولا تُرسَل إلى الموقع إلا طلبات قراءة.
         </p>
-        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:14px 0">
-            <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات المرجعية في كروم، ثم اضغطه وأنت في صفحة موقع الشركة.')"
-               style="display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">
-                ⟳ مزامنة المشتركين
-            </a>
-            <span style="font-size:13px;color:rgb(120 113 108)">← اسحب هذا الزر بالماوس إلى شريط الإشارات في كروم (مرة واحدة فقط)</span>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin:16px 0 6px">
+            <button type="button" id="subs-sync-start"
+                    style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;border:0;background:#0f766e;color:#fff;font:inherit;font-weight:700;font-size:15px;cursor:pointer">
+                ⟳ مزامنة الآن
+            </button>
+            <span id="subs-sync-status" style="font-size:14px;font-weight:600"></span>
         </div>
-        <ol style="font-size:14px;line-height:2;margin:0;padding-inline-start:20px">
-            <li>إذا لم يظهر شريط الإشارات: اضغط <b dir="ltr">Ctrl+Shift+B</b>.</li>
-            <li>افتح صفحة الاشتراكات <b dir="ltr">admin.ftth.iq/subscriptions</b> وسجّل الدخول كالمعتاد.</li>
-            <li>اضغط زر <b>مزامنة المشتركين</b> من شريط الإشارات. تفتح نافذة صغيرة من النظام وتظهر خانة خضراء في صفحة الشركة تبيّن التقدم.</li>
-            <li>اترك الصفحتين حتى تظهر «تمت ✓» (دقيقة إلى دقيقتين). يُنصح بالمزامنة مرتين يومياً.</li>
-        </ol>
-        <p style="font-size:13px;color:rgb(120 113 108);margin:10px 0 0">
-            آخر مزامنة من المتصفح: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
-            · إذا تغيّر عنوان النظام (الدومين) اسحب الزر من جديد.
+        <p style="font-size:13px;color:rgb(120 113 108);margin:0">
+            يفتح تبويب صفحة الاشتراكات في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
+            آخر مزامنة: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
         </p>
+
+        <details style="margin-top:16px;font-size:14px;line-height:2" {{ $lastBrowser ? '' : 'open' }}>
+            <summary style="cursor:pointer;font-weight:700">تنصيب إضافة كروم (مرة واحدة)</summary>
+            <ol style="margin:6px 0 0;padding-inline-start:20px">
+                <li><a href="{{ route('sync.extension') }}" style="color:#0f766e;font-weight:700">نزّل ملف الإضافة</a> وفكّ الضغط عنه (كليك يمين ← استخراج الكل). يظهر مجلد اسمه <b dir="ltr">subs-sync</b>.</li>
+                <li>في كروم افتح العنوان <b dir="ltr" style="user-select:all">chrome://extensions</b></li>
+                <li>فعّل <b>وضع المطوّر</b> (Developer mode) من أعلى الصفحة.</li>
+                <li>اضغط <b>تحميل الإضافة غير المضغوطة</b> (Load unpacked) واختر مجلد <b dir="ltr">subs-sync</b>.</li>
+                <li>ارجع لهذه الصفحة واضغط <b>مزامنة الآن</b>.</li>
+            </ol>
+            <p style="font-size:13px;color:rgb(120 113 108);margin:4px 0 0">إذا تغيّر عنوان النظام (الدومين) نزّل الإضافة من جديد واستبدلها.</p>
+        </details>
+
+        <details style="margin-top:8px;font-size:14px;line-height:2">
+            <summary style="cursor:pointer;font-weight:700">بديل بدون إضافة: زر في شريط الإشارات</summary>
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px">
+                <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات، ثم اضغطه وأنت في صفحة الاشتراكات في موقع الشركة.')"
+                   style="display:inline-flex;padding:8px 14px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">⟳ مزامنة المشتركين</a>
+                <span style="font-size:13px;color:rgb(120 113 108)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions مسجّلاً ثم اضغطه.</span>
+            </div>
+        </details>
     </x-filament::section>
+
+    @include('sync.receiver-script')
+    <script>
+    (() => {
+        if (window.__subsSyncPage) return;
+        window.__subsSyncPage = true;
+        const set = (text, cls) => {
+            const el = document.getElementById('subs-sync-status');
+            if (!el) return;
+            el.textContent = text;
+            el.style.color = cls === 'ok' ? 'rgb(21 128 61)' : (cls === 'bad' ? 'rgb(185 28 28)' : '');
+        };
+        let heard = false, watchdog = null;
+        window.subsReceiver({
+            onHello: () => { heard = true; set('فُتح موقع الشركة. سجّل الدخول إذا طُلب منك، وتبدأ المزامنة وحدها…', ''); },
+            onStatus: (text, cls) => { heard = true; set(text, cls); },
+            onDone: () => setTimeout(() => location.reload(), 4000),
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest || !e.target.closest('#subs-sync-start')) return;
+            heard = false;
+            const tab = window.open('https://admin.ftth.iq/subscriptions#subs-sync', 'ftth_sync');
+            if (!tab) { set('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.', 'bad'); return; }
+            set('جارٍ فتح موقع الشركة…', '');
+            clearTimeout(watchdog);
+            watchdog = setTimeout(() => {
+                if (!heard) set('لم تستجب إضافة المزامنة. تأكد أنها منصّبة (الخطوات بالأسفل)، ثم أعد المحاولة.', 'bad');
+            }, 25000);
+        });
+    })();
+    </script>
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
         <x-filament::section>

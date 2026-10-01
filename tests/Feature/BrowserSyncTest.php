@@ -105,4 +105,21 @@ class BrowserSyncTest extends TestCase
         auth()->logout();
         $this->get('/sync/browser')->assertRedirect('/login');
     }
+
+    public function test_the_chrome_extension_is_built_for_this_system(): void
+    {
+        $response = $this->get('/sync/extension.zip');
+
+        $response->assertOk()->assertDownload('subs-sync-extension.zip');
+        $zip = new \ZipArchive;
+        $zip->open($response->baseResponse->getFile()->getPathname());
+        $manifest = json_decode($zip->getFromName('subs-sync/manifest.json'), true);
+        $script = $zip->getFromName('subs-sync/content.js');
+
+        $this->assertSame(3, $manifest['manifest_version']);
+        $this->assertSame(['https://admin.ftth.iq/*'], $manifest['content_scripts'][0]['matches']);
+        $this->assertStringContainsString('const SUBS_APP = "'.request()->getSchemeAndHttpHost().'"', $script);
+        $this->assertStringContainsString('subs-sync', $script);
+        $this->assertStringNotContainsString("method: 'POST'", $script);
+    }
 }

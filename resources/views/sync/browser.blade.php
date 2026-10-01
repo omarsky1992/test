@@ -27,50 +27,19 @@
         <p id="done" hidden><a href="{{ \App\Filament\Pages\CompanySyncPage::getUrl() }}" target="_blank">فتح صفحة المزامنة في النظام</a></p>
     </div>
 </main>
+@include('sync.receiver-script')
 <script>
 (() => {
     const PANEL = {!! json_encode($panelOrigin, JSON_UNESCAPED_SLASHES) !!};
-    const csrf = document.querySelector('meta[name=csrf-token]').content;
     const status = (text, cls = '') => { const el = document.getElementById('status'); el.textContent = text; el.className = cls; };
-    const detail = text => { document.getElementById('detail').textContent = text; };
-
     if (!window.opener) {
-        status('افتح هذه النافذة بالضغط على زر «مزامنة المشتركين» من صفحة موقع الشركة.', 'bad');
+        status('افتح هذه النافذة من زر المزامنة في صفحة موقع الشركة.', 'bad');
         return;
     }
-
-    window.addEventListener('message', async (event) => {
-        if (event.origin !== PANEL || !event.data || !['plan', 'run'].includes(event.data.type)) {
-            return;
-        }
-        const { type, customers, subscriptions, details } = event.data;
-        status(type === 'plan' ? `وصلت ${subscriptions.length} اشتراك. جارٍ التحقق…` : 'جارٍ الحفظ في النظام…');
-        try {
-            const response = await fetch(`/sync/browser/${type}`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
-                body: JSON.stringify({ customers, subscriptions, details: details || {} }),
-            });
-            const body = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                throw new Error(body.summary || body.message || `رمز ${response.status}`);
-            }
-            if (type === 'plan') {
-                status(body.needs.length ? `جلب تفاصيل ${body.needs.length} مشترك من الموقع…` : 'جارٍ الحفظ…');
-            } else {
-                status('تمت المزامنة ✓', 'ok');
-                detail(body.summary);
-                document.getElementById('done').hidden = false;
-            }
-            event.source.postMessage({ type: `${type}_ok`, ...body }, PANEL);
-        } catch (error) {
-            status('فشلت المزامنة', 'bad');
-            detail(error.message);
-            event.source.postMessage({ type: 'error', message: error.message }, PANEL);
-        }
+    window.subsReceiver({
+        onStatus: status,
+        onDone: (body) => { document.getElementById('detail').textContent = ''; document.getElementById('done').hidden = false; },
     });
-
     window.opener.postMessage({ type: 'ready' }, PANEL);
 })();
 </script>
