@@ -249,4 +249,36 @@ class CompanySyncTest extends TestCase
         $this->assertStringContainsString('تعذّر', $run->error);
         $this->assertSame(0, Subscriber::count());
     }
+
+    public function test_a_subscription_that_left_the_active_list_and_came_back_renewed_is_a_renewal(): void
+    {
+        // Last seen with 2 days left; the Active list then stops showing it while it is expired.
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(2)]));
+        $this->sync();
+        $this->assertSame(2, Account::sole()->company_days_left);
+
+        $this->travelToTime('2026-09-26 10:00:00');
+        $this->site->set();
+        $this->sync();
+
+        // Renewed: back in the list with 30 days. Its saved end date has passed, so it was at 0.
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $this->sync();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame(0, $renewal->previous_days);
+        $this->assertSame(30, $renewal->new_days);
+        $this->assertSame(1, Debt::count());
+    }
+
+    public function test_a_renewal_before_the_end_is_still_not_counted(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(3)]));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(33)]));
+        $this->sync();
+
+        $this->assertSame(0, AccountRenewal::count());
+    }
 }

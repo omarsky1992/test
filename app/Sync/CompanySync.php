@@ -234,8 +234,14 @@ class CompanySync
     {
         $endsAt = CompanyData::date($record['ends_at']);
         $status = CompanyData::status($record['status']);
-        $previousDays = $account->company_days_left;
         $previousEndsAt = $account->external_ends_at;
+        // The last known days, aged to now: a subscription whose saved end date has passed counts as 0
+        // even if no sync saw it at 0 (the Active list doesn't show expired subscriptions).
+        $previousDays = $account->company_days_left;
+        if ($previousEndsAt !== null) {
+            $aged = Account::daysLeft($previousEndsAt, $now);
+            $previousDays = $previousDays === null ? $aged : min($previousDays, $aged);
+        }
 
         $fields = $this->companyFields($record, $endsAt, $status, $now);
         // Days left fall by one every day; only real changes are counted and logged.

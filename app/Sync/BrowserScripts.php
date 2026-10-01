@@ -202,8 +202,13 @@ JS;
     box.append(button);
   };
 
+  // Start once signed in and the page has requested its own (filtered) list, so the same filter is used.
+  let signedInAt = 0;
+  const listed = () => performance.getEntriesByType('resource').some((e) => /\/api\/subscriptions\?/.test(e.name));
   const wait = setInterval(() => {
-    if (subsToken() && document.readyState === 'complete') { clearInterval(wait); setTimeout(start, 1500); }
+    if (!subsToken() || document.readyState !== 'complete') return;
+    signedInAt = signedInAt || Date.now();
+    if (listed() || Date.now() - signedInAt > 15000) { clearInterval(wait); setTimeout(start, 800); }
   }, 1000);
 })();
 JS;

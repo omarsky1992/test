@@ -19,7 +19,7 @@
             <span id="subs-sync-status" style="font-size:14px;font-weight:600"></span>
         </div>
         <p style="font-size:13px;color:rgb(120 113 108);margin:0">
-            يفتح تبويب صفحة الاشتراكات في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
+            يفتح تبويب الاشتراكات الفعّالة في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
             آخر مزامنة: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
         </p>
 
@@ -40,7 +40,7 @@
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px">
                 <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات، ثم اضغطه وأنت في صفحة الاشتراكات في موقع الشركة.')"
                    style="display:inline-flex;padding:8px 14px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">⟳ مزامنة المشتركين</a>
-                <span style="font-size:13px;color:rgb(120 113 108)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions مسجّلاً ثم اضغطه.</span>
+                <span style="font-size:13px;color:rgb(120 113 108)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions?filterBy=Active مسجّلاً ثم اضغطه.</span>
             </div>
         </details>
     </x-filament::section>
@@ -65,7 +65,7 @@
         document.addEventListener('click', (e) => {
             if (!e.target.closest || !e.target.closest('#subs-sync-start')) return;
             heard = false;
-            const tab = window.open('https://admin.ftth.iq/subscriptions#subs-sync', 'ftth_sync');
+            const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#subs-sync', 'ftth_sync');
             if (!tab) { set('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.', 'bad'); return; }
             set('جارٍ فتح موقع الشركة…', '');
             clearTimeout(watchdog);
