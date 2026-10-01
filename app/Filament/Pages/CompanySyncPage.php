@@ -96,7 +96,7 @@ class CompanySyncPage extends Page
                             TextInput::make('username')->label('اليوزر')->autocomplete('off'),
                             TextInput::make('password')->label('الباسورد')->password()->revealable()->autocomplete('new-password')
                                 ->placeholder(fn () => filled(app(Settings::class)->get('sync.password')) ? '•••••• (محفوظ)' : null),
-                            TextInput::make('client_id')->label('معرّف العميل (client_id)')->helperText('قيمة azp من توكن الموقع.')->required(),
+                            TextInput::make('client_id')->label('معرّف العميل (client_id)')->helperText('القيمة الافتراضية earthlink-portals صحيحة لموقع admin.ftth.iq.')->required(),
                             TextInput::make('refresh_token')->label('مفتاح التجديد (اختياري)')->password()->autocomplete('off')
                                 ->helperText('بديل عن الباسورد إذا كان الدخول المباشر مقفولاً.'),
                         ]),
