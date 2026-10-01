@@ -65,6 +65,33 @@ class CompanySyncPage extends Page
                             ->send()
                         : Notification::make()->danger()->title('فشلت المزامنة')->body($run->error)->persistent()->send();
                 }),
+            Action::make('missedRenewals')
+                ->label('استرجاع التجديدات الفائتة')
+                ->icon(Heroicon::OutlinedClock)
+                ->color('warning')
+                ->authorize('sync.run')
+                ->requiresConfirmation()
+                ->modalHeading('استرجاع التجديدات الفائتة')
+                ->modalDescription(function () {
+                    $found = app(\App\Sync\MissedRenewals::class)->find();
+                    if ($found === []) {
+                        return 'لا توجد تجديدات فائتة. كل التجديدات مسجّلة.';
+                    }
+                    $amount = array_sum(array_map(fn ($f) => (int) $f['amount'], $found));
+                    $noPrice = count(array_filter($found, fn ($f) => $f['amount'] === null));
+                    $names = implode('، ', array_map(fn ($f) => $f['account']->username, array_slice($found, 0, 8)));
+
+                    return 'وُجد '.count($found).' تجديد طبّقته المزامنة على التواريخ ولم يُسجَّل له دين (كان الاشتراك منتهياً وأصبح فعّالاً). '
+                        .'سيُنشأ دين ثانوي واحد لكل تجديد بمجموع '.\App\Support\Money::format($amount)
+                        .($noPrice ? " ({$noPrice} بدون فئة معروفة: يُسجَّل التجديد بلا دين)" : '')
+                        .". أمثلة: {$names}. لا يتكرر الدين إذا ضغطت مرة ثانية.";
+                })
+                ->modalSubmitActionLabel('إنشاء الديون')
+                ->action(function () {
+                    $r = app(\App\Sync\MissedRenewals::class)->record();
+                    Notification::make()->success()->title("سُجّل {$r['renewals']} تجديد و{$r['debts']} دين ثانوي")
+                        ->body('المجموع: '.\App\Support\Money::format($r['amount']))->send();
+                }),
             Action::make('preview')
                 ->label('معاينة بدون حفظ')
                 ->icon(Heroicon::OutlinedEye)

@@ -281,4 +281,45 @@ class CompanySyncTest extends TestCase
 
         $this->assertSame(0, AccountRenewal::count());
     }
+
+    public function test_renewals_a_sync_applied_without_recording_are_recovered_once_from_the_audit_log(): void
+    {
+        // As on the live system: accounts imported before days-left existed, then synced by code that
+        // treated an empty days-left as a first sighting, so the new dates were saved with no renewal.
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        Account::query()->update(['company_days_left' => null]);
+        $renewed = $this->siteRecord(['ends_at' => $this->endsIn(30)]);
+        // Simulate the old behaviour: dates updated, nothing recorded.
+        $account = Account::sole();
+        $this->site->set($renewed);
+        \Illuminate\Support\Facades\DB::table('account_renewals')->delete();
+        $this->sync();
+        AccountRenewal::query()->delete();
+        Debt::query()->update(['status' => 'voided', 'void_reason' => 'test']);
+        $this->assertTrue(AuditLog::where('action', 'account.synced')->where('entity_id', $account->id)->exists());
+
+        $missed = app(\App\Sync\MissedRenewals::class);
+        $this->assertCount(1, $missed->find());
+        $this->assertSame(35000, $missed->find()[0]['amount']);
+
+        $result = $missed->record();
+        $this->assertSame(['renewals' => 1, 'debts' => 1, 'amount' => 35000], $result);
+        $this->assertSame([], $missed->find());
+        $this->assertSame(['renewals' => 0, 'debts' => 0, 'amount' => 0], $missed->record());
+    }
+
+    public function test_the_recovery_button_creates_the_missing_debts(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        AccountRenewal::query()->delete();
+
+        \Livewire\Livewire::test(\App\Filament\Pages\CompanySyncPage::class)
+            ->callAction('missedRenewals')
+            ->assertNotified('سُجّل 1 تجديد و1 دين ثانوي');
+        $this->assertSame(1, AccountRenewal::count());
+    }
 }
