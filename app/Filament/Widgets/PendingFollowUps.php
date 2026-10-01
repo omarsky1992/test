@@ -41,6 +41,11 @@ class PendingFollowUps extends TableWidget
                     ->state(fn (Activation $r) => ActivationResource::timeStatus($r)[0])
                     ->color(fn (Activation $r) => ActivationResource::timeStatus($r)[1]),
             ])
+            ->headerActions([
+                \Filament\Actions\Action::make('allFollowUps')->label('عرض قائمة المتابعة')->link()->icon('heroicon-m-arrow-left')
+                    ->url(fn () => BalanceOverview::url(FollowUpResource::class))
+                    ->visible(fn () => BalanceOverview::url(FollowUpResource::class) !== null),
+            ])
             ->recordActions([Operations::followUp(), Operations::pay(), Operations::transfer()]);
     }
 }

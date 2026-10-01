@@ -61,6 +61,11 @@ class ReceiptsLog extends TableWidget
                     ->query(fn (Builder $query, array $data) => $query->when($data['value'] ?? null,
                         fn ($query, $id) => $query->whereHas('lines', fn ($l) => $l->where('payment_method_id', $id)))),
             ])
+            ->headerActions([
+                \Filament\Actions\Action::make('allPayments')->label('عرض كل السندات')->link()->icon('heroicon-m-arrow-left')
+                    ->url(fn () => BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class))
+                    ->visible(fn () => BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class) !== null),
+            ])
             ->recordActions([Operations::receipt()]);
     }
 }

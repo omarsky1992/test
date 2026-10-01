@@ -44,6 +44,14 @@ class BalanceOverview extends Widget
             'advances' => $b['advances'],
             'advancesCount' => $b['advances_count'],
             'showEmployees' => auth()->user()->can('employees.view'),
+            // Each card opens its details, for those allowed to see them.
+            'links' => [
+                'boxes' => self::url(\App\Filament\Resources\MoneyAccounts\MoneyAccountResource::class),
+                'secondary' => self::url(\App\Filament\Resources\Debts\DebtResource::class, ['tab' => 'secondary']),
+                'primary' => self::url(\App\Filament\Resources\Debts\DebtResource::class, ['tab' => 'primary']),
+                'custody' => self::url(\App\Filament\Resources\Employees\EmployeeResource::class),
+                'advances' => self::url(\App\Filament\Resources\EmployeeAdvances\EmployeeAdvanceResource::class),
+            ],
             'cash' => $b['cash'],
             'electronic' => $b['electronic'],
             'company' => $b['company'],
@@ -52,5 +60,13 @@ class BalanceOverview extends Widget
             'primary' => $b['primary'],
             'primaryAccounts' => $b['primary_accounts'],
         ];
+    }
+
+    /**
+     * @param  class-string<\Filament\Resources\Resource>  $resource
+     */
+    public static function url(string $resource, array $parameters = []): ?string
+    {
+        return $resource::canViewAny() ? $resource::getUrl('index', $parameters) : null;
     }
 }

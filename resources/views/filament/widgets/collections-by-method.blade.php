@@ -1,6 +1,11 @@
 @php use App\Support\Money; @endphp
 <x-filament-widgets::widget>
     <x-filament::section :heading="'الاستلام حسب طريقة الدفع — '.$label">
+        @if ($paymentsUrl = \App\Filament\Widgets\BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class))
+            <x-slot name="afterHeader">
+                <a href="{{ $paymentsUrl }}" wire:navigate style="font-size:12.5px;font-weight:600;color:#0f766e;text-decoration:none">عرض السندات ←</a>
+            </x-slot>
+        @endif
         @if ($rows === [])
             <p style="font-size:13.5px;color:rgb(120 113 108)">لا توجد مقبوضات في هذه الفترة.</p>
         @else

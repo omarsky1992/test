@@ -41,13 +41,16 @@ class PeriodStats extends StatsOverviewWidget
             Stat::make('المقبوضات', Money::format($d['collections']))
                 ->description("{$d['receipts_count']} سند قبض")
                 ->descriptionIcon('heroicon-m-banknotes')
-                ->color('success'),
+                ->color('success')
+                ->url(BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class)),
             Stat::make('المبيعات', Money::format($d['sales']))
                 ->description("تفعيلات {$d['activations_count']} بقيمة ".Money::format($d['activation_sales'], false).' · أجهزة '.Money::format($d['device_sales'], false))
-                ->descriptionIcon('heroicon-m-bolt'),
+                ->descriptionIcon('heroicon-m-bolt')
+                ->url(BalanceOverview::url(\App\Filament\Resources\Activations\ActivationResource::class)),
             Stat::make('المشتريات', Money::format($d['purchases']))
                 ->description('مصروفات '.Money::format($d['expenses'], false).' · شحن رصيد الشركة '.Money::format($d['company_topups'], false))
-                ->descriptionIcon('heroicon-m-shopping-cart'),
+                ->descriptionIcon('heroicon-m-shopping-cart')
+                ->url(BalanceOverview::url(\App\Filament\Resources\Expenses\ExpenseResource::class)),
         ];
     }
 }
