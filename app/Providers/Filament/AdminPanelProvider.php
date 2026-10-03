@@ -49,6 +49,7 @@ class AdminPanelProvider extends PanelProvider
                 NavigationGroup::make('المالية'),
                 NavigationGroup::make('الموظفون'),
                 NavigationGroup::make('التقارير'),
+                NavigationGroup::make('واتساب')->collapsed(),
                 NavigationGroup::make('الإدارة')->collapsed(),
             ])
             ->navigationItems([

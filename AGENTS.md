@@ -26,7 +26,7 @@ php artisan serve
 php artisan test                          # must stay green before every push
 ```
 
-The test suite (150+ tests) covers the money rules, the sync and renewal rules, employees, imports, reset and every screen. Add tests for anything you change.
+The test suite (180+ tests) covers the money rules, the sync and renewal rules, WhatsApp commands and security, employees, statements, imports, reset and every screen. Add tests for anything you change.
 
 ## How a change reaches the live site
 
@@ -53,6 +53,13 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Current company data (plan, status, end date, device, FAT, port, zone, GPS) is overwritten from the site; name and phone are only filled when empty. Sync never touches financial history.
 - Renewal rule: last known days left = 0 (aged by the saved end date) and now more than 0 on the site. Up to the short activation (setting `activation.partial_days`, 7) it creates ONE secondary debt at the plan price; more than that is a full activation recorded with no debt. Each renewal has a unique reference (account + new end date) so repeated syncs never duplicate a debt. An early renewal (before reaching 0) is not a renewal.
 
+**WhatsApp control panel** (`app/WhatsApp`, webhook `App\Http\Controllers\WhatsAppWebhookController`)
+- POST `/whatsapp/webhook` is accepted only with a valid `X-Hub-Signature-256` (HMAC of the raw body with `WHATSAPP_APP_SECRET`). The work runs after the 200 (`defer`).
+- `App\WhatsApp\Inbox` order must stay: store the message by its unique WhatsApp ID (a redelivery does nothing) → check the sender in `whatsapp_numbers` (active, user active) BEFORE reading, downloading or transcribing anything → understand → execute → audit → reply. An unauthorized number only ever gets the configured refusal text; its content is not stored.
+- Understanding: `RuleInterpreter` (fixed short commands, no network) first, then `ClaudeInterpreter` (Anthropic PHP SDK, structured JSON output, server-side fallbacks). `CommandExecutor` runs as the linked user (`Auth::setUser`), checks that user's permissions and calls the same services as the panel; each command is one DB transaction inside `Audit::withSource('whatsapp')`.
+- A WhatsApp activation goes through `RenewalService::record` and updates `external_ends_at`/`company_days_left`, so the next sync does not count it again. The same account is not activated twice within `whatsapp.duplicate_hours` (12).
+- Keys only in env: `WHATSAPP_*`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. Tests use `tests/Support/FakeWhatsApp` and `FakeClaude`; never call the real services from tests.
+
 **Employees** (`App\Services\EmployeeFinance`)
 - Custody (عهدة) is a money account of kind `custody` per employee; cash they collect lands there. Handover moves it to a company box. Advances (سلف) are a separate receivable with repayments; an advance is never deleted. Custody and advances never mix.
 
@@ -65,6 +72,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 | Path | What |
 |------|------|
 | `app/Services` | Business logic: activation, payments, debts, treasury, renewals, employee finance, reports, backup, reset |
+| `app/WhatsApp` | WhatsApp control panel: webhook inbox, number registry, interpreters (rules + Claude), command executor, Cloud API gateway, transcriber |
 | `app/Sync` | Company sync: mapper of the panel's JSON, browser payload, extension/bookmarklet scripts, direct client (works only from inside Iraq) |
 | `app/Imports` | Excel/CSV subscriber import (mapping, preview, safe modes) |
 | `app/Filament` | Screens: resources, pages, dashboard widgets, shared actions (`Actions/Operations.php`, `Actions/EmployeeActions.php`) |
@@ -76,4 +84,4 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 
 - UI text in Arabic (Iraqi users); code, comments and commit messages in English.
 - Match the surrounding code style; keep changes minimal and covered by tests.
-- Secrets live only in `deploy/.env` on the server (never committed): APP_KEY, DB password, Google OAuth keys. Changing APP_KEY makes stored subscriber passwords unreadable: never change it.
+- Secrets live only in `deploy/.env` on the server (never committed): APP_KEY, DB password, Google OAuth keys, WhatsApp/Anthropic/OpenAI keys. Changing APP_KEY makes stored subscriber passwords unreadable: never change it.

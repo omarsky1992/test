@@ -13,6 +13,27 @@ class Audit
 
     private ?string $requestId = null;
 
+    /** Set while a WhatsApp command runs, so every entry it causes is marked as coming from WhatsApp. */
+    private ?string $sourceOverride = null;
+
+    /**
+     * Runs $callback with every audit entry it writes marked with $source.
+     *
+     * @template T
+     * @param  callable(): T  $callback
+     * @return T
+     */
+    public function withSource(string $source, callable $callback): mixed
+    {
+        $previous = $this->sourceOverride;
+        $this->sourceOverride = $source;
+        try {
+            return $callback();
+        } finally {
+            $this->sourceOverride = $previous;
+        }
+    }
+
     public function log(
         string $action,
         Model|string $entity,
@@ -34,7 +55,7 @@ class Audit
             'old_values' => $this->mask($old),
             'new_values' => $this->mask($new),
             'reason' => $reason,
-            'source' => $source,
+            'source' => $this->sourceOverride ?? $source,
             'ip_address' => $request?->ip(),
             'user_agent' => $request ? Str::limit((string) $request->userAgent(), 250, '') : null,
             'request_id' => $this->requestId ??= (string) Str::uuid(),

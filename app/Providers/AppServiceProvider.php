@@ -20,6 +20,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->scoped(Audit::class);
         $this->app->scoped(Settings::class);
         $this->app->bind(\App\Sync\CompanyClient::class, \App\Sync\FtthApiClient::class);
+        $this->app->bind(\App\WhatsApp\Gateway::class, \App\WhatsApp\CloudApiGateway::class);
+        $this->app->bind(\App\WhatsApp\Transcriber::class, \App\WhatsApp\HttpTranscriber::class);
+        $this->app->bind(\App\WhatsApp\Interpreter::class, \App\WhatsApp\CommandInterpreter::class);
     }
 
     public function boot(): void

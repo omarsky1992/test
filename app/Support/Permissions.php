@@ -51,6 +51,7 @@ class Permissions
         'employees.view' => ['عرض الموظفين وكشوف حساباتهم', false],
         'custody.settle' => ['تسديد عهدة موظف للصندوق', false],
         'advances.manage' => ['تسجيل السلف وتسديدها', false],
+        'whatsapp.manage' => ['لوحة تحكم واتساب: الأرقام المصرح لها وسجل العمليات', false],
     ];
 
     public static function employeeDefaults(): array

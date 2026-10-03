@@ -260,7 +260,20 @@ class EmployeeFinance
             ]);
         }
 
-        return $rows->sortByDesc(fn ($r) => $r['at']->getTimestamp())->values();
+        // Running balances (الرصيد الناتج) after each movement, counted from everything before the period.
+        $custody = $box && $from ? (int) LedgerEntry::where('ledger_account_id', $box->ledger_account_id)->where('occurred_at', '<', $from->startOfDay())->sum(DB::raw('debit - credit')) : 0;
+        $advance = $from
+            ? (int) EmployeeAdvance::where('user_id', $employee->id)->where('advanced_at', '<', $from->startOfDay())->sum('amount')
+                - (int) EmployeeAdvanceRepayment::where('user_id', $employee->id)->where('paid_at', '<', $from->startOfDay())->sum('amount')
+            : 0;
+        $rows = $rows->sortByDesc(fn ($r) => $r['at']->getTimestamp())->reverse()->values()->map(function (array $r) use (&$custody, &$advance) {
+            $custody += $r['custody'];
+            $advance += $r['advance'];
+
+            return $r + ['custody_balance' => $custody, 'advance_balance' => $advance];
+        });
+
+        return $rows->reverse()->values();
     }
 
     /**

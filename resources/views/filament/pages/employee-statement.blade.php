@@ -50,10 +50,10 @@
             <p style="color:rgb(120 113 108);font-size:14px">لا توجد حركات.</p>
         @else
             <div style="overflow-x:auto">
-                <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:760px">
+                <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:960px">
                     <thead><tr>
                         <th style="{{ $th }}">التاريخ والوقت</th><th style="{{ $th }}">النوع</th><th style="{{ $th }}">التفاصيل</th>
-                        <th style="{{ $th }}">العهدة</th><th style="{{ $th }}">السلف</th><th style="{{ $th }}">سجّلها / أكّدها</th>
+                        <th style="{{ $th }}">العهدة</th><th style="{{ $th }}">رصيد العهدة الناتج</th><th style="{{ $th }}">السلف</th><th style="{{ $th }}">رصيد السلف الناتج</th><th style="{{ $th }}">سجّلها / أكّدها</th>
                     </tr></thead>
                     <tbody>
                         @foreach ($rows as $r)
@@ -62,7 +62,9 @@
                                 <td style="{{ $td }};white-space:nowrap">{{ $r['label'] }}</td>
                                 <td style="{{ $td }}">{{ $r['details'] }}</td>
                                 <td style="{{ $td }};font-weight:600;color:{{ $r['custody'] < 0 ? 'rgb(21 128 61)' : 'rgb(180 83 9)' }}" dir="ltr">{{ $signed($r['custody']) }}</td>
+                                <td style="{{ $td }};font-weight:700" dir="ltr">{{ number_format($r['custody_balance']) }}</td>
                                 <td style="{{ $td }};font-weight:600;color:{{ $r['advance'] < 0 ? 'rgb(21 128 61)' : 'rgb(185 28 28)' }}" dir="ltr">{{ $signed($r['advance']) }}</td>
+                                <td style="{{ $td }};font-weight:700" dir="ltr">{{ number_format($r['advance_balance']) }}</td>
                                 <td style="{{ $td }}">{{ $r['by'] ?? 'تلقائي' }}</td>
                             </tr>
                         @endforeach

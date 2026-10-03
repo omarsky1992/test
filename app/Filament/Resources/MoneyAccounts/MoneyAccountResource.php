@@ -58,6 +58,9 @@ class MoneyAccountResource extends Resource
                 TextColumn::make('is_active')->label('فعّال')->badge()->formatStateUsing(fn ($state) => $state ? 'نعم' : 'لا'),
             ])
             ->recordActions([
+                Action::make('statement')->label('كشف الصندوق')->icon(Heroicon::OutlinedDocumentText)->color('gray')
+                    ->visible(fn () => \App\Filament\Pages\MoneyAccountStatement::canAccess())
+                    ->url(fn (MoneyAccount $record) => \App\Filament\Pages\MoneyAccountStatement::getUrl(['box' => $record->id])),
                 Action::make('opening')->label('رصيد ابتدائي')->icon(Heroicon::OutlinedFlag)->color('gray')
                     ->authorize('cash.opening_balance')
                     ->schema([TextInput::make('amount')->label('المبلغ')->integer()->minValue(1)->suffix('د.ع')->required()])

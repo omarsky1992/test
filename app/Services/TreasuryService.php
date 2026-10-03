@@ -73,6 +73,73 @@ class TreasuryService
         return $this->ledger->balance($moneyAccount->ledger_account_id);
     }
 
+    /**
+     * A box's statement: every movement in and out, oldest first, with where it came from, who
+     * recorded it and the balance after it. The opening balance is everything before $from.
+     *
+     * @return array{opening: int, rows: \Illuminate\Support\Collection<int, array>, total_in: int, total_out: int, closing: int, current: int, truncated: bool}
+     */
+    public function statement(MoneyAccount $moneyAccount, ?CarbonImmutable $from = null, ?CarbonImmutable $to = null, int $limit = 3000): array
+    {
+        $ledgerId = $moneyAccount->ledger_account_id;
+        $opening = $from
+            ? (int) \App\Models\LedgerEntry::where('ledger_account_id', $ledgerId)->where('occurred_at', '<', $from->startOfDay())->sum(DB::raw('debit - credit'))
+            : 0;
+
+        $entries = \App\Models\LedgerEntry::query()
+            ->join('financial_transactions as t', 't.id', '=', 'ledger_entries.txn_id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
+            ->leftJoin('subscribers as s', 's.id', '=', 'ledger_entries.subscriber_id')
+            ->where('ledger_entries.ledger_account_id', $ledgerId)
+            ->when($from, fn ($q) => $q->where('ledger_entries.occurred_at', '>=', $from->startOfDay()))
+            ->when($to, fn ($q) => $q->where('ledger_entries.occurred_at', '<=', $to->endOfDay()))
+            ->select('ledger_entries.id', 'ledger_entries.debit', 'ledger_entries.credit', 'ledger_entries.occurred_at', 't.txn_type', 't.memo', 'u.name as by_name', 's.full_name as subscriber_name')
+            ->orderBy('ledger_entries.occurred_at')->orderBy('ledger_entries.id')
+            ->limit($limit + 1)->get();
+        $truncated = $entries->count() > $limit;
+
+        $balance = $opening;
+        $rows = $entries->take($limit)->map(function ($e) use (&$balance) {
+            $in = (int) $e->debit;
+            $out = (int) $e->credit;
+            $balance += $in - $out;
+
+            return [
+                'at' => CarbonImmutable::parse($e->occurred_at),
+                'label' => $e->txn_type === 'fund_transfer' ? ($in > 0 ? 'تحويل وارد' : 'تحويل صادر') : (self::TXN_LABELS[$e->txn_type] ?? $e->txn_type),
+                'details' => trim(($e->memo ?? '').($e->subscriber_name ? " – {$e->subscriber_name}" : '')),
+                'in' => $in,
+                'out' => $out,
+                'balance' => $balance,
+                'by' => $e->by_name,
+            ];
+        });
+
+        return [
+            'opening' => $opening,
+            'rows' => $rows,
+            'total_in' => (int) $rows->sum('in'),
+            'total_out' => (int) $rows->sum('out'),
+            'closing' => $balance,
+            'current' => $this->balance($moneyAccount),
+            'truncated' => $truncated,
+        ];
+    }
+
+    public const TXN_LABELS = [
+        'payment' => 'قبض من مشترك',
+        'expense' => 'مصروف / مشتريات',
+        'fund_transfer' => 'تحويل بين الصناديق',
+        'opening_balance' => 'رصيد ابتدائي',
+        'company_settlement' => 'راجع الشركة',
+        'distribution' => 'توزيع الراجع',
+        'device_sale' => 'بيع جهاز',
+        'employee_advance' => 'سلفة موظف',
+        'advance_repayment' => 'تسديد سلفة',
+        'activation_charge' => 'تفعيل',
+        'reversal' => 'إلغاء عملية',
+    ];
+
     public function openingBalance(MoneyAccount $moneyAccount, int $amount, ?string $notes = null): FinancialTransaction
     {
         if ($amount <= 0) {

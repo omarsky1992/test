@@ -41,3 +41,10 @@ Route::post('/internal/backup', [BackupController::class, 'trigger'])
     ->withoutMiddleware(PreventRequestForgery::class)
     ->middleware('throttle:5,60')
     ->name('backup.trigger');
+
+// WhatsApp Cloud API webhook: Meta's verification (GET) and signed message deliveries (POST).
+Route::get('/whatsapp/webhook', [App\Http\Controllers\WhatsAppWebhookController::class, 'verify'])->name('whatsapp.verify');
+Route::post('/whatsapp/webhook', [App\Http\Controllers\WhatsAppWebhookController::class, 'receive'])
+    ->withoutMiddleware(PreventRequestForgery::class)
+    ->middleware('throttle:300,1')
+    ->name('whatsapp.webhook');

@@ -22,6 +22,10 @@ class Settings
         'sync.client_app' => '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f',
         'sync.hierarchy_level' => '',
         'sync.detail_limit' => 200,
+        'whatsapp.enabled' => false,
+        'whatsapp.voice_enabled' => true,
+        'whatsapp.unauthorized_message' => 'هذا الرقم غير مصرح له باستخدام النظام.',
+        'whatsapp.duplicate_hours' => 12,
     ];
 
     /** @var array<string, mixed>|null */
