@@ -33,7 +33,7 @@ class SubscriberService
                 'branch_id' => $branchId,
                 'code' => 'TMP-'.bin2hex(random_bytes(8)),
                 'status' => $data['status'] ?? 'active',
-                'created_by' => Auth::id(),
+                'created_by' => $data['created_by'] ?? Auth::id(),
             ]);
             $subscriber->update(['code' => 'C-'.str_pad((string) $subscriber->id, 6, '0', STR_PAD_LEFT)]);
             $this->audit->log('subscriber.created', $subscriber, null, $subscriber->only(['code', 'full_name', 'phone']), subscriberId: $subscriber->id);
@@ -62,7 +62,7 @@ class SubscriberService
             'subscriber_id' => $subscriber->id,
             'branch_id' => $subscriber->branch_id,
             'status' => 'active',
-            'created_by' => Auth::id(),
+            'created_by' => $data['created_by'] ?? Auth::id(),
         ]);
         $this->audit->log('account.created', $account, null, $account->only(['username', 'serial_number', 'fat_code', 'pole_number']), subscriberId: $subscriber->id);
 

@@ -54,6 +54,7 @@ class ActivationService
         ?string $receiverName = null,
         ?string $externalRef = null,
         ?string $notes = null,
+        ?int $createdBy = null,
     ): Activation {
         if ($kind === ActivationKind::Partial7 && $settlement !== Settlement::Debt) {
             throw new BusinessRuleException('تفعيل 7 أيام يُسجَّل ديناً ثانوياً دائماً.');
@@ -63,7 +64,7 @@ class ActivationService
         }
 
         return $this->withOverlapGuard(fn () => DB::transaction(function () use (
-            $account, $plan, $kind, $requestedStart, $promotion, $settlement, $overridePrice, $moneyAccount, $receiverName, $externalRef, $notes,
+            $account, $plan, $kind, $requestedStart, $promotion, $settlement, $overridePrice, $moneyAccount, $receiverName, $externalRef, $notes, $createdBy,
         ) {
             $now = CarbonImmutable::now();
             $account = Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
@@ -100,7 +101,7 @@ class ActivationService
                 'external_ref' => $externalRef,
                 'status' => DocumentStatus::Posted,
                 'notes' => $notes,
-                'created_by' => Auth::id(),
+                'created_by' => $createdBy ?? Auth::id(),
             ]);
 
             ActivationPeriod::create([
@@ -112,7 +113,7 @@ class ActivationService
                 'ends_at' => $endsAt,
                 'source_type' => 'activation',
                 'source_id' => $activation->id,
-                'created_by' => Auth::id(),
+                'created_by' => $createdBy ?? Auth::id(),
             ]);
 
             $bucket = $kind === ActivationKind::Partial7 ? DebtBucket::Secondary : DebtBucket::Primary;
@@ -130,7 +131,7 @@ class ActivationService
                 'currency_code' => 'IQD',
                 'debt_date' => $startsAt->lessThan($now) ? $startsAt : $now,
                 'status' => DebtStatus::Open,
-                'created_by' => Auth::id(),
+                'created_by' => $createdBy ?? Auth::id(),
             ]);
 
             $tag = ['subscriber_id' => $account->subscriber_id, 'account_id' => $account->id, 'debt_id' => $debt->id];
