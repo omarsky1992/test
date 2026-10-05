@@ -122,6 +122,45 @@ class BackupTest extends TestCase
         $this->assertStringContainsString('أعد الربط', $run->error);
     }
 
+    public function test_a_disabled_drive_api_is_explained_with_what_to_do(): void
+    {
+        $this->connectDrive();
+        Http::fake([
+            'oauth2.googleapis.com/token' => Http::response(['access_token' => 'access-1']),
+            'www.googleapis.com/drive/v3/files*' => Http::response(['error' => ['code' => 403,
+                'message' => 'Google Drive API has not been used in project 123 before or it is disabled.',
+                'errors' => [['reason' => 'accessNotConfigured']]]], 403),
+        ]);
+
+        $run = app(BackupService::class)->run('manual');
+
+        $this->assertSame('failed', $run->status);
+        $this->assertStringContainsString('Google Drive API غير مفعّلة', $run->error);
+        $this->assertStringContainsString('drive.googleapis.com', $run->error);
+    }
+
+    public function test_a_connection_without_the_drive_permission_is_refused(): void
+    {
+        Http::fake([
+            'oauth2.googleapis.com/token' => Http::response(['access_token' => 'a', 'refresh_token' => 'r', 'scope' => 'openid https://www.googleapis.com/auth/userinfo.email']),
+            'openidconnect.googleapis.com/*' => Http::response(['email' => 'owner@gmail.com']),
+        ]);
+        app(Settings::class)->set('backup.google.email', 'owner@gmail.com');
+        $this->get(route('backup.google.connect'));
+
+        $this->get(route('backup.google.callback', ['code' => 'c', 'state' => session('google_oauth_state')]));
+
+        $this->assertFalse(app(GoogleDrive::class)->isConnected());
+    }
+
+    public function test_google_errors_get_plain_arabic_hints(): void
+    {
+        $this->assertStringContainsString('علامة ✓', GoogleDrive::explain(403, 'insufficientPermissions', 'Insufficient Permission'));
+        $this->assertStringContainsString('ممتلئة', GoogleDrive::explain(403, 'storageQuotaExceeded', 'The user\'s Drive storage quota has been exceeded.'));
+        $this->assertStringContainsString('GOOGLE_CLIENT_SECRET', GoogleDrive::explain(401, 'invalid_client', 'Unauthorized'));
+        $this->assertSame('خطأ من Google Drive: something', GoogleDrive::explain(400, '', 'something'));
+    }
+
     public function test_the_daily_trigger_needs_the_secret_token(): void
     {
         $this->connectDrive();

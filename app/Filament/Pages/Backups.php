@@ -68,6 +68,8 @@ class Backups extends Page
                 ->requiresConfirmation()
                 ->modalDescription('تُنشأ نسخة كاملة من قاعدة البيانات وتُرفع إلى Google Drive الآن.')
                 ->action(function () {
+                    // A large dump and upload can take minutes; don't let PHP's default 30 seconds cut it.
+                    @set_time_limit(900);
                     try {
                         $run = app(BackupService::class)->run('web');
                     } catch (BusinessRuleException $e) {
