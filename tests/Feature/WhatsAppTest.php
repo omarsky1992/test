@@ -442,6 +442,41 @@ class WhatsAppTest extends TestCase
         $this->assertStringContainsString('connection refused', WhatsappMessage::sole()->error);
     }
 
+    public function test_spoken_commands_as_speech_to_text_writes_them_are_understood(): void
+    {
+        $rules = new RuleInterpreter;
+        $read = fn (string $t) => $rules->interpret($t)?->toArray();
+
+        $this->assertSame(['intent' => 'activate', 'subscriber' => 'محمد رمضان', 'days' => 7], $read('محمد رمضان، فعلته سبعة أيام.'));
+        $this->assertSame(['intent' => 'activate', 'subscriber' => 'محمد رمضان', 'days' => 14], $read('محمد رمضان جددته اسبوعين'));
+        $this->assertSame(['intent' => 'payment', 'subscriber' => 'علي حسين', 'amount' => 35000], $read('علي حسين دفع خمسة وثلاثين ألف'));
+        $this->assertSame(['intent' => 'payment', 'subscriber' => 'علي حسين', 'amount' => 150000], $read('علي حسين دفع مية وخمسين الف'));
+        $this->assertSame(25000, $read('سجل دين على محمد رمضان خمسة وعشرين ألف')['amount']);
+        $this->assertSame(250000, RuleInterpreter::wordsToNumber('ربع مليون'));
+        $this->assertSame(35000, $read('علي حسين دفع 35,000.')['amount']);
+        $this->assertNull(RuleInterpreter::wordsToNumber('محمد'));
+    }
+
+    public function test_a_spoken_activation_for_someone_runs(): void
+    {
+        $this->subscriber();
+        $this->wa->transcript = 'فعلت لمحمد رمضان سبعة أيام.';
+
+        $this->voice();
+
+        $this->assertSame(1, Debt::count());
+        $this->assertSame('done', WhatsappMessage::sole()->status);
+    }
+
+    public function test_a_voice_note_that_is_not_understood_shows_what_was_heard(): void
+    {
+        $this->wa->transcript = 'شلونكم اليوم';
+
+        $this->voice();
+
+        $this->assertStringContainsString('🎤 سمعت: «شلونكم اليوم»', $this->wa->lastReply());
+    }
+
     // ---- Queries ----
 
     public function test_queries_answer_shortly(): void

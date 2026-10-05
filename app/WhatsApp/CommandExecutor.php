@@ -358,6 +358,19 @@ class CommandExecutor
      */
     private function findAccount(string $term): Account|string
     {
+        $found = $this->lookup($term);
+        // Spoken «فعلت لمحمد»: the «ل» (for) sticks to the name.
+        if (is_string($found) && str_starts_with($found, 'ما لقيت') && mb_substr($term, 0, 1) === 'ل' && mb_strlen($term) > 3) {
+            $again = $this->lookup(mb_substr($term, 1));
+
+            return is_string($again) && str_starts_with($again, 'ما لقيت') ? $found : $again;
+        }
+
+        return $found;
+    }
+
+    private function lookup(string $term): Account|string
+    {
         $subscribers = Subscriber::query()->search($term)->with(['accounts' => fn ($q) => $q->where('status', '<>', AccountStatus::Closed)])->limit(6)->get();
         if ($subscribers->count() > 1) {
             // A name typed in full wins over longer names that contain it.

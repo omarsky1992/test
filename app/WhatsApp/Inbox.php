@@ -174,6 +174,10 @@ class Inbox
 
         return $this->asUser($user, function () use ($command, $user, $record, $text) {
             $result = $this->executor->execute($command, $user, $record->wa_message_id);
+            if ($record->transcript !== null && $result->status === 'clarify') {
+                // Show what was heard, so a mis-heard word is easy to spot and repeat.
+                $result = new Result($result->status, "🎤 سمعت: «{$record->transcript}»\n\n{$result->reply}", $result->changes);
+            }
             $this->audit->log('whatsapp.command', $record, null, [
                 'phone' => $record->from_phone,
                 'command' => $text,
