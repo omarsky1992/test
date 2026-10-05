@@ -478,6 +478,9 @@ class Operations
         $debt = match (true) {
             $record instanceof Debt => $record,
             $record instanceof Activation => $record->debt,
+            // A subscriber card: its oldest open secondary debt.
+            $record instanceof Account => Debt::where('account_id', $record->id)->where('bucket', DebtBucket::Secondary)
+                ->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->orderBy('debt_date')->orderBy('id')->first(),
             default => null,
         };
 

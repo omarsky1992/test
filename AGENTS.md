@@ -26,7 +26,7 @@ php artisan serve
 php artisan test                          # must stay green before every push
 ```
 
-The test suite (195+ tests) covers the money rules, the sync and renewal rules, WhatsApp commands and security, employees, statements, imports, reset and every screen. Add tests for anything you change.
+The test suite (197+ tests) covers the money rules, the sync and renewal rules, WhatsApp commands and security, employees, statements, imports, reset and every screen. Add tests for anything you change.
 
 ## How a change reaches the live site
 
@@ -50,7 +50,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 **Company sync and renewals** (`app/Sync`, `App\Services\RenewalService`)
 - The company panel (admin.ftth.iq, sign-in at sso.ftth.iq realm `Partners`) refuses connections from outside Iraq. The live source is the browser: a Chrome extension (built by `App\Sync\BrowserScripts`, downloaded from the sync page) reads the panel with the user's own session and posts to `/sync/browser/plan` and `/sync/browser/run`. Only GET requests to the panel, ever. Never store or ask for company passwords in code or chat.
 - Matching: subscriber by company customer ID, account by subscription ID then device name (username). Never create duplicates.
-- Current company data (plan, status, end date, device, FAT, port, zone, GPS) is overwritten from the site; name and phone are only filled when empty. Sync never touches financial history.
+- Current company data (plan, status, end date, device, FAT, port, zone, GPS) is overwritten from the site; name and phone are only filled when empty. Sync never touches financial history: an open secondary debt is never voided or moved by a sync, even when the site shows a full activation; only a payment or a manual مناقلة changes it.
 - Renewal rule: last known days left = 0 (aged by the saved end date) and now more than 0 on the site. Up to the short activation (setting `activation.partial_days`, 7) it creates ONE secondary debt at the plan price; more than that is a full activation recorded with no debt. Each renewal has a unique reference (account + new end date) so repeated syncs never duplicate a debt. An early renewal (before reaching 0) is not a renewal.
 
 **WhatsApp control panel** (`app/WhatsApp`, webhook `App\Http\Controllers\WhatsAppWebhookController`)

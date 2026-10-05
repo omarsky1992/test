@@ -65,7 +65,7 @@
 
     @if ($canDebts)
         <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start">
-            <a href="{{ $cardsUrl('secondary') }}" style="{{ $tile }};border-color:rgb(254 215 170)">
+            <a href="{{ $secondaryUrl }}" style="{{ $tile }};border-color:rgb(254 215 170)">
                 <div style="{{ $label }}">الديون الثانوية</div>
                 <div style="{{ $value }};color:rgb(180 83 9)">{{ number_format($debts['secondary']) }}</div>
                 <div style="{{ $small }}">{{ $debts['secondary_accounts'] }} حساب</div>

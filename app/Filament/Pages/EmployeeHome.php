@@ -66,6 +66,17 @@ class EmployeeHome extends Page
         }
     }
 
+    protected function getFooterWidgets(): array
+    {
+        // The 7-day follow-up list with its pay and مناقلة buttons, as on the admin dashboard.
+        return auth()->user()->can('follow_ups.create') ? [\App\Filament\Widgets\PendingFollowUps::class] : [];
+    }
+
+    public function getFooterWidgetsColumns(): int|array
+    {
+        return 1;
+    }
+
     public function payAction(): Action
     {
         return Operations::pay('pay');
@@ -123,6 +134,8 @@ class EmployeeHome extends Page
             'canMarkDone' => $user->can('activations.mark_done'),
             'handoverRequests' => $user->can('custody.settle') ? CustodyHandoverRequest::where('status', 'pending')->count() : 0,
             'cardsUrl' => fn (string $tab) => SubscriberCardResource::getUrl('index', ['tab' => $tab]),
+            // The secondary debts list itself, where each debt has its pay and مناقلة buttons.
+            'secondaryUrl' => \App\Filament\Resources\Debts\DebtResource::getUrl('index', ['tab' => 'secondary']),
         ];
     }
 }

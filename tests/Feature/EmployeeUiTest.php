@@ -139,6 +139,53 @@ class EmployeeUiTest extends TestCase
         Livewire::test(EmployeeHome::class)->call('markDone', $account->id)->assertForbidden();
     }
 
+    public function test_the_secondary_debt_can_be_moved_to_primary_from_the_employee_interface(): void
+    {
+        $account = $this->renewed();
+        $employee = $this->employee();
+        $this->actingAs($employee);
+
+        Livewire::test(ListSubscriberCards::class)->assertTableActionVisible('transfer', $account)
+            ->callTableAction('transfer', $account, ['reason' => 'لم يسدد'])->assertHasNoTableActionErrors();
+
+        $debt = Debt::sole();
+        $this->assertSame(\App\Enums\DebtBucket::Primary, $debt->bucket);
+        $this->assertSame(1, \App\Models\DebtTransfer::count());
+        $this->assertSame($employee->id, \App\Models\DebtTransfer::sole()->performed_by);
+
+        $other = $this->account('علي حسين');
+        Livewire::test(ListSubscriberCards::class)->assertTableActionHidden('transfer', $other);
+
+        // The home's secondary-debts tile opens the debts list, which has مناقلة on each debt.
+        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('debts?tab=secondary', escape: false)->assertSee('متابعة الـ7 أيام');
+    }
+
+    public function test_a_sync_never_deletes_or_moves_a_secondary_debt(): void
+    {
+        $site = new FakeCompanyClient;
+        $this->app->instance(\App\Sync\CompanyClient::class, $site);
+        $record = ['customer_id' => '88', 'name' => 'زينب كريم', 'plan' => 'BASIC', 'username' => 'ZK2', 'subscription_id' => '601'];
+        $site->set(['status' => 'Expired', 'ends_at' => now()->subDays(3)->toIso8601String()] + $record);
+        app(\App\Sync\CompanySync::class)->run('manual');
+
+        $this->travelTo(now()->addHour());
+        $site->set(['status' => 'Active', 'ends_at' => now()->addDays(7)->toIso8601String()] + $record);
+        app(\App\Sync\CompanySync::class)->run('manual');
+        $debt = Debt::sole();
+        $this->assertSame([\App\Enums\DebtBucket::Secondary, 35000], [$debt->bucket, $debt->balance]);
+
+        // Activated in full on the site while still owing: the debt stays exactly as it is.
+        $this->travelTo(now()->addDays(2));
+        $site->set(['status' => 'Active', 'ends_at' => now()->addDays(30)->toIso8601String()] + $record);
+        app(\App\Sync\CompanySync::class)->run('manual');
+
+        $debt->refresh();
+        $this->assertSame([\App\Enums\DebtBucket::Secondary, DebtStatus::Open, 35000], [$debt->bucket, $debt->status, $debt->balance]);
+        $this->assertSame(0, \App\Models\DebtTransfer::count());
+        $this->assertSame(35000, $this->balanceOf(\App\Services\Ledger::AR_SECONDARY));
+        $this->assertSame(1, Debt::count());
+    }
+
     // ---- Custody handover requests ----
 
     public function test_a_handover_request_moves_the_money_only_when_the_admin_confirms(): void

@@ -81,6 +81,7 @@ class SubscriberCardResource extends Resource
             ->recordUrl(null)
             ->recordActions([
                 Operations::pay(),
+                Operations::transfer()->visible(fn (Account $record) => (int) $record->secondary_due > 0),
                 Operations::activate(),
                 Action::make('markDone')->label('تم التفعيل')->icon(Heroicon::OutlinedCheckBadge)->color('primary')
                     ->visible(fn (Account $record) => $record->must_activate && auth()->user()->can('activations.mark_done'))
