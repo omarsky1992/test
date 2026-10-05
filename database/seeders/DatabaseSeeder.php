@@ -79,6 +79,16 @@ class DatabaseSeeder extends Seeder
         foreach (['رصيد الشركة', 'راوتر وأجهزة', 'كابلات ومواد', 'إيجار', 'رواتب', 'أخرى'] as $name) {
             ExpenseCategory::firstOrCreate(['name_ar' => $name]);
         }
+        // Starter WhatsApp messages, added once; the admin edits them in the settings.
+        if (\App\Models\MessageTemplate::doesntExist()) {
+            foreach ([
+                ['💰', 'تذكير بالمبلغ المتبقي', "تحية طيبة {الاسم}،\nنذكّركم بأن المبلغ المتبقي على اشتراككم هو {المبلغ}.\nشكراً لكم."],
+                ['⏳', 'قرب نهاية الاشتراك', "تحية طيبة {الاسم}،\nاشتراككم ({الفئة}) ينتهي بعد {الأيام} يوم بتاريخ {تاريخ_الانتهاء}.\nللتجديد يرجى التواصل معنا."],
+                ['⛔', 'انتهاء الاشتراك', "تحية طيبة {الاسم}،\nانتهى اشتراككم ({الفئة}). لإعادة التفعيل يرجى التواصل معنا."],
+            ] as $i => [$icon, $title, $body]) {
+                \App\Models\MessageTemplate::create(['icon' => $icon, 'title' => $title, 'body' => $body, 'sort_order' => $i + 1]);
+            }
+        }
         foreach ([['router', 'راوتر'], ['ont', 'جهاز ONT'], ['repeater', 'مقوي'], ['cable', 'كابل'], ['other', 'أخرى']] as [$key, $name]) {
             DeviceType::firstOrCreate(['key' => $key], ['name_ar' => $name]);
         }

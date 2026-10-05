@@ -265,6 +265,7 @@ class CompanySync
             $this->audit->log('account.synced', $account, $this->auditable(array_intersect_key($original, $changed)), $this->auditable($changed), 'مزامنة من موقع الشركة', $account->subscriber_id, 'sync');
             if (array_key_exists('external_ends_at', $changed)) {
                 $this->activations->refreshAccountEnd($account);
+                app(\App\Services\ActivationDueService::class)->accountEndsChanged($account);
             }
         }
 

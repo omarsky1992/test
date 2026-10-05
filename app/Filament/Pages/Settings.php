@@ -39,6 +39,7 @@ class Settings extends Page
         'partial_days' => 'activation.partial_days',
         'full_days' => 'activation.full_days',
         'discount_rounding' => 'pricing.discount_rounding',
+        'expiring_days' => 'subscribers.expiring_days',
     ];
 
     public static function canAccess(): bool
@@ -100,6 +101,10 @@ class Settings extends Page
                     TextInput::make('full_days')->label('مدة التفعيل الكامل (يوم)')->integer()->minValue(1)->required()->gt('partial_days'),
                     TextInput::make('discount_rounding')->label('تقريب خصم النسبة (د.ع)')->integer()->minValue(1)->required(),
                 ]),
+                Section::make('المشتركون')->columns(3)->schema([
+                    TextInput::make('expiring_days')->label('«ينتهي قريباً»: خلال كم يوم')->integer()->minValue(1)->maxValue(60)->required()
+                        ->helperText('يُستخدم في الرئيسية وبطاقات المشتركين وتذكير واتساب.'),
+                ]),
             ])->livewireSubmitHandler('save')->footer([
                 Actions::make([Action::make('save')->label('حفظ')->submit('save')]),
             ]),
@@ -112,7 +117,7 @@ class Settings extends Page
         $settings = app(SettingsService::class);
         $old = array_map(fn (string $key) => $settings->get($key), self::KEYS);
         foreach (self::KEYS as $field => $key) {
-            $settings->set($key, in_array($field, ['partial_days', 'full_days', 'discount_rounding'], true) ? (int) $data[$field] : $data[$field]);
+            $settings->set($key, in_array($field, ['partial_days', 'full_days', 'discount_rounding', 'expiring_days'], true) ? (int) $data[$field] : $data[$field]);
         }
         app(Audit::class)->log('settings.updated', 'settings', $old, $data);
         Notification::make()->success()->title('تم الحفظ')->send();

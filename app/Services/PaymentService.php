@@ -31,6 +31,7 @@ class PaymentService
         private Audit $audit,
         private ActivationService $activations,
         private DebtService $debts,
+        private ActivationDueService $dues,
     ) {
     }
 
@@ -351,11 +352,13 @@ class PaymentService
 
     private function applyToDebt(Debt $debt, int $amount): void
     {
+        $before = $debt->status;
         $paid = $debt->paid_amount + $amount;
         $debt->update([
             'paid_amount' => $paid,
             'balance' => $debt->original_amount - $paid,
             'status' => DebtService::statusFor($debt->original_amount, $paid),
         ]);
+        $this->dues->debtChanged($debt, $before);
     }
 }

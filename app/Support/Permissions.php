@@ -51,6 +51,8 @@ class Permissions
         'employees.view' => ['عرض الموظفين وكشوف حساباتهم', false],
         'custody.settle' => ['تسديد عهدة موظف للصندوق', false],
         'advances.manage' => ['تسجيل السلف وتسديدها', false],
+        'activations.mark_done' => ['تأكيد «تم التفعيل» لمن سدّد دينه الثانوي', true],
+        'whatsapp.remind' => ['إرسال تذكير واتساب للمشتركين من القوالب', true],
         'whatsapp.manage' => ['لوحة تحكم واتساب: الأرقام المصرح لها وسجل العمليات', false],
     ];
 

@@ -107,6 +107,7 @@ class CommandExecutor
             // The next company sync sees these days as already known, so it never counts the renewal twice.
             $account->update(['external_ends_at' => $newEnds, 'company_days_left' => Account::daysLeft($newEnds, $now)]);
             $this->audit->changes('account.activated', $account, $original, 'تفعيل عبر واتساب', $account->subscriber_id);
+            app(\App\Services\ActivationDueService::class)->accountEndsChanged($account);
 
             return $renewal;
         });
@@ -223,6 +224,7 @@ class CommandExecutor
         $permission = match ($c->query) {
             'custody', 'advances' => 'employees.view',
             'sales_today', 'purchases_today', 'activated_today' => 'reports.view',
+            'must_activate' => 'accounts.view',
             default => 'debts.view',
         };
         if (! $user->can($permission)) {
@@ -233,6 +235,11 @@ class CommandExecutor
         $reply = match ($c->query) {
             'secondary_debts', 'primary_debts' => $this->debtList($c->query === 'secondary_debts' ? DebtBucket::Secondary : DebtBucket::Primary),
             'late' => $this->late(),
+            'must_activate' => (function () {
+                $dues = \App\Models\ActivationDue::with('subscriber:id,full_name')->where('status', 'pending')->orderBy('paid_at')->limit(15)->get();
+
+                return $dues->isEmpty() ? '✅ ما كو أحد يجب تفعيله.' : "🟣 يجب التفعيل ({$dues->count()}):\n".$dues->map(fn ($d) => "• {$d->subscriber?->full_name}: سدّد ".Money::format($d->amount, false))->implode("\n");
+            })(),
             'activated_today' => $this->activatedToday($today),
             'sales_today' => (function () use ($today) {
                 $d = $this->reports->dashboard($today, $today);

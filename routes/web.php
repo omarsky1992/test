@@ -33,6 +33,8 @@ Route::middleware('auth')->group(function () {
 
         return response()->download($path, $file);
     })->where(['kind' => 'daily|weekly|monthly', 'file' => '[A-Za-z0-9._-]+'])->name('backup.server');
+    Route::post('/ui/theme', [App\Http\Controllers\InterfaceController::class, 'theme'])->name('ui.theme');
+    Route::post('/ui/mode', [App\Http\Controllers\InterfaceController::class, 'mode'])->name('ui.mode');
     Route::get('/backup/google/connect', [BackupController::class, 'connect'])->name('backup.google.connect');
     Route::get('/backup/google/callback', [BackupController::class, 'callback'])->name('backup.google.callback');
 });

@@ -66,6 +66,7 @@ class RuleInterpreter implements Interpreter
         }
 
         return match (true) {
+            str_contains($t, 'يجب التفعيل') || str_contains($t, 'لازم يتفعل') => 'must_activate',
             str_contains($t, 'ثانوي') => 'secondary_debts',
             str_contains($t, 'اولي') => 'primary_debts',
             str_contains($t, 'متاخر') => 'late',

@@ -437,6 +437,7 @@ class WhatsAppTest extends TestCase
         $this->assertSame('void_debt', $rules->interpret('امسح دين محمد')->intent);
         $this->assertSame('secondary_debts', $rules->interpret('الديون الثانوية')->query);
         $this->assertSame('custody', $rules->interpret('عهد الموظفين')->query);
+        $this->assertSame('must_activate', $rules->interpret('يجب التفعيل')->query);
         $this->assertNull($rules->interpret('شريت كيبل 30 متر سعر المتر 5 آلاف'), 'free text goes to the AI');
     }
 

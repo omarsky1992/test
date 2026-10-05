@@ -45,6 +45,18 @@
     </div>
     <p style="font-size:12.5px;color:rgb(120 113 108);margin-top:-8px">العهدة الحالية والسلف المتبقية دائماً حتى اليوم. العهدة والسلف حسابان منفصلان لا يُخصم أحدهما من الآخر.</p>
 
+    @if ($handovers->isNotEmpty())
+        <x-filament::section heading="طلبات تسليم العهدة">
+            @foreach ($handovers as $h)
+                <div style="display:flex;justify-content:space-between;gap:8px;font-size:14px;padding:5px 0;border-bottom:1px solid rgb(245 245 244)">
+                    <span dir="ltr">{{ $h->requested_at->format('Y/m/d H:i') }}</span>
+                    <b>{{ Money::format($h->amount) }}</b>
+                    <span style="color:{{ ['pending' => 'rgb(180 83 9)', 'approved' => 'rgb(21 128 61)', 'rejected' => 'rgb(185 28 28)'][$h->status] }}">{{ \App\Models\CustodyHandoverRequest::STATUSES[$h->status] }}{{ $h->resolution_note ? ' – '.$h->resolution_note : '' }}</span>
+                </div>
+            @endforeach
+        </x-filament::section>
+    @endif
+
     <x-filament::section heading="الحركات">
         @if ($rows->isEmpty())
             <p style="color:rgb(120 113 108);font-size:14px">لا توجد حركات.</p>

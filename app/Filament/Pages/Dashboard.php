@@ -16,6 +16,19 @@ class Dashboard extends BaseDashboard
 
     protected static ?string $title = 'لوحة التحكم';
 
+    public function mount(): void
+    {
+        // Employees, and the admin who switched to the employee interface, land on their own home.
+        if (auth()->user()->usesEmployeeUi()) {
+            $this->redirect(EmployeeHome::getUrl());
+        }
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        return ! auth()->user()?->usesEmployeeUi();
+    }
+
     public function filtersForm(Schema $schema): Schema
     {
         return $schema->components([

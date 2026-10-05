@@ -30,7 +30,8 @@ class ClaudeInterpreter implements Interpreter
         - query: a question. query = secondary_debts (الديون الثانوية), primary_debts (الديون الأولية),
           late (المتأخرين), activated_today (المفعلين اليوم), sales_today (مبيعات اليوم),
           purchases_today (مشتريات/مصاريف اليوم), custody (عهد الموظفين), advances (سلف الموظفين),
-          subscriber_debt (how much a given subscriber owes; also set subscriber).
+          subscriber_debt (how much a given subscriber owes; also set subscriber), must_activate (يجب التفعيل: paid their
+          secondary debt and wait for the full activation).
         - clarify: a command whose required detail is missing or ambiguous (activation without days, payment
           without amount, purchase item without a price). Put one short question in Iraqi Arabic in "question".
         - unknown: anything else (greetings, unrelated text). Put a short Iraqi Arabic reply in "question"

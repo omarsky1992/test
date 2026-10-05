@@ -69,6 +69,11 @@ class Account extends Model
         return $this->hasMany(ActivationPeriod::class);
     }
 
+    public function activationDues(): HasMany
+    {
+        return $this->hasMany(ActivationDue::class);
+    }
+
     public function debts(): HasMany
     {
         return $this->hasMany(Debt::class);

@@ -16,12 +16,15 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['branch_id', 'name', 'username', 'email', 'phone', 'password', 'is_active', 'collects_to_custody'])]
+#[Fillable(['branch_id', 'name', 'username', 'email', 'phone', 'password', 'is_active', 'collects_to_custody', 'theme_color', 'ui_mode'])]
 #[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable implements FilamentUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, HasRoles, Notifiable;
+
+    /** @var array<string, mixed> */
+    protected $attributes = ['theme_color' => null, 'ui_mode' => null];
 
     protected function casts(): array
     {
@@ -53,6 +56,14 @@ class User extends Authenticatable implements FilamentUser
     public function canAccessPanel(Panel $panel): bool
     {
         return $this->is_active;
+    }
+
+    /**
+     * Employees always get the employee interface; the admin chooses with the switch.
+     */
+    public function usesEmployeeUi(): bool
+    {
+        return ! $this->isAdmin() || $this->ui_mode === 'employee';
     }
 
     public function isAdmin(): bool

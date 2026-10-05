@@ -26,7 +26,7 @@ php artisan serve
 php artisan test                          # must stay green before every push
 ```
 
-The test suite (180+ tests) covers the money rules, the sync and renewal rules, WhatsApp commands and security, employees, statements, imports, reset and every screen. Add tests for anything you change.
+The test suite (195+ tests) covers the money rules, the sync and renewal rules, WhatsApp commands and security, employees, statements, imports, reset and every screen. Add tests for anything you change.
 
 ## How a change reaches the live site
 
@@ -62,6 +62,13 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 
 **Employees** (`App\Services\EmployeeFinance`)
 - Custody (عهدة) is a money account of kind `custody` per employee; cash they collect lands there. Handover moves it to a company box. Advances (سلف) are a separate receivable with repayments; an advance is never deleted. Custody and advances never mix.
+
+**Employee interface** (`EmployeeHome`, `SubscriberCardResource`, `App\Support\SubscriberStatus`)
+- Employees always get the employee interface (home, cards, «حسابي», bottom bar on phones); the admin switches with «واجهة المدير ⇄ واجهة الموظف» (`users.ui_mode`). Each user picks their own colour (`users.theme_color`, applied by `ApplyUserTheme`).
+- Subscriber groups: a subscription ends at GREATEST(external_ends_at, service_ends_at); «ينتهي قريباً» uses the setting `subscribers.expiring_days`. «فعّال/منتهي وعليه دين» count primary debts only. Queries use the application clock, never SQL `now()`.
+- «يجب التفعيل» (`activation_dues`, `ActivationDueService`): a secondary debt paid in full opens one (from `PaymentService::applyToDebt`); voiding the payment cancels it; it closes when the company end date moves more than 2 days past where it was (sync or WhatsApp activation) or when an employee confirms «تم التفعيل».
+- Custody handover requests: the employee asks, nothing moves until someone with `custody.settle` approves (then `EmployeeFinance::handOver`).
+- WhatsApp reminders open `wa.me` links from the admin's fixed `message_templates`; nothing is sent automatically.
 
 **Permissions and safety**
 - Every screen and action checks a permission (`App\Support\Permissions`); admins pass everything via `Gate::before`.

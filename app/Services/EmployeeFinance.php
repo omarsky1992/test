@@ -6,6 +6,7 @@ use App\Enums\AdvanceStatus;
 use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
+use App\Models\CustodyHandoverRequest;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
 use App\Models\FundTransfer;
@@ -74,6 +75,67 @@ class EmployeeFinance
             ], $notes);
 
             return $transfer;
+        });
+    }
+
+    /**
+     * The employee says they handed their custody over. Nothing moves until the admin confirms.
+     */
+    public function requestHandover(User $employee, int $amount, ?string $notes = null): CustodyHandoverRequest
+    {
+        return DB::transaction(function () use ($employee, $amount, $notes) {
+            $custody = $this->custodyBalance($employee);
+            if ($amount <= 0) {
+                throw new BusinessRuleException('المبلغ يجب أن يكون أكبر من صفر.');
+            }
+            if ($amount > $custody) {
+                throw new BusinessRuleException('المبلغ أكبر من عهدتك الحالية ('.number_format($custody).' د.ع).');
+            }
+            if (CustodyHandoverRequest::where('user_id', $employee->id)->where('status', 'pending')->lockForUpdate()->exists()) {
+                throw new BusinessRuleException('لديك طلب تسليم بانتظار تأكيد المدير.');
+            }
+            $request = CustodyHandoverRequest::create([
+                'user_id' => $employee->id, 'amount' => $amount, 'notes' => $notes, 'status' => 'pending', 'requested_at' => now(),
+            ]);
+            $this->audit->log('custody.handover_requested', $request, null, ['employee' => $employee->name, 'amount' => $amount, 'custody' => $custody], $notes);
+
+            return $request;
+        });
+    }
+
+    /**
+     * The admin confirms receiving the money: it moves from the custody into the chosen box.
+     */
+    public function approveHandover(CustodyHandoverRequest $request, MoneyAccount $into, ?int $amount = null): CustodyHandoverRequest
+    {
+        return DB::transaction(function () use ($request, $into, $amount) {
+            $request = CustodyHandoverRequest::whereKey($request->id)->lockForUpdate()->firstOrFail();
+            if ($request->status !== 'pending') {
+                throw new BusinessRuleException('هذا الطلب معالج مسبقاً.');
+            }
+            $amount ??= $request->amount;
+            $transfer = $this->handOver($request->user, $amount, $into, "تسليم عهدة {$request->user->name} (طلب رقم {$request->id})");
+            $request->update([
+                'status' => 'approved', 'resolved_by' => Auth::id(), 'resolved_at' => now(), 'fund_transfer_id' => $transfer->id,
+                'resolution_note' => $amount !== $request->amount ? 'استُلم '.number_format($amount).' من '.number_format($request->amount) : null,
+            ]);
+            $this->audit->log('custody.handover_approved', $request, ['status' => 'pending'], ['status' => 'approved', 'amount' => $amount, 'into' => $into->name]);
+
+            return $request;
+        });
+    }
+
+    public function rejectHandover(CustodyHandoverRequest $request, string $reason): CustodyHandoverRequest
+    {
+        return DB::transaction(function () use ($request, $reason) {
+            $request = CustodyHandoverRequest::whereKey($request->id)->lockForUpdate()->firstOrFail();
+            if ($request->status !== 'pending') {
+                throw new BusinessRuleException('هذا الطلب معالج مسبقاً.');
+            }
+            $request->update(['status' => 'rejected', 'resolved_by' => Auth::id(), 'resolved_at' => now(), 'resolution_note' => $reason]);
+            $this->audit->log('custody.handover_rejected', $request, ['status' => 'pending'], ['status' => 'rejected'], $reason);
+
+            return $request;
         });
     }
 

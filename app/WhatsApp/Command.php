@@ -11,7 +11,7 @@ final class Command
 
     public const QUERIES = [
         'secondary_debts', 'primary_debts', 'late', 'activated_today', 'sales_today',
-        'purchases_today', 'custody', 'advances', 'subscriber_debt',
+        'purchases_today', 'custody', 'advances', 'subscriber_debt', 'must_activate',
     ];
 
     /**

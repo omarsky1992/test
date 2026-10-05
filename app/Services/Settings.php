@@ -22,6 +22,7 @@ class Settings
         'sync.client_app' => '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f',
         'sync.hierarchy_level' => '',
         'sync.detail_limit' => 200,
+        'subscribers.expiring_days' => 7,
         'whatsapp.enabled' => false,
         'whatsapp.voice_enabled' => true,
         'whatsapp.unauthorized_message' => 'هذا الرقم غير مصرح له باستخدام النظام.',
@@ -51,6 +52,12 @@ class Settings
     public function partialDays(): int
     {
         return (int) $this->get('activation.partial_days');
+    }
+
+    /** «ينتهي قريباً»: a subscription ending within this many days. */
+    public function expiringDays(): int
+    {
+        return max(1, (int) $this->get('subscribers.expiring_days'));
     }
 
     public function fullDays(): int

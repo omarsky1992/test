@@ -72,6 +72,8 @@ class AdminPanelProvider extends PanelProvider
                 <link rel="apple-touch-icon" href="/icons/icon-192.png">
                 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }</script>
             HTML))
+            ->renderHook(PanelsRenderHook::USER_MENU_BEFORE, fn (): string => view('filament.interface.topbar')->render())
+            ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.interface.bottom-nav')->render())
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
@@ -82,6 +84,7 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
+                \App\Http\Middleware\ApplyUserTheme::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
