@@ -19,6 +19,7 @@ class WhatsappOutbox extends Model
         'sub_expired' => 'للمشترك: انتهى الاشتراك',
         'sub_debt' => 'للمشترك: تذكير بالدين',
         'reminder' => 'تذكير يدوي',
+        'alert_stuck_reply' => 'رد: تعذّرت المعالجة',
     ];
 
     public const STATUSES = ['pending' => 'بالانتظار', 'sent' => 'أُرسلت', 'failed' => 'فشلت', 'skipped' => 'أُلغيت'];

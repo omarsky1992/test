@@ -54,7 +54,8 @@ Artisan::command('company:keep-session', function (FtthApiClient $client) {
 // EarthLink ends idle sign-ins after a while; renewing every 10 minutes keeps the refresh token valid.
 Schedule::command('company:keep-session')->everyTenMinutes()->withoutOverlapping(5);
 
-Artisan::command('whatsapp:scan', function (App\WhatsApp\Notifier $notifier) {
+Artisan::command('whatsapp:scan', function (App\WhatsApp\Notifier $notifier, App\WhatsApp\Inbox $inbox) {
+    $inbox->closeStuck();
     $alerts = $notifier->scanSecondaryExpiring();
     $messages = $notifier->scanSubscribers();
     $this->info("Queued {$alerts} staff alerts and {$messages} subscriber messages.");

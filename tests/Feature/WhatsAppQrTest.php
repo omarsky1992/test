@@ -189,6 +189,22 @@ class WhatsAppQrTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === 'http://waha:3000/api/files/default/voice.oga' && $r->header('X-Api-Key')[0] === 'waha-key');
     }
 
+    public function test_a_message_cut_off_mid_way_is_closed_and_the_sender_told(): void
+    {
+        $number = app(NumberRegistry::class)->add('07701111111', $this->admin, 'المدير');
+        $stuck = WhatsappMessage::create(['wa_message_id' => 'w-stuck', 'from_phone' => self::ADMIN_PHONE, 'whatsapp_number_id' => $number->id,
+            'type' => 'audio', 'status' => 'received', 'received_at' => now()->subMinutes(15)]);
+        WhatsappMessage::create(['wa_message_id' => 'w-fresh', 'from_phone' => self::ADMIN_PHONE, 'type' => 'audio', 'status' => 'received', 'received_at' => now()->subMinute()]);
+
+        $this->artisan('whatsapp:scan')->assertSuccessful();
+
+        $this->assertSame('failed', $stuck->fresh()->status);
+        $this->assertSame('received', WhatsappMessage::where('wa_message_id', 'w-fresh')->value('status'), 'still within its time');
+        $reply = WhatsappOutbox::sole();
+        $this->assertSame(self::ADMIN_PHONE, $reply->to_phone);
+        $this->assertStringContainsString('رسالتك الصوتية', $reply->body);
+    }
+
     // ---- Staff alerts ----
 
     public function test_paying_a_secondary_debt_alerts_the_alert_numbers_and_the_queue_sends_it(): void

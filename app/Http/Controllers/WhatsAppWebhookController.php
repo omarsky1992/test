@@ -31,7 +31,7 @@ class WhatsAppWebhookController extends Controller
         }
         $payload = json_decode($request->getContent(), true);
         if (is_array($payload)) {
-            \Illuminate\Support\defer(fn () => $inbox->handle($payload));
+            \Illuminate\Support\defer(fn () => self::longRunning(fn () => $inbox->handle($payload)));
         }
 
         return response('OK', 200);
@@ -50,10 +50,21 @@ class WhatsAppWebhookController extends Controller
         }
         $event = json_decode($request->getContent(), true);
         if (is_array($event)) {
-            \Illuminate\Support\defer(fn () => $inbox->handle($event));
+            \Illuminate\Support\defer(fn () => self::longRunning(fn () => $inbox->handle($event)));
         }
 
         return response('OK', 200);
+    }
+
+    /**
+     * A voice note can take minutes (download, speech to text on the server's CPU, the AI): lift
+     * PHP's 30-second limit for the work done after the answer was sent.
+     */
+    private static function longRunning(callable $work): void
+    {
+        @set_time_limit(600);
+        ignore_user_abort(true);
+        $work();
     }
 
     public static function signatureValid(string $body, string $header): bool

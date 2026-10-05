@@ -47,6 +47,28 @@ class Inbox
     }
 
     /**
+     * Messages whose processing was cut off (the server restarted, a crash) are closed after ten
+     * minutes and the sender is told, so nobody waits for an answer that never comes.
+     */
+    public function closeStuck(): int
+    {
+        $stuck = WhatsappMessage::where('status', 'received')->where('received_at', '<', now()->subMinutes(10))->get();
+        foreach ($stuck as $record) {
+            $authorized = $record->whatsapp_number_id !== null;
+            $record->update(['status' => 'failed', 'error' => trim(($record->error ? $record->error."\n" : '').'انقطعت المعالجة قبل اكتمالها'), 'processed_at' => now()]);
+            if ($authorized) {
+                $reply = $record->type === 'audio'
+                    ? '🎤 تعذّر إكمال معالجة رسالتك الصوتية. أعد إرسالها أو اكتب الأمر.'
+                    : '❌ تعذّر إكمال طلبك. أعد إرساله.';
+                app(Outbox::class)->queue($record->from_phone, $reply, 'alert_stuck_reply', "stuck:{$record->id}");
+                $record->update(['reply' => $reply]);
+            }
+        }
+
+        return $stuck->count();
+    }
+
+    /**
      * One message in the Cloud API shape: id, from, timestamp, type (text|audio), text.body, audio.id.
      */
     public function receive(array $message): void
