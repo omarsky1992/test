@@ -42,6 +42,8 @@ set_env APP_URL "https://$domain"
 set_env DB_PASSWORD "$(openssl rand -hex 24)"
 set_env ADMIN_PASSWORD "$admin_password"
 set_env BACKUP_TRIGGER_TOKEN "$(openssl rand -hex 24)"
+set_env WAHA_API_KEY "$(openssl rand -hex 32)"
+set_env WAHA_WEBHOOK_SECRET "$(openssl rand -hex 32)"
 chmod 600 .env
 mkdir -p backups
 

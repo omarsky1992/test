@@ -18,31 +18,31 @@ class NumberRegistry
     {
     }
 
-    public function add(string $phone, User $user, ?string $label = null, bool $active = true): WhatsappNumber
+    public function add(string $phone, User $user, ?string $label = null, bool $active = true, bool $alerts = false): WhatsappNumber
     {
         $normalized = $this->validPhone($phone);
 
-        return DB::transaction(function () use ($normalized, $user, $label, $active) {
+        return DB::transaction(function () use ($normalized, $user, $label, $active, $alerts) {
             if (WhatsappNumber::where('phone', $normalized)->exists()) {
                 throw new BusinessRuleException('هذا الرقم مضاف مسبقاً.');
             }
             $number = WhatsappNumber::create([
-                'phone' => $normalized, 'label' => $label, 'user_id' => $user->id, 'is_active' => $active, 'created_by' => Auth::id(),
+                'phone' => $normalized, 'label' => $label, 'user_id' => $user->id, 'is_active' => $active, 'receives_alerts' => $alerts, 'created_by' => Auth::id(),
             ]);
-            $this->audit->log('whatsapp_number.added', $number, null, ['phone' => $normalized, 'label' => $label, 'user' => $user->name, 'active' => $active]);
+            $this->audit->log('whatsapp_number.added', $number, null, ['phone' => $normalized, 'label' => $label, 'user' => $user->name, 'active' => $active, 'alerts' => $alerts]);
 
             return $number;
         });
     }
 
-    public function update(WhatsappNumber $number, string $phone, User $user, ?string $label, bool $active): WhatsappNumber
+    public function update(WhatsappNumber $number, string $phone, User $user, ?string $label, bool $active, ?bool $alerts = null): WhatsappNumber
     {
         $normalized = $this->validPhone($phone);
         if (WhatsappNumber::where('phone', $normalized)->whereKeyNot($number->id)->exists()) {
             throw new BusinessRuleException('هذا الرقم مضاف مسبقاً.');
         }
         $original = $number->getAttributes();
-        $number->update(['phone' => $normalized, 'label' => $label, 'user_id' => $user->id, 'is_active' => $active]);
+        $number->update(['phone' => $normalized, 'label' => $label, 'user_id' => $user->id, 'is_active' => $active, 'receives_alerts' => $alerts ?? $number->receives_alerts]);
         $this->audit->changes('whatsapp_number.updated', $number, $original);
 
         return $number;

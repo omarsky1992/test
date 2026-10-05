@@ -93,6 +93,7 @@ class ActivationDueService
             'resolved_by' => null,
         ])->save();
         $this->audit->log('activation_due.opened', $due, null, ['debt' => $debt->number, 'amount' => $debt->original_amount], 'سدّد الدين الثانوي: يجب التفعيل', $debt->subscriber_id);
+        app(\App\WhatsApp\Notifier::class)->mustActivate($due);
     }
 
     private function cancel(Debt $debt): void

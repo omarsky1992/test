@@ -58,6 +58,8 @@ class WhatsappNumberResource extends Resource
                 ->options(fn () => User::where('is_active', true)->orderBy('name')->pluck('name', 'id'))
                 ->helperText('كل أمر من هذا الرقم يُنفَّذ ويُسجَّل باسم هذا المستخدم وبصلاحياته فقط.'),
             Toggle::make('is_active')->label('مفعّل')->default(true),
+            Toggle::make('receives_alerts')->label('يستلم التنبيهات')->default(false)
+                ->helperText('يجب التفعيل، ومن في الديون الثانوية وينتهي اشتراكه خلال 24 ساعة.'),
         ];
     }
 
@@ -71,15 +73,16 @@ class WhatsappNumberResource extends Resource
                 TextColumn::make('label')->label('التسمية')->searchable()->placeholder('—'),
                 TextColumn::make('user.name')->label('المستخدم المرتبط'),
                 IconColumn::make('is_active')->label('مفعّل')->boolean(),
+                IconColumn::make('receives_alerts')->label('يستلم التنبيهات')->boolean(),
                 TextColumn::make('last_used_at')->label('آخر استخدام')->dateTime('Y/m/d H:i')->placeholder('—'),
                 TextColumn::make('creator.name')->label('أضافه')->toggleable(isToggledHiddenByDefault: true),
             ])
             ->recordActions([
                 Action::make('edit')->label('تعديل')->icon(Heroicon::OutlinedPencilSquare)
-                    ->fillForm(fn (WhatsappNumber $r) => $r->only(['phone', 'label', 'user_id', 'is_active']))
+                    ->fillForm(fn (WhatsappNumber $r) => $r->only(['phone', 'label', 'user_id', 'is_active', 'receives_alerts']))
                     ->schema(self::fields())
                     ->action(fn (array $data, WhatsappNumber $record, Action $action) => self::run($action, fn () => app(NumberRegistry::class)->update(
-                        $record, $data['phone'], User::findOrFail($data['user_id']), $data['label'] ?? null, (bool) $data['is_active'],
+                        $record, $data['phone'], User::findOrFail($data['user_id']), $data['label'] ?? null, (bool) $data['is_active'], (bool) ($data['receives_alerts'] ?? false),
                     ))),
                 Action::make('toggle')->label(fn (WhatsappNumber $r) => $r->is_active ? 'تعطيل' : 'تفعيل')
                     ->icon(fn (WhatsappNumber $r) => $r->is_active ? Heroicon::OutlinedPause : Heroicon::OutlinedPlay)
@@ -98,7 +101,7 @@ class WhatsappNumberResource extends Resource
             ->authorize('whatsapp.manage')
             ->schema(self::fields())
             ->action(fn (array $data, Action $action) => self::run($action, fn () => app(NumberRegistry::class)->add(
-                $data['phone'], User::findOrFail($data['user_id']), $data['label'] ?? null, (bool) ($data['is_active'] ?? true),
+                $data['phone'], User::findOrFail($data['user_id']), $data['label'] ?? null, (bool) ($data['is_active'] ?? true), (bool) ($data['receives_alerts'] ?? false),
             )));
     }
 

@@ -37,6 +37,25 @@ class WhatsAppWebhookController extends Controller
         return response('OK', 200);
     }
 
+    /**
+     * Messages from the phone linked by QR code (WAHA). Signed with X-Webhook-Hmac: SHA-512 HMAC
+     * of the raw body with WAHA_WEBHOOK_SECRET.
+     */
+    public function receiveQr(Request $request, \App\WhatsApp\WahaInbox $inbox): Response
+    {
+        $secret = (string) config('whatsapp.waha.webhook_secret');
+        $signature = (string) $request->header('X-Webhook-Hmac');
+        if ($secret === '' || $signature === '' || ! hash_equals(hash_hmac('sha512', $request->getContent(), $secret), $signature)) {
+            return response('Invalid signature', 401);
+        }
+        $event = json_decode($request->getContent(), true);
+        if (is_array($event)) {
+            \Illuminate\Support\defer(fn () => $inbox->handle($event));
+        }
+
+        return response('OK', 200);
+    }
+
     public static function signatureValid(string $body, string $header): bool
     {
         $secret = (string) config('whatsapp.app_secret');

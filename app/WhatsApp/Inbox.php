@@ -39,14 +39,17 @@ class Inbox
             foreach ($entry['changes'] ?? [] as $change) {
                 foreach ($change['value']['messages'] ?? [] as $message) {
                     if (is_array($message) && filled($message['id'] ?? null) && filled($message['from'] ?? null)) {
-                        $this->process($message);
+                        $this->receive($message);
                     }
                 }
             }
         }
     }
 
-    private function process(array $message): void
+    /**
+     * One message in the Cloud API shape: id, from, timestamp, type (text|audio), text.body, audio.id.
+     */
+    public function receive(array $message): void
     {
         $from = WhatsappNumber::normalize((string) $message['from']);
         try {

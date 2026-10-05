@@ -61,7 +61,14 @@
         @if ($messages->isEmpty())
             <p style="color:rgb(120 113 108);font-size:14px">حدّد مشتركاً واحداً على الأقل ورسالة.</p>
         @else
-            <p style="font-size:13px;color:rgb(120 113 108);margin-bottom:8px">كل زر يفتح واتساب برسالة جاهزة لهذا المشترك؛ اضغط إرسال في واتساب ثم ارجع للتالي.</p>
+            @if ($canSendFromPhone)
+                <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px;padding:10px 12px;border-radius:12px;background:rgb(240 253 244);border:1px solid rgb(187 247 208)">
+                    <x-filament::button color="success" icon="heroicon-o-paper-airplane" wire:click="sendFromPhone"
+                        wire:confirm="إرسال الرسالة إلى {{ $messages->count() }} مشترك من الهاتف المربوط؟">إرسال من الهاتف المربوط ({{ $messages->count() }})</x-filament::button>
+                    <span style="font-size:12.5px;color:rgb(87 83 78)">تُرسل تلقائياً وبهدوء، وتظهر في «سجل الإرسال».</span>
+                </div>
+            @endif
+            <p style="font-size:13px;color:rgb(120 113 108);margin-bottom:8px">أو افتح كل رسالة في واتساب هاتفك وأرسلها بنفسك:</p>
             <div style="display:flex;flex-direction:column;gap:8px">
                 @foreach ($messages as $m)
                     <div style="border:1px solid rgb(231 229 228);border-radius:14px;padding:10px 12px;background:white">

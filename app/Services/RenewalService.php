@@ -117,6 +117,8 @@ class RenewalService
                     ], 'تجديد تلقائي', $account->subscriber_id, 'sync');
                 }
 
+                app(\App\WhatsApp\Notifier::class)->renewal($renewal);
+
                 return $renewal;
             });
         } catch (UniqueConstraintViolationException) {

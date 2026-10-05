@@ -80,6 +80,29 @@ class WhatsappReminders extends Page
         $this->selected = [];
     }
 
+    /**
+     * Queues the chosen message for every selected subscriber; the linked phone sends them slowly.
+     */
+    public function sendFromPhone(): void
+    {
+        $template = MessageTemplate::find($this->template);
+        $chosen = $this->accounts()->whereIn('id', array_map('intval', $this->selected));
+        if (! $template || $chosen->isEmpty()) {
+            return;
+        }
+        $outbox = app(\App\WhatsApp\Outbox::class);
+        $queued = 0;
+        foreach ($chosen as $account) {
+            if (($phone = self::phone($account)) && $outbox->queue($phone, $template->render(self::values($account)), 'reminder', null, $account->id)) {
+                $queued++;
+            }
+        }
+        app(Audit::class)->log('whatsapp.reminders_queued', 'whatsapp', null, ['template' => $template->title, 'count' => $queued]);
+        $this->selected = [];
+        \Filament\Notifications\Notification::make()->success()->title("أُضيفت {$queued} رسالة إلى قائمة الإرسال")
+            ->body('تُرسل تباعاً من الهاتف المربوط خلال دقائق.')->send();
+    }
+
     public function opened(int $accountId): void
     {
         $account = Account::find($accountId);
@@ -149,6 +172,7 @@ class WhatsappReminders extends Page
                 'url' => self::phone($a) ? 'https://wa.me/'.self::phone($a).'?text='.rawurlencode($text) : null,
             ]) : collect(),
             'filters' => array_diff_key(SubscriberStatus::FILTERS, ['active' => 1]),
+            'canSendFromPhone' => app(\App\Services\Settings::class)->get('whatsapp.driver') !== 'meta' && \App\WhatsApp\WahaGateway::configured(),
         ];
     }
 }

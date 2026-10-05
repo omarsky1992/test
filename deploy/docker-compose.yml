@@ -33,6 +33,22 @@ services:
     depends_on:
       - app
 
+  # WhatsApp linked by QR code (WAHA). Reachable only by the app inside this private network.
+  waha:
+    image: devlikeapro/waha:gows-2026.9.2
+    restart: unless-stopped
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_BASE_URL: http://waha:3000
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      TZ: Asia/Baghdad
+    volumes:
+      - waha_sessions:/app/.sessions
+      - waha_media:/app/.media
+
   db:
     image: postgres:17
     restart: unless-stopped
@@ -82,6 +98,8 @@ services:
       - db
 
 volumes:
+  waha_sessions:
+  waha_media:
   pgdata:
   storage:
   caddy_data:

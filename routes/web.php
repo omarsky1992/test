@@ -33,6 +33,14 @@ Route::middleware('auth')->group(function () {
 
         return response()->download($path, $file);
     })->where(['kind' => 'daily|weekly|monthly', 'file' => '[A-Za-z0-9._-]+'])->name('backup.server');
+    Route::get('/whatsapp/qr.png', function (App\WhatsApp\WahaGateway $waha) {
+        abort_unless(auth()->user()->can('whatsapp.manage'), 403);
+        try {
+            return response($waha->qrPng(), 200, ['Content-Type' => 'image/png', 'Cache-Control' => 'no-store']);
+        } catch (Throwable) {
+            abort(404);
+        }
+    })->name('whatsapp.qr');
     Route::post('/ui/theme', [App\Http\Controllers\InterfaceController::class, 'theme'])->name('ui.theme');
     Route::post('/ui/mode', [App\Http\Controllers\InterfaceController::class, 'mode'])->name('ui.mode');
     Route::get('/backup/google/connect', [BackupController::class, 'connect'])->name('backup.google.connect');
@@ -50,3 +58,8 @@ Route::post('/whatsapp/webhook', [App\Http\Controllers\WhatsAppWebhookController
     ->withoutMiddleware(PreventRequestForgery::class)
     ->middleware('throttle:300,1')
     ->name('whatsapp.webhook');
+// The phone linked by QR code (WAHA service on the same server), signed with WAHA_WEBHOOK_SECRET.
+Route::post('/whatsapp/qr-webhook', [App\Http\Controllers\WhatsAppWebhookController::class, 'receiveQr'])
+    ->withoutMiddleware(PreventRequestForgery::class)
+    ->middleware('throttle:300,1')
+    ->name('whatsapp.qr-webhook');

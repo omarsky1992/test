@@ -495,7 +495,7 @@ class WhatsAppTest extends TestCase
 
         Livewire::test(ListWhatsappMessages::class)->assertOk()->assertSee('مرحبا');
         Livewire::test(ManageWhatsappNumbers::class)->assertOk()->assertSee('9647701111111');
-        Livewire::test(WhatsappSettings::class)->assertOk()->assertSee('/whatsapp/webhook')
+        Livewire::test(WhatsappSettings::class)->assertOk()->assertSee('ربط الهاتف بالباركود')->assertSee('خدمة الربط لا تعمل')
             ->fillForm(['enabled' => false, 'voice_enabled' => false, 'unauthorized_message' => 'غير مسموح', 'duplicate_hours' => 6])
             ->call('save');
         $this->assertFalse((bool) app(Settings::class)->get('whatsapp.enabled'));

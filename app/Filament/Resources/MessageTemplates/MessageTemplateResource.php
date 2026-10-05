@@ -40,6 +40,8 @@ class MessageTemplateResource extends Resource
 
     protected static ?string $pluralModelLabel = 'قوالب الرسائل';
 
+    public const EVENTS = ['renewal' => 'التجديد', 'expiring' => 'قرب انتهاء الاشتراك', 'expired' => 'انتهاء الاشتراك', 'debt' => 'تذكير بالديون'];
+
     public static function canViewAny(): bool
     {
         return auth()->user()->can('settings.manage');
@@ -53,6 +55,9 @@ class MessageTemplateResource extends Resource
             TextInput::make('title')->label('العنوان')->required()->maxLength(80),
             TextInput::make('icon')->label('رمز (إيموجي)')->maxLength(10)->placeholder('⏳'),
             Textarea::make('body')->label('نص الرسالة')->required()->rows(6)->columnSpanFull()->helperText($help),
+            \Filament\Forms\Components\Select::make('auto_event')->label('تُرسل تلقائياً عند')->placeholder('لا (يدوي فقط)')
+                ->options(self::EVENTS)->unique(ignoreRecord: true)
+                ->helperText('تشغيل الرسائل التلقائية وإيقافها من «إعدادات واتساب».'),
             TextInput::make('sort_order')->label('الترتيب')->integer()->default(0),
             Toggle::make('is_active')->label('فعّالة')->default(true),
         ])->columns(2);
@@ -64,6 +69,7 @@ class MessageTemplateResource extends Resource
             ->defaultSort('sort_order')
             ->columns([
                 TextColumn::make('title')->label('العنوان')->weight('bold')->formatStateUsing(fn ($state, MessageTemplate $r) => trim("{$r->icon} {$state}")),
+                TextColumn::make('auto_event')->label('تلقائية')->badge()->placeholder('يدوية')->formatStateUsing(fn (?string $state) => self::EVENTS[$state] ?? $state),
                 TextColumn::make('body')->label('النص')->limit(70)->wrap(),
                 IconColumn::make('is_active')->label('فعّالة')->boolean(),
             ])

@@ -79,14 +79,16 @@ class DatabaseSeeder extends Seeder
         foreach (['رصيد الشركة', 'راوتر وأجهزة', 'كابلات ومواد', 'إيجار', 'رواتب', 'أخرى'] as $name) {
             ExpenseCategory::firstOrCreate(['name_ar' => $name]);
         }
-        // Starter WhatsApp messages, added once; the admin edits them in the settings.
+        // Starter WhatsApp messages, added once; the admin edits them in the settings. The ones with an
+        // event are also the automatic messages to subscribers.
         if (\App\Models\MessageTemplate::doesntExist()) {
             foreach ([
-                ['💰', 'تذكير بالمبلغ المتبقي', "تحية طيبة {الاسم}،\nنذكّركم بأن المبلغ المتبقي على اشتراككم هو {المبلغ}.\nشكراً لكم."],
-                ['⏳', 'قرب نهاية الاشتراك', "تحية طيبة {الاسم}،\nاشتراككم ({الفئة}) ينتهي بعد {الأيام} يوم بتاريخ {تاريخ_الانتهاء}.\nللتجديد يرجى التواصل معنا."],
-                ['⛔', 'انتهاء الاشتراك', "تحية طيبة {الاسم}،\nانتهى اشتراككم ({الفئة}). لإعادة التفعيل يرجى التواصل معنا."],
-            ] as $i => [$icon, $title, $body]) {
-                \App\Models\MessageTemplate::create(['icon' => $icon, 'title' => $title, 'body' => $body, 'sort_order' => $i + 1]);
+                ['✅', 'تم التجديد', 'renewal', "تحية طيبة {الاسم}،\nتم تجديد اشتراككم ({الفئة}) حتى {تاريخ_الانتهاء}.\nالمبلغ المطلوب: {المبلغ}.\nشكراً لكم."],
+                ['💰', 'تذكير بالمبلغ المتبقي', 'debt', "تحية طيبة {الاسم}،\nنذكّركم بأن المبلغ المتبقي على اشتراككم هو {المبلغ}.\nشكراً لكم."],
+                ['⏳', 'قرب نهاية الاشتراك', 'expiring', "تحية طيبة {الاسم}،\nاشتراككم ({الفئة}) ينتهي بعد {الأيام} يوم بتاريخ {تاريخ_الانتهاء}.\nللتجديد يرجى التواصل معنا."],
+                ['⛔', 'انتهاء الاشتراك', 'expired', "تحية طيبة {الاسم}،\nانتهى اشتراككم ({الفئة}). لإعادة التفعيل يرجى التواصل معنا."],
+            ] as $i => [$icon, $title, $event, $body]) {
+                \App\Models\MessageTemplate::create(['icon' => $icon, 'title' => $title, 'auto_event' => $event, 'body' => $body, 'sort_order' => $i + 1]);
             }
         }
         foreach ([['router', 'راوتر'], ['ont', 'جهاز ONT'], ['repeater', 'مقوي'], ['cable', 'كابل'], ['other', 'أخرى']] as [$key, $name]) {

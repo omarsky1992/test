@@ -14,6 +14,7 @@ class WhatsappNumber extends Model
     {
         return [
             'is_active' => 'boolean',
+            'receives_alerts' => 'boolean',
             'last_used_at' => 'immutable_datetime',
         ];
     }

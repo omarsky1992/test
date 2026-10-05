@@ -326,7 +326,7 @@ class EmployeeUiTest extends TestCase
     {
         $account = $this->renewed('زينب كريم', daysLeft: 3);
         $template = MessageTemplate::where('title', 'قرب نهاية الاشتراك')->sole();
-        $this->assertSame(3, MessageTemplate::count(), 'starter messages are seeded');
+        $this->assertSame(4, MessageTemplate::count(), 'starter messages are seeded');
 
         $page = Livewire::test(WhatsappReminders::class, ['preselect' => $account->id])
             ->set('template', $template->id)

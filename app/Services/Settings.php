@@ -27,6 +27,21 @@ class Settings
         'whatsapp.voice_enabled' => true,
         'whatsapp.unauthorized_message' => 'هذا الرقم غير مصرح له باستخدام النظام.',
         'whatsapp.duplicate_hours' => 12,
+        'whatsapp.driver' => 'qr',
+        'whatsapp.batch_size' => 15,
+        'whatsapp.daily_limit' => 300,
+        'whatsapp.send_from_hour' => 9,
+        'whatsapp.send_until_hour' => 21,
+        'alerts.must_activate' => true,
+        'alerts.secondary_expiring' => true,
+        'alerts.hours_before' => 24,
+        'subscriber_messages.enabled' => false,
+        'subscriber_messages.renewal' => true,
+        'subscriber_messages.expiring' => true,
+        'subscriber_messages.expired' => true,
+        'subscriber_messages.debt' => true,
+        'subscriber_messages.expiring_hours' => 24,
+        'subscriber_messages.debt_every_days' => 3,
     ];
 
     /** @var array<string, mixed>|null */

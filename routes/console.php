@@ -53,3 +53,26 @@ Artisan::command('company:keep-session', function (FtthApiClient $client) {
 
 // EarthLink ends idle sign-ins after a while; renewing every 10 minutes keeps the refresh token valid.
 Schedule::command('company:keep-session')->everyTenMinutes()->withoutOverlapping(5);
+
+Artisan::command('whatsapp:scan', function (App\WhatsApp\Notifier $notifier) {
+    $alerts = $notifier->scanSecondaryExpiring();
+    $messages = $notifier->scanSubscribers();
+    $this->info("Queued {$alerts} staff alerts and {$messages} subscriber messages.");
+})->purpose('Queue the WhatsApp alerts for staff and the automatic messages for subscribers');
+
+Artisan::command('whatsapp:dispatch', function (App\WhatsApp\Outbox $outbox, App\WhatsApp\Gateway $gateway, Settings $settings) {
+    // With the QR connection, nothing is tried while the phone is not linked: the queue waits.
+    if ($settings->get('whatsapp.driver') !== 'meta' && ! ($gateway instanceof App\WhatsApp\WahaGateway && $gateway->isConnected())) {
+        return 0;
+    }
+    [$sent, $failed] = $outbox->dispatch($gateway);
+    if ($sent + $failed > 0) {
+        $this->info("Sent {$sent}, failed {$failed}.");
+    }
+
+    return 0;
+})->purpose('Send queued WhatsApp messages slowly from the linked phone');
+
+Schedule::command('whatsapp:scan')->everyFifteenMinutes()->withoutOverlapping(10);
+// In the background so the pauses between messages never hold up the other scheduled tasks.
+Schedule::command('whatsapp:dispatch')->everyMinute()->withoutOverlapping(10)->runInBackground();
