@@ -61,6 +61,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - `App\WhatsApp\Inbox` order must stay: store the message by its unique WhatsApp ID (a redelivery does nothing) → check the sender in `whatsapp_numbers` (active, user active) BEFORE reading, downloading or transcribing anything → understand → execute → audit → reply. An unauthorized number only ever gets the configured refusal text; its content is not stored.
 - Understanding: `RuleInterpreter` (fixed short commands, no network) first, then `ClaudeInterpreter` (Anthropic PHP SDK, structured JSON output, server-side fallbacks). `CommandExecutor` runs as the linked user (`Auth::setUser`), checks that user's permissions and calls the same services as the panel; each command is one DB transaction inside `Audit::withSource('whatsapp')`.
 - A WhatsApp activation goes through `RenewalService::record` and updates `external_ends_at`/`company_days_left`, so the next sync does not count it again. The same account is not activated twice within `whatsapp.duplicate_hours` (12).
+- Voice notes: `Transcriber` is the free `LocalWhisperTranscriber` (docker service `whisper`, internal) unless `OPENAI_API_KEY` is set (`HttpTranscriber`).
 - Keys only in env: `WAHA_*`, `WHATSAPP_*`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. Tests use `tests/Support/FakeWhatsApp` and `FakeClaude`; never call the real services from tests.
 
 **Employees** (`App\Services\EmployeeFinance`)

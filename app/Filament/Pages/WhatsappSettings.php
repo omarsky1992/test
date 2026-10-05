@@ -195,7 +195,7 @@ class WhatsappSettings extends Page
             'checks' => [
                 ['WAHA_API_KEY + WAHA_WEBHOOK_SECRET', 'خدمة الربط بالباركود', WahaGateway::configured() && filled(config('whatsapp.waha.webhook_secret'))],
                 ['ANTHROPIC_API_KEY', 'فهم الأوامر الحرة والمشتريات (Claude)', ClaudeInterpreter::configured()],
-                ['OPENAI_API_KEY', 'تحويل الرسائل الصوتية إلى نص', HttpTranscriber::configured()],
+                [HttpTranscriber::configured() ? 'OPENAI_API_KEY' : 'whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', HttpTranscriber::configured() || \App\WhatsApp\LocalWhisperTranscriber::configured()],
                 ['WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID', 'Meta Cloud API (إذا اخترتها)', CloudApiGateway::configured()],
             ],
         ];

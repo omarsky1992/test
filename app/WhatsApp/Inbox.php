@@ -112,13 +112,19 @@ class Inbox
             if ($this->transcriber instanceof HttpTranscriber && ! HttpTranscriber::configured()) {
                 $record->update(['error' => 'OPENAI_API_KEY غير مضبوط: لا يمكن تحويل الصوت إلى نص']);
 
-                return Result::failed('🎤 وصلت رسالتك الصوتية، لكن تحويل الصوت إلى نص غير مفعّل بعد (يحتاج مفتاح OPENAI_API_KEY على السيرفر). اكتب الأمر كتابة حالياً.');
+                return Result::failed('🎤 وصلت رسالتك الصوتية، لكن تحويل الصوت إلى نص غير مفعّل بعد (خدمة التحويل على السيرفر غير مضبوطة، أو ضع مفتاح OPENAI_API_KEY). اكتب الأمر كتابة حالياً.');
             }
             if (blank($message['audio']['id'] ?? null)) {
                 return Result::clarify('🎤 ما وصل الصوت كاملاً، أعد إرسال الرسالة الصوتية أو اكتبها.');
             }
             [$audio, $mime] = $this->gateway->downloadMedia((string) $message['audio']['id']);
-            $text = $this->transcriber->transcribe($audio, $mime);
+            try {
+                $text = $this->transcriber->transcribe($audio, $mime);
+            } catch (\Throwable $e) {
+                $record->update(['error' => 'تحويل الصوت: '.mb_substr($e->getMessage(), 0, 500)]);
+
+                return Result::failed('🎤 تعذّر تحويل الرسالة الصوتية إلى نص الآن. أعد إرسالها بعد دقيقة أو اكتب الأمر.');
+            }
             $record->update(['transcript' => $text]);
             if ($text === '') {
                 return Result::clarify('ما فهمت الرسالة الصوتية، عيدها أو اكتبها.');

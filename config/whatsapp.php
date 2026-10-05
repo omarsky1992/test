@@ -29,8 +29,9 @@ return [
         'model' => env('WHATSAPP_AI_MODEL', 'claude-opus-5-5'),
     ],
 
-    // Voice notes to text: any OpenAI-compatible transcription endpoint.
+    // Voice notes to text: free on our own server (the «whisper» service) unless an OpenAI key is set.
     'transcribe' => [
+        'local_url' => env('WHISPER_URL', 'http://whisper:9000'),
         'api_key' => env('WHATSAPP_TRANSCRIBE_API_KEY', env('OPENAI_API_KEY')),
         'url' => env('WHATSAPP_TRANSCRIBE_URL', 'https://api.openai.com/v1/audio/transcriptions'),
         'model' => env('WHATSAPP_TRANSCRIBE_MODEL', 'whisper-1'),

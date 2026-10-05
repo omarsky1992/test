@@ -24,7 +24,10 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(\App\WhatsApp\Gateway::class, fn ($app) => $app->make(Settings::class)->get('whatsapp.driver') === 'meta'
             ? $app->make(\App\WhatsApp\CloudApiGateway::class)
             : $app->make(\App\WhatsApp\WahaGateway::class));
-        $this->app->bind(\App\WhatsApp\Transcriber::class, \App\WhatsApp\HttpTranscriber::class);
+        // A paid OpenAI key wins when set; otherwise the free transcription service on the server.
+        $this->app->bind(\App\WhatsApp\Transcriber::class, fn ($app) => \App\WhatsApp\HttpTranscriber::configured() || ! \App\WhatsApp\LocalWhisperTranscriber::configured()
+            ? $app->make(\App\WhatsApp\HttpTranscriber::class)
+            : $app->make(\App\WhatsApp\LocalWhisperTranscriber::class));
         $this->app->bind(\App\WhatsApp\Interpreter::class, \App\WhatsApp\CommandInterpreter::class);
     }
 

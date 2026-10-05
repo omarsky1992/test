@@ -410,6 +410,38 @@ class WhatsAppTest extends TestCase
         $this->assertStringContainsString('OPENAI_API_KEY', WhatsappMessage::sole()->error);
     }
 
+    public function test_voice_notes_use_the_free_server_transcription_without_an_openai_key(): void
+    {
+        config(['whatsapp.transcribe.api_key' => null, 'whatsapp.transcribe.local_url' => 'http://whisper:9000']);
+        $this->app->forgetInstance(Transcriber::class);
+        $this->assertInstanceOf(\App\WhatsApp\LocalWhisperTranscriber::class, app(Transcriber::class));
+        config(['whatsapp.transcribe.api_key' => 'sk-test']);
+        $this->assertInstanceOf(\App\WhatsApp\HttpTranscriber::class, app(Transcriber::class));
+
+        \Illuminate\Support\Facades\Http::fake(['whisper:9000/*' => \Illuminate\Support\Facades\Http::response(['text' => ' محمد رمضان فعلته سبع ايام ', 'language' => 'ar'])]);
+        $text = (new \App\WhatsApp\LocalWhisperTranscriber)->transcribe('OGG-BYTES', 'audio/ogg; codecs=opus');
+
+        $this->assertSame('محمد رمضان فعلته سبع ايام', $text);
+        \Illuminate\Support\Facades\Http::assertSent(fn ($r) => str_starts_with($r->url(), 'http://whisper:9000/asr?')
+            && str_contains($r->url(), 'language=ar') && str_contains($r->url(), 'output=json'));
+    }
+
+    public function test_a_failed_transcription_gets_a_clear_answer(): void
+    {
+        $this->app->instance(Transcriber::class, new class implements Transcriber
+        {
+            public function transcribe(string $audio, string $mimeType): string
+            {
+                throw new \RuntimeException('connection refused');
+            }
+        });
+
+        $this->voice();
+
+        $this->assertStringContainsString('تعذّر تحويل الرسالة الصوتية', $this->wa->lastReply());
+        $this->assertStringContainsString('connection refused', WhatsappMessage::sole()->error);
+    }
+
     // ---- Queries ----
 
     public function test_queries_answer_shortly(): void
