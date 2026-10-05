@@ -36,7 +36,10 @@ class WahaInbox
         }
 
         $media = is_array($payload['media'] ?? null) ? $payload['media'] : [];
-        $isAudio = ($payload['hasMedia'] ?? false) && str_starts_with((string) ($media['mimetype'] ?? ''), 'audio') && filled($media['url'] ?? null);
+        $kind = (string) ($payload['_data']['type'] ?? $payload['type'] ?? '');
+        // A voice note even when WAHA could not attach the file (the Inbox then asks to send it again).
+        $isAudio = ($payload['hasMedia'] ?? false)
+            && (str_starts_with((string) ($media['mimetype'] ?? ''), 'audio') || in_array($kind, ['ptt', 'audio'], true));
 
         $this->inbox->receive(array_filter([
             'id' => (string) $payload['id'],
@@ -44,7 +47,7 @@ class WahaInbox
             'timestamp' => isset($payload['timestamp']) ? (string) $payload['timestamp'] : null,
             'type' => $isAudio ? 'audio' : (filled($payload['body'] ?? null) ? 'text' : 'other'),
             'text' => $isAudio ? null : ['body' => (string) ($payload['body'] ?? '')],
-            'audio' => $isAudio ? ['id' => (string) $media['url'], 'mime_type' => (string) ($media['mimetype'] ?? '')] : null,
+            'audio' => $isAudio ? ['id' => (string) ($media['url'] ?? ''), 'mime_type' => (string) ($media['mimetype'] ?? '')] : null,
         ], fn ($v) => $v !== null));
     }
 

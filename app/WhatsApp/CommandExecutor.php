@@ -57,6 +57,7 @@ class CommandExecutor
                 'activate' => $this->activate($command, $user),
                 'payment' => $this->payment($command, $user, $messageId),
                 'purchase' => $this->purchase($command, $user),
+                'add_debt' => $this->addDebt($command, $user),
                 'void_debt' => $this->voidDebt($command, $user),
                 'query' => $this->query($command, $user),
                 'clarify' => Result::clarify($command->question ?? 'ما فهمت الطلب تماماً، وضّحه أكثر.'),
@@ -69,7 +70,7 @@ class CommandExecutor
 
     public static function help(): string
     {
-        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
+        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• سجل دين على محمد 20 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
     }
 
     private function activate(Command $c, User $user): Result
@@ -185,6 +186,31 @@ class CommandExecutor
         return Result::done("✅ تم تسجيل المشتريات من {$box->name}\n".implode("\n", $lines)."\nالمجموع: ".Money::format($total), [
             'expenses' => array_map(fn (Expense $e) => ['number' => $e->number, 'description' => $e->description, 'amount' => $e->amount], $expenses),
             'total' => $total, 'box' => $box->name,
+        ]);
+    }
+
+    private function addDebt(Command $c, User $user): Result
+    {
+        if (! $user->can('debts.create_manual')) {
+            return Result::denied();
+        }
+        if ($c->subscriber === null) {
+            return Result::clarify('على منو أسجل الدين؟');
+        }
+        if ($c->amount === null || $c->amount <= 0) {
+            return Result::clarify("شكد الدين على {$c->subscriber}؟");
+        }
+        $account = $this->findAccount($c->subscriber);
+        if (is_string($account)) {
+            return Result::clarify($account);
+        }
+        $bucket = $c->bucket === 'secondary' ? DebtBucket::Secondary : DebtBucket::Primary;
+        $debt = $this->debts->create($account, $c->amount, $bucket, \App\Enums\DebtSource::Manual, notes: 'عبر واتساب');
+        $total = (int) Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
+        $label = $bucket === DebtBucket::Secondary ? 'ثانوي' : 'أولي';
+
+        return Result::done("✅ تم تسجيل دين {$label} ".Money::format($c->amount)." على {$account->subscriber->full_name} ({$debt->number})\nمجموع ديونه: ".Money::format($total), [
+            'debt' => $debt->number, 'amount' => $c->amount, 'bucket' => $bucket->value, 'account_id' => $account->id,
         ]);
     }
 

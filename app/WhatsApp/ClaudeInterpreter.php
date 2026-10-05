@@ -26,6 +26,8 @@ class ClaudeInterpreter implements Interpreter
         - purchase: the agent bought things ("شريت كيبل 30 متر سعر المتر 5 آلاف وراوتر بـ 40 الف"). One item
           per thing bought: description (include the quantity and unit, e.g. "كيبل 30 متر"), quantity,
           unit_price, total (= quantity × unit_price when both are given; total alone when only a total is given).
+        - add_debt: record a new debt on a subscriber ("سجل دين على محمد 25 الف", "محمد عليه 20 الف دين أولي").
+          subscriber and amount; bucket = "secondary" only if ثانوي is said, otherwise "primary".
         - void_debt: delete/cancel a subscriber's debt ("امسح دين محمد"). subscriber; amount only if stated.
         - query: a question. query = secondary_debts (الديون الثانوية), primary_debts (الديون الأولية),
           late (المتأخرين), activated_today (المفعلين اليوم), sales_today (مبيعات اليوم),
@@ -126,8 +128,9 @@ class ClaudeInterpreter implements Interpreter
                 ],
                 'query' => $nullable(['type' => 'string', 'enum' => Command::QUERIES]),
                 'question' => $nullable(['type' => 'string']),
+                'bucket' => $nullable(['type' => 'string', 'enum' => Command::BUCKETS]),
             ],
-            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question'],
+            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket'],
             'additionalProperties' => false,
         ];
     }

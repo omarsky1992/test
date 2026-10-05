@@ -19,7 +19,18 @@ class RuleInterpreter implements Interpreter
 
     public function interpret(string $text, ?array $previous = null): ?Command
     {
-        $t = self::clean($text);
+        $command = $this->match($text);
+        if ($command?->subscriber !== null) {
+            $command->subscriber = trim(preg_replace('/^بخصوص\s+/u', '', $command->subscriber));
+        }
+
+        return $command;
+    }
+
+    private function match(string $text): ?Command
+    {
+        // «على» (on) becomes «علي» after normalizing, the same as the name Ali: mark it first.
+        $t = self::clean(preg_replace('/(^|\s)على(?=\s)/u', '$1 بخصوص', $text));
         if ($t === '') {
             return null;
         }
@@ -46,6 +57,18 @@ class RuleInterpreter implements Interpreter
                 }
             }
         }
+        // «سجل دين على محمد 25 الف» / «سجل دين اولي على محمد 25 الف»
+        if (preg_match('/^(?:سجل|سجلي|اضف|ضيف|حط|قيد)\s+(?:دين|ديون)(?:\s+(اولي|ثانوي))?\s+(?:بخصوص\s+|ل)?(.+)$/u', $t, $m)
+            && ($debt = self::nameAndAmount($m[2])) !== null) {
+            return new Command('add_debt', subscriber: $debt[0], amount: $debt[1], bucket: $m[1] === 'ثانوي' ? 'secondary' : 'primary');
+        }
+        // «محمد عليه 25 الف دين» / «محمد عليه دين اولي 25 الف»
+        if (preg_match('/^(.+?)\s+عليه\s+(?:دين\s+)?(?:(اولي|ثانوي)\s+)?(.+?)(?:\s+دين(?:\s+(اولي|ثانوي))?)?$/u', $t, $m)
+            && ($amount = self::amount($m[3])) !== null) {
+            $bucket = ($m[2] ?? '') === 'ثانوي' || ($m[4] ?? '') === 'ثانوي' ? 'secondary' : 'primary';
+
+            return new Command('add_debt', subscriber: $m[1], amount: $amount, bucket: $bucket);
+        }
         // «محمد رمضان دفع 35 الف»
         if (preg_match('/^(.+?)\s+(?:دفع|سدد|واصل|وصل|انطى|انطاني|جاب)\s+(.+)$/u', $t, $m)
             && ($amount = self::amount($m[2])) !== null) {
@@ -53,6 +76,23 @@ class RuleInterpreter implements Interpreter
         }
         if ($query = self::query($t)) {
             return new Command('query', query: $query);
+        }
+
+        return null;
+    }
+
+    /**
+     * «محمد رمضان 25 الف» → [name, amount]: the amount is the last one or two words.
+     *
+     * @return array{0: string, 1: int}|null
+     */
+    private static function nameAndAmount(string $text): ?array
+    {
+        $words = explode(' ', trim(preg_replace('/^بخصوص\s+/u', '', $text)));
+        foreach ([2, 1] as $n) {
+            if (count($words) > $n && ($amount = self::amount(implode(' ', array_slice($words, -$n)))) !== null) {
+                return [implode(' ', array_slice($words, 0, -$n)), $amount];
+            }
         }
 
         return null;

@@ -371,6 +371,45 @@ class WhatsAppTest extends TestCase
         $this->assertSame('whatsapp', AuditLog::where('action', 'like', 'debt.void%')->latest('id')->first()->source);
     }
 
+    public function test_a_primary_debt_is_recorded_from_whatsapp(): void
+    {
+        $account = $this->subscriber();
+
+        $this->text('سجل دين على محمد رمضان 25 الف');
+
+        $debt = Debt::sole();
+        $this->assertSame([DebtBucket::Primary, 25000, $account->id, \App\Enums\DebtSource::Manual], [$debt->bucket, $debt->balance, $debt->account_id, $debt->source]);
+        $this->assertSame(25000, $this->balanceOf(Ledger::AR_PRIMARY));
+        $this->assertStringContainsString('دين أولي', $this->wa->lastReply());
+        $this->assertSame('whatsapp', AuditLog::where('action', 'debt.created')->sole()->source);
+
+        $this->text('محمد رمضان عليه 10 الف دين ثانوي');
+        $this->assertSame(DebtBucket::Secondary, Debt::latest('id')->first()->bucket);
+    }
+
+    public function test_recording_a_debt_needs_the_permission(): void
+    {
+        $this->subscriber();
+        $this->employee('07702222222');
+
+        $this->text('سجل دين على محمد رمضان 25 الف', from: '9647702222222');
+
+        $this->assertSame(0, Debt::count());
+        $this->assertSame('denied', WhatsappMessage::sole()->status);
+    }
+
+    public function test_a_voice_note_without_the_transcription_key_gets_a_clear_answer(): void
+    {
+        config(['whatsapp.transcribe.api_key' => null]);
+        $this->app->instance(Transcriber::class, new \App\WhatsApp\HttpTranscriber);
+
+        $this->voice();
+
+        $this->assertSame([], $this->wa->downloads);
+        $this->assertStringContainsString('OPENAI_API_KEY', $this->wa->lastReply());
+        $this->assertStringContainsString('OPENAI_API_KEY', WhatsappMessage::sole()->error);
+    }
+
     // ---- Queries ----
 
     public function test_queries_answer_shortly(): void
@@ -438,6 +477,12 @@ class WhatsAppTest extends TestCase
         $this->assertSame('secondary_debts', $rules->interpret('الديون الثانوية')->query);
         $this->assertSame('custody', $rules->interpret('عهد الموظفين')->query);
         $this->assertSame('must_activate', $rules->interpret('يجب التفعيل')->query);
+        $read = fn (string $t) => (fn ($c) => [$c->intent, $c->subscriber, $c->amount, $c->bucket])($rules->interpret($t));
+        $this->assertSame(['add_debt', 'محمد رمضان', 25000, 'primary'], $read('سجل دين على محمد رمضان 25 الف'));
+        $this->assertSame(['add_debt', 'علي حسين', 10000, 'secondary'], $read('سجل دين ثانوي على علي حسين 10 آلاف'));
+        $this->assertSame(['add_debt', 'علي', 5000, 'primary'], $read('سجل دين على علي 5000'));
+        $this->assertSame(['add_debt', 'علي حسين', 20000, 'primary'], $read('علي حسين عليه 20 الف دين'));
+        $this->assertSame(['query', 'محمد', null, null], $read('شكد دين على محمد'));
         $this->assertNull($rules->interpret('شريت كيبل 30 متر سعر المتر 5 آلاف'), 'free text goes to the AI');
     }
 
@@ -448,7 +493,7 @@ class WhatsAppTest extends TestCase
 
         $this->assertSame('claude-opus-5-5', $request['model']);
         $this->assertSame('json_schema', $request['outputConfig']['format']['type']);
-        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question'], $request['outputConfig']['format']['schema']['required']);
+        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket'], $request['outputConfig']['format']['schema']['required']);
         $this->assertSame('default', $request['fallbacks']);
         $this->assertSame(['server-side-fallback-2026-07-01'], $request['betas']);
         $this->assertStringContainsString('كم يوم؟', $request['messages'][0]['content']);

@@ -7,7 +7,9 @@ namespace App\WhatsApp;
  */
 final class Command
 {
-    public const INTENTS = ['activate', 'payment', 'purchase', 'void_debt', 'query', 'clarify', 'unknown'];
+    public const INTENTS = ['activate', 'payment', 'purchase', 'add_debt', 'void_debt', 'query', 'clarify', 'unknown'];
+
+    public const BUCKETS = ['primary', 'secondary'];
 
     public const QUERIES = [
         'secondary_debts', 'primary_debts', 'late', 'activated_today', 'sales_today',
@@ -25,7 +27,11 @@ final class Command
         public array $items = [],
         public ?string $query = null,
         public ?string $question = null,
+        public ?string $bucket = null,
     ) {
+        if ($this->bucket !== null && ! in_array($this->bucket, self::BUCKETS, true)) {
+            $this->bucket = null;
+        }
         if (! in_array($this->intent, self::INTENTS, true)) {
             $this->intent = 'unknown';
         }
@@ -51,6 +57,7 @@ final class Command
             ], array_filter((array) ($data['items'] ?? []), 'is_array'))),
             query: filled($data['query'] ?? null) ? (string) $data['query'] : null,
             question: filled($data['question'] ?? null) ? (string) $data['question'] : null,
+            bucket: filled($data['bucket'] ?? null) ? (string) $data['bucket'] : null,
         );
     }
 
@@ -64,6 +71,7 @@ final class Command
             'items' => $this->items ?: null,
             'query' => $this->query,
             'question' => $this->question,
+            'bucket' => $this->bucket,
         ], fn ($v) => $v !== null);
     }
 }

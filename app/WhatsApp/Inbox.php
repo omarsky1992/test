@@ -109,7 +109,15 @@ class Inbox
             if (! $this->settings->get('whatsapp.voice_enabled')) {
                 return Result::failed('الرسائل الصوتية متوقفة، اكتب الأمر كتابة.');
             }
-            [$audio, $mime] = $this->gateway->downloadMedia((string) ($message['audio']['id'] ?? ''));
+            if ($this->transcriber instanceof HttpTranscriber && ! HttpTranscriber::configured()) {
+                $record->update(['error' => 'OPENAI_API_KEY غير مضبوط: لا يمكن تحويل الصوت إلى نص']);
+
+                return Result::failed('🎤 وصلت رسالتك الصوتية، لكن تحويل الصوت إلى نص غير مفعّل بعد (يحتاج مفتاح OPENAI_API_KEY على السيرفر). اكتب الأمر كتابة حالياً.');
+            }
+            if (blank($message['audio']['id'] ?? null)) {
+                return Result::clarify('🎤 ما وصل الصوت كاملاً، أعد إرسال الرسالة الصوتية أو اكتبها.');
+            }
+            [$audio, $mime] = $this->gateway->downloadMedia((string) $message['audio']['id']);
             $text = $this->transcriber->transcribe($audio, $mime);
             $record->update(['transcript' => $text]);
             if ($text === '') {
