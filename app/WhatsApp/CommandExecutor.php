@@ -4,6 +4,7 @@ namespace App\WhatsApp;
 
 use App\Enums\AccountStatus;
 use App\Enums\DebtBucket;
+use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
@@ -12,13 +13,16 @@ use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Activation;
+use App\Models\ActivationDue;
 use App\Models\Debt;
+use App\Models\DeviceType;
 use App\Models\EmployeeAdvance;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\MoneyAccount;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\ActivationDueService;
 use App\Services\Audit;
 use App\Services\DebtService;
 use App\Services\EmployeeFinance;
@@ -29,8 +33,10 @@ use App\Services\Settings;
 use App\Services\TreasuryService;
 use App\Support\Arabic;
 use App\Support\Money;
+use App\Support\SubscriberStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Ramsey\Uuid\Uuid;
 
 /**
  * Carries out a command as the user the number is linked to, through the same services as the
@@ -47,8 +53,7 @@ class CommandExecutor
         private ReportService $reports,
         private Settings $settings,
         private Audit $audit,
-    ) {
-    }
+    ) {}
 
     public function execute(Command $command, User $user, string $messageId): Result
     {
@@ -92,28 +97,10 @@ class CommandExecutor
         }
         $name = $account->subscriber->full_name;
 
-        $hours = (int) $this->settings->get('whatsapp.duplicate_hours');
-        if ($recent = AccountRenewal::where('account_id', $account->id)->where('detected_at', '>=', now()->subHours($hours))->latest('detected_at')->first()) {
-            return Result::done("ℹ️ تفعيل {$name} مسجل مسبقاً ({$recent->detected_at->diffForHumans()}) – ما سجلته مرة ثانية.", ['renewal' => $recent->reference, 'duplicate' => true]);
+        [$renewal, $duplicate, $newEnds] = $this->recordActivation($account, $c->days);
+        if ($duplicate) {
+            return Result::done("ℹ️ تفعيل {$name} مسجل مسبقاً ({$renewal->detected_at->diffForHumans()}) – ما سجلته مرة ثانية.", ['renewal' => $renewal->reference, 'duplicate' => true]);
         }
-
-        $now = CarbonImmutable::now();
-        $previousEnds = $account->external_ends_at;
-        $left = Account::daysLeft($previousEnds, $now);
-        $previousDays = min($account->company_days_left ?? $left ?? 0, $left ?? $account->company_days_left ?? 0);
-        $base = $previousEnds !== null && $previousEnds->greaterThan($now) ? $previousEnds : $now;
-        $newEnds = $base->addDays($c->days);
-
-        $renewal = DB::transaction(function () use ($account, $previousDays, $c, $previousEnds, $newEnds, $now) {
-            $renewal = $this->renewals->record($account, $previousDays, $c->days, $previousEnds, $newEnds, at: $now);
-            $original = $account->getAttributes();
-            // The next company sync sees these days as already known, so it never counts the renewal twice.
-            $account->update(['external_ends_at' => $newEnds, 'company_days_left' => Account::daysLeft($newEnds, $now)]);
-            $this->audit->changes('account.activated', $account, $original, 'تفعيل عبر واتساب', $account->subscriber_id);
-            app(\App\Services\ActivationDueService::class)->accountEndsChanged($account);
-
-            return $renewal;
-        });
 
         $debt = $renewal->debt;
         $reply = match ($renewal->status) {
@@ -126,6 +113,41 @@ class CommandExecutor
             'account_id' => $account->id, 'subscriber' => $name, 'renewal' => $renewal->reference, 'status' => $renewal->status,
             'debt' => $debt?->number, 'amount' => $debt?->original_amount, 'ends_at' => $newEnds->format('Y-m-d H:i'),
         ]);
+    }
+
+    /**
+     * Records an activation of $days on the company site, the same way a sync sees it, and moves the
+     * company end date so the next sync does not count it again. The same account is not activated
+     * twice within the duplicate window: then the earlier renewal comes back with $duplicate true.
+     *
+     * @return array{0: AccountRenewal, 1: bool, 2: CarbonImmutable}
+     */
+    private function recordActivation(Account $account, int $days): array
+    {
+        $hours = (int) $this->settings->get('whatsapp.duplicate_hours');
+        if ($recent = AccountRenewal::where('account_id', $account->id)->where('detected_at', '>=', now()->subHours($hours))->latest('detected_at')->first()) {
+            return [$recent, true, $recent->new_ends_at ?? CarbonImmutable::now()];
+        }
+
+        $now = CarbonImmutable::now();
+        $previousEnds = $account->external_ends_at;
+        $left = Account::daysLeft($previousEnds, $now);
+        $previousDays = min($account->company_days_left ?? $left ?? 0, $left ?? $account->company_days_left ?? 0);
+        $base = $previousEnds !== null && $previousEnds->greaterThan($now) ? $previousEnds : $now;
+        $newEnds = $base->addDays($days);
+
+        $renewal = DB::transaction(function () use ($account, $previousDays, $days, $previousEnds, $newEnds, $now) {
+            $renewal = $this->renewals->record($account, $previousDays, $days, $previousEnds, $newEnds, at: $now);
+            $original = $account->getAttributes();
+            // The next company sync sees these days as already known, so it never counts the renewal twice.
+            $account->update(['external_ends_at' => $newEnds, 'company_days_left' => Account::daysLeft($newEnds, $now)]);
+            $this->audit->changes('account.activated', $account, $original, 'تفعيل عبر واتساب', $account->subscriber_id);
+            app(ActivationDueService::class)->accountEndsChanged($account);
+
+            return $renewal;
+        });
+
+        return [$renewal, false, $newEnds];
     }
 
     private function payment(Command $c, User $user, string $messageId): Result
@@ -148,11 +170,11 @@ class CommandExecutor
             ? $this->employees->custodyAccount($user)
             : ($method->moneyAccount ?? $this->cashBox($user));
 
-        $payment = $this->payments->record($account, $c->amount, PaymentMethod::Cash, $box, notes: 'عبر واتساب', idempotencyKey: \Ramsey\Uuid\Uuid::uuid5(\Ramsey\Uuid\Uuid::NAMESPACE_URL, "whatsapp:{$messageId}")->toString());
+        $payment = $this->payments->record($account, $c->amount, PaymentMethod::Cash, $box, notes: 'عبر واتساب', idempotencyKey: Uuid::uuid5(Uuid::NAMESPACE_URL, "whatsapp:{$messageId}")->toString());
         $left = (int) Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
 
         return Result::done(
-            "✅ قبض ".Money::format($c->amount)." من {$account->subscriber->full_name}\nسند {$payment->receipt_number}\nالمتبقي عليه: ".Money::format($left),
+            '✅ قبض '.Money::format($c->amount)." من {$account->subscriber->full_name}\nسند {$payment->receipt_number}\nالمتبقي عليه: ".Money::format($left),
             ['payment' => $payment->receipt_number, 'amount' => $c->amount, 'account_id' => $account->id, 'box' => $box->name, 'remaining' => $left],
         );
     }
@@ -191,6 +213,11 @@ class CommandExecutor
         ]);
     }
 
+    /**
+     * A debt on a subscriber. A primary debt is a 30-day activation on credit: when the subscription is
+     * not running (or the message says «تفعيل»), it is activated too, so the subscriber shows as
+     * «فعّال وعليه دين», not «منتهي وعليه دين». Without an amount, the plan price is owed.
+     */
     private function addDebt(Command $c, User $user): Result
     {
         if (! $user->can('debts.create_manual')) {
@@ -199,20 +226,48 @@ class CommandExecutor
         if ($c->subscriber === null) {
             return Result::clarify('على منو أسجل الدين؟');
         }
-        if ($c->amount === null || $c->amount <= 0) {
+        if ($c->amount !== null && $c->amount <= 0) {
             return Result::clarify("شكد الدين على {$c->subscriber}؟");
         }
         $account = $this->findAccount($c->subscriber);
         if (is_string($account)) {
             return Result::clarify($account);
         }
+        $name = $account->subscriber->full_name;
         $bucket = $c->bucket === 'secondary' ? DebtBucket::Secondary : DebtBucket::Primary;
-        $debt = $this->debts->create($account, $c->amount, $bucket, \App\Enums\DebtSource::Manual, notes: 'عبر واتساب');
+        $amount = $c->amount ?? ($bucket === DebtBucket::Primary && $account->currentPlan?->price > 0 ? (int) $account->currentPlan->price : null);
+        if ($amount === null) {
+            return Result::clarify("شكد الدين على {$name}؟");
+        }
+
+        $activation = null;
+        if ($bucket === DebtBucket::Primary) {
+            if ($c->days !== null && $c->days <= $this->settings->partialDays()) {
+                return Result::clarify("تفعيل {$c->days} أيام يُسجَّل ديناً ثانوياً تلقائياً. أرسل: تفعيل {$name} {$c->days}");
+            }
+            $ends = SubscriberStatus::endsAt($account);
+            if ($c->days !== null || $ends === null || $ends->getTimestamp() <= now()->getTimestamp()) {
+                if (! $user->can('activations.create')) {
+                    return Result::denied();
+                }
+                $activation = $this->recordActivation($account, $c->days ?? $this->settings->fullDays());
+            }
+        }
+
+        $debt = $this->debts->create($account, $amount, $bucket, DebtSource::Manual, notes: $activation ? 'تفعيل بدين أولي عبر واتساب' : 'عبر واتساب');
         $total = (int) Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
         $label = $bucket === DebtBucket::Secondary ? 'ثانوي' : 'أولي';
+        $reply = "✅ تم تسجيل دين {$label} ".Money::format($amount)." على {$name} ({$debt->number})";
+        if ($activation !== null) {
+            [$renewal, $duplicate, $newEnds] = $activation;
+            $reply .= $duplicate
+                ? "\nℹ️ تفعيله مسجل مسبقاً ({$renewal->detected_at->diffForHumans()})"
+                : "\n✅ وتم تفعيله {$renewal->new_days} يوم (فعّال حتى ".$newEnds->setTimezone(config('app.timezone'))->format('Y/m/d').')';
+        }
 
-        return Result::done("✅ تم تسجيل دين {$label} ".Money::format($c->amount)." على {$account->subscriber->full_name} ({$debt->number})\nمجموع ديونه: ".Money::format($total), [
-            'debt' => $debt->number, 'amount' => $c->amount, 'bucket' => $bucket->value, 'account_id' => $account->id,
+        return Result::done($reply."\nمجموع ديونه: ".Money::format($total), [
+            'debt' => $debt->number, 'amount' => $amount, 'bucket' => $bucket->value, 'account_id' => $account->id,
+            'activated' => $activation !== null && ! $activation[1], 'renewal' => $activation[0]->reference ?? null,
         ]);
     }
 
@@ -239,8 +294,8 @@ class CommandExecutor
 
         return Result::done("🔁 تمت المناقلة {$transfer->number}: ".Money::format($transfer->amount)." من الثانوية إلى الأولية على {$name}"
             .($transfer->days_added ? "\nأُضيفت {$transfer->days_added} يوماً، نفّذها على موقع الشركة." : ''), [
-            'transfer' => $transfer->number, 'amount' => $transfer->amount, 'account_id' => $account->id,
-        ]);
+                'transfer' => $transfer->number, 'amount' => $transfer->amount, 'account_id' => $account->id,
+            ]);
     }
 
     /** مبيعات: devices or items sold, paid now into the seller's box, or on credit to a named subscriber. */
@@ -285,13 +340,13 @@ class CommandExecutor
         $total = array_sum(array_map(fn ($s) => $s->total_amount, $sales));
         $list = implode("\n", array_map(fn ($s) => "• {$s->description}: ".Money::format($s->total_amount, false), $sales));
 
-        return Result::done("✅ تم تسجيل المبيعات".($account ? " بالدين على {$account->subscriber->full_name}" : " في {$box->name}")."\n{$list}\nالمجموع: ".Money::format($total), [
+        return Result::done('✅ تم تسجيل المبيعات'.($account ? " بالدين على {$account->subscriber->full_name}" : " في {$box->name}")."\n{$list}\nالمجموع: ".Money::format($total), [
             'sales' => array_map(fn ($s) => ['number' => $s->number, 'amount' => $s->total_amount], $sales), 'total' => $total,
             'account_id' => $account?->id,
         ]);
     }
 
-    private static function deviceType(string $description): \App\Models\DeviceType
+    private static function deviceType(string $description): DeviceType
     {
         $d = Arabic::normalize($description);
         $key = match (true) {
@@ -302,7 +357,7 @@ class CommandExecutor
             default => 'other',
         };
 
-        return \App\Models\DeviceType::where('key', $key)->first() ?? \App\Models\DeviceType::firstOrCreate(['key' => 'other'], ['name_ar' => 'أخرى']);
+        return DeviceType::where('key', $key)->first() ?? DeviceType::firstOrCreate(['key' => 'other'], ['name_ar' => 'أخرى']);
     }
 
     private function voidDebt(Command $c, User $user): Result
@@ -353,7 +408,7 @@ class CommandExecutor
             'secondary_debts', 'primary_debts' => $this->debtList($c->query === 'secondary_debts' ? DebtBucket::Secondary : DebtBucket::Primary),
             'late' => $this->late(),
             'must_activate' => (function () {
-                $dues = \App\Models\ActivationDue::with('subscriber:id,full_name')->where('status', 'pending')->orderBy('paid_at')->limit(15)->get();
+                $dues = ActivationDue::with('subscriber:id,full_name')->where('status', 'pending')->orderBy('paid_at')->limit(15)->get();
 
                 return $dues->isEmpty() ? '✅ ما كو أحد يجب تفعيله.' : "🟣 يجب التفعيل ({$dues->count()}):\n".$dues->map(fn ($d) => "• {$d->subscriber?->full_name}: سدّد ".Money::format($d->amount, false))->implode("\n");
             })(),
@@ -361,26 +416,26 @@ class CommandExecutor
             'sales_today' => (function () use ($today) {
                 $d = $this->reports->dashboard($today, $today);
 
-                return "💰 مبيعات اليوم: ".Money::format($d['sales'])."\nتفعيلات: {$d['activations_count']} · أجهزة: ".Money::format($d['device_sales'], false)."\nالتحصيل: ".Money::format($d['collections'])." ({$d['receipts_count']} سند)";
+                return '💰 مبيعات اليوم: '.Money::format($d['sales'])."\nتفعيلات: {$d['activations_count']} · أجهزة: ".Money::format($d['device_sales'], false)."\nالتحصيل: ".Money::format($d['collections'])." ({$d['receipts_count']} سند)";
             })(),
             'purchases_today' => (function () use ($today) {
                 $d = $this->reports->dashboard($today, $today);
                 $items = Expense::where('status', DocumentStatus::Posted)->whereBetween('spent_at', [$today->startOfDay(), $today->endOfDay()])->latest('spent_at')->limit(8)->get()
                     ->map(fn (Expense $e) => "• {$e->description}: ".Money::format($e->amount, false))->implode("\n");
 
-                return "🛒 مشتريات اليوم: ".Money::format($d['purchases'])."\nمصاريف: ".Money::format($d['expenses'], false).' · شحن رصيد الشركة: '.Money::format($d['company_topups'], false).($items ? "\n{$items}" : '');
+                return '🛒 مشتريات اليوم: '.Money::format($d['purchases'])."\nمصاريف: ".Money::format($d['expenses'], false).' · شحن رصيد الشركة: '.Money::format($d['company_topups'], false).($items ? "\n{$items}" : '');
             })(),
             'custody' => (function () {
                 $rows = MoneyAccount::with('user:id,name')->where('kind', MoneyAccountKind::Custody)->get()
                     ->map(fn (MoneyAccount $m) => [$m->user?->name ?? $m->name, $this->treasury->balance($m)])->filter(fn ($r) => $r[1] !== 0);
 
-                return $rows->isEmpty() ? 'ما كو عهد عند الموظفين.' : "👥 عهد الموظفين: ".Money::format($rows->sum(fn ($r) => $r[1]))."\n".$rows->map(fn ($r) => "• {$r[0]}: ".Money::format($r[1], false))->implode("\n");
+                return $rows->isEmpty() ? 'ما كو عهد عند الموظفين.' : '👥 عهد الموظفين: '.Money::format($rows->sum(fn ($r) => $r[1]))."\n".$rows->map(fn ($r) => "• {$r[0]}: ".Money::format($r[1], false))->implode("\n");
             })(),
             'advances' => (function () {
                 $rows = EmployeeAdvance::with('user:id,name')->where('balance', '>', 0)->get()->groupBy('user_id')
                     ->map(fn ($g) => [$g->first()->user?->name, (int) $g->sum('balance')]);
 
-                return $rows->isEmpty() ? 'ما كو سلف غير مسددة.' : "💵 سلف الموظفين: ".Money::format($rows->sum(fn ($r) => $r[1]))."\n".$rows->map(fn ($r) => "• {$r[0]}: ".Money::format($r[1], false))->implode("\n");
+                return $rows->isEmpty() ? 'ما كو سلف غير مسددة.' : '💵 سلف الموظفين: '.Money::format($rows->sum(fn ($r) => $r[1]))."\n".$rows->map(fn ($r) => "• {$r[0]}: ".Money::format($r[1], false))->implode("\n");
             })(),
             'subscriber_debt' => (function () use ($c) {
                 if ($c->subscriber === null) {

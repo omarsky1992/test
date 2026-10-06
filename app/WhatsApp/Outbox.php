@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use App\Models\WhatsappNumber;
 use App\Models\WhatsappOutbox;
 use App\Services\Settings;
 use Carbon\CarbonImmutable;
@@ -16,13 +17,11 @@ use Illuminate\Support\Facades\DB;
  */
 class Outbox
 {
-    public function __construct(private Settings $settings)
-    {
-    }
+    public function __construct(private Settings $settings) {}
 
     public function queue(string $phone, string $body, string $kind, ?string $reference = null, ?int $accountId = null): ?WhatsappOutbox
     {
-        $phone = \App\Models\WhatsappNumber::normalize($phone);
+        $phone = WhatsappNumber::normalize($phone);
         if (strlen($phone) < 10 || trim($body) === '') {
             return null;
         }
@@ -40,21 +39,33 @@ class Outbox
         }
     }
 
+    /** With a second phone for the subscribers: «notify» sends their messages (automatic and reminders), «main» the rest. */
+    public function separateLines(): bool
+    {
+        return (bool) $this->settings->get('whatsapp.notify_separate');
+    }
+
     /**
-     * Sends what is due. Returns [sent, failed].
+     * Sends what is due on one line ('all' when there is a single phone; each line has its own
+     * batch and daily cap). Returns [sent, failed].
      *
      * @return array{0: int, 1: int}
      */
-    public function dispatch(Gateway $gateway, ?CarbonImmutable $now = null): array
+    public function dispatch(Gateway $gateway, ?CarbonImmutable $now = null, string $line = 'all'): array
     {
         $now ??= CarbonImmutable::now();
-        $sentToday = WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', $now->startOfDay())->count();
+        $scope = fn ($query) => match ($line) {
+            'main' => $query->where('kind', 'not like', 'sub\\_%')->where('kind', '<>', 'reminder'),
+            'notify' => $query->where(fn ($q) => $q->where('kind', 'like', 'sub\\_%')->orWhere('kind', 'reminder')),
+            default => $query,
+        };
+        $sentToday = $scope(WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', $now->startOfDay()))->count();
         $room = min((int) $this->settings->get('whatsapp.batch_size'), (int) $this->settings->get('whatsapp.daily_limit') - $sentToday);
         if ($room <= 0) {
             return [0, 0];
         }
 
-        $query = WhatsappOutbox::where('status', 'pending')->orderBy('id');
+        $query = $scope(WhatsappOutbox::where('status', 'pending')->orderBy('id'));
         if (! $this->duringDay($now)) {
             // At night only the staff alerts go out; subscribers are never messaged at night.
             $query->where('kind', 'like', 'alert_%');

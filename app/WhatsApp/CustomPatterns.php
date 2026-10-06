@@ -3,6 +3,7 @@
 namespace App\WhatsApp;
 
 use App\Models\CommandPattern;
+use App\Services\Settings;
 use Illuminate\Support\Collection;
 
 /**
@@ -80,6 +81,8 @@ class CustomPatterns
         return match ($blank) {
             'D' => self::days($value) !== null,
             'A' => RuleInterpreter::amount($value) !== null,
+            // A name never holds the word «دين»: «تفعيل محمد دين اولي» is not the activation of «محمد دين اولي».
+            'N' => ! preg_match('/(^|\s)(دين|ديون|بدين)(\s|$)/u', $value),
             default => true,
         };
     }
@@ -114,6 +117,8 @@ class CustomPatterns
         return match ($pattern->action) {
             'activate' => ($days = self::days($values['D'] ?? null) ?? $pattern->default_days) && $name
                 ? new Command('activate', subscriber: $name, days: $days) : null,
+            'activate_primary' => $name ? new Command('add_debt', subscriber: $name, days: self::days($values['D'] ?? null) ?? $pattern->default_days
+                ?? app(Settings::class)->fullDays(), amount: $amount, bucket: 'primary') : null,
             'payment' => $name && $amount ? new Command('payment', subscriber: $name, amount: $amount) : null,
             'add_debt_primary' => $name && $amount ? new Command('add_debt', subscriber: $name, amount: $amount, bucket: 'primary') : null,
             'add_debt_secondary' => $name && $amount ? new Command('add_debt', subscriber: $name, amount: $amount, bucket: 'secondary') : null,

@@ -36,6 +36,7 @@ class Settings
         'alerts.secondary_expiring' => true,
         'alerts.hours_before' => 24,
         'subscriber_messages.enabled' => false,
+        'whatsapp.notify_separate' => false,
         'subscriber_messages.renewal' => true,
         'subscriber_messages.expiring' => true,
         'subscriber_messages.expired' => true,

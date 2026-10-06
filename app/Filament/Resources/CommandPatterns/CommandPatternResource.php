@@ -72,9 +72,9 @@ class CommandPatternResource extends Resource
             Select::make('action')->label('ماذا تفعل')->required()->live()
                 ->options(collect(CommandPattern::ACTIONS)->map(fn ($a) => $a[0])->all()),
             TextInput::make('default_days')->label('عدد الأيام إذا لم تُذكر')->integer()->minValue(1)->maxValue(365)
-                ->visible(fn (Get $get) => $get('action') === 'activate'),
+                ->visible(fn (Get $get) => in_array($get('action'), ['activate', 'activate_primary'], true)),
             Toggle::make('amount_in_thousands')->label('المبلغ بالآلاف (35 = 35,000)')
-                ->visible(fn (Get $get) => in_array($get('action'), ['payment', 'add_debt_primary', 'add_debt_secondary', 'void_debt', 'purchase', 'sale'], true)),
+                ->visible(fn (Get $get) => in_array($get('action'), ['payment', 'activate_primary', 'add_debt_primary', 'add_debt_secondary', 'void_debt', 'purchase', 'sale'], true)),
             TextInput::make('sort_order')->label('الترتيب')->integer()->default(0)
                 ->helperText('الأصغر يُجرَّب أولاً. ضع الصيغ الأطول قبل الأقصر.'),
             Toggle::make('is_active')->label('فعّالة')->default(true),
@@ -128,7 +128,7 @@ class CommandPatternResource extends Resource
     public static function describe(Command $c): string
     {
         $label = match ($c->intent) {
-            'activate' => 'تفعيل', 'payment' => 'قبض', 'add_debt' => $c->bucket === 'secondary' ? 'دين ثانوي' : 'دين أولي',
+            'activate' => 'تفعيل', 'payment' => 'قبض', 'add_debt' => $c->bucket === 'secondary' ? 'دين ثانوي' : ($c->days ? 'تفعيل بدين أولي' : 'دين أولي'),
             'transfer' => 'مناقلة', 'void_debt' => 'مسح دين', 'purchase' => 'مشتريات', 'sale' => 'مبيعات', 'query' => 'استعلام',
             default => $c->intent,
         };

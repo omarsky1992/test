@@ -4,9 +4,11 @@ namespace App\WhatsApp;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtStatus;
+use App\Enums\DocumentStatus;
 use App\Filament\Pages\WhatsappReminders;
 use App\Models\Account;
 use App\Models\AccountRenewal;
+use App\Models\Activation;
 use App\Models\ActivationDue;
 use App\Models\MessageTemplate;
 use App\Models\WhatsappNumber;
@@ -20,13 +22,12 @@ use Illuminate\Support\Collection;
 /**
  * What the system tells by WhatsApp, on its own:
  * - the staff (numbers marked «يستلم التنبيهات»): «يجب التفعيل» and secondary debts about to end;
- * - the subscribers, only when switched on: renewal, subscription ending or ended, debt reminders.
+ * - the subscribers, only when switched on: activation (7 or 30 days), subscription ending or ended
+ *   (not after the short 7-day activation), debt reminders.
  */
 class Notifier
 {
-    public function __construct(private Outbox $outbox, private Settings $settings)
-    {
-    }
+    public function __construct(private Outbox $outbox, private Settings $settings) {}
 
     // ---- Staff alerts ----
 
@@ -71,6 +72,7 @@ class Notifier
 
     // ---- Subscriber messages ----
 
+    /** An activation seen on the company site or sent by WhatsApp (7 or 30 days). */
     public function renewal(AccountRenewal $renewal): void
     {
         if (! $this->subscriberMessage('renewal')) {
@@ -78,8 +80,47 @@ class Notifier
         }
         $account = Account::with(['subscriber', 'currentPlan'])->find($renewal->account_id);
         if ($account) {
+            // The account gets its new end date after this; the message already tells it.
+            if ($renewal->new_ends_at !== null && ($account->external_ends_at === null || $renewal->new_ends_at->greaterThan($account->external_ends_at))) {
+                $account->external_ends_at = $renewal->new_ends_at;
+            }
             $this->toSubscriber($account, 'renewal', "sub:renewal:{$renewal->id}");
         }
+    }
+
+    /** An activation recorded in the panel. */
+    public function activation(Activation $activation): void
+    {
+        if (! $this->subscriberMessage('renewal')) {
+            return;
+        }
+        if ($account = Account::with(['subscriber', 'currentPlan'])->find($activation->account_id)) {
+            $this->toSubscriber($account, 'renewal', "sub:activation:{$activation->id}");
+        }
+    }
+
+    /**
+     * Whether the running subscription is the short activation (7 days): its subscribers get no
+     * message before or at the end. Measured from the start of the latest activation to the end,
+     * so a 7-day activation later completed to 30 days counts as a full one.
+     */
+    public function shortActivation(Account $account): bool
+    {
+        $ends = SubscriberStatus::endsAt($account);
+        if ($ends === null) {
+            return false;
+        }
+        $renewal = AccountRenewal::where('account_id', $account->id)->latest('detected_at')->latest('id')->first();
+        $activation = Activation::where('account_id', $account->id)->where('status', DocumentStatus::Posted)->latest('starts_at')->first();
+        $starts = collect([
+            $renewal ? collect([$renewal->detected_at, $renewal->previous_ends_at])->filter()->max() : null,
+            $activation?->starts_at,
+        ])->filter()->max();
+        if ($starts === null) {
+            return false;
+        }
+
+        return $ends->getTimestamp() - $starts->getTimestamp() <= ($this->settings->partialDays() + 1) * 86400;
     }
 
     /**
@@ -97,11 +138,17 @@ class Notifier
         if ($this->subscriberMessage('expiring')) {
             $hours = max(1, (int) $this->settings->get('subscriber_messages.expiring_hours'));
             foreach (SubscriberStatus::base()->whereRaw("{$ends} > ? and {$ends} <= ?", [$now, $now->addHours($hours)])->get() as $account) {
+                if ($this->shortActivation($account)) {
+                    continue;
+                }
                 $count += $this->toSubscriber($account, 'expiring', 'sub:expiring:'.$account->id.':'.SubscriberStatus::endsAt($account)->getTimestamp()) ? 1 : 0;
             }
         }
         if ($this->subscriberMessage('expired')) {
             foreach (SubscriberStatus::base()->whereRaw("{$ends} <= ? and {$ends} > ?", [$now, $now->subDay()])->get() as $account) {
+                if ($this->shortActivation($account)) {
+                    continue;
+                }
                 $count += $this->toSubscriber($account, 'expired', 'sub:expired:'.$account->id.':'.SubscriberStatus::endsAt($account)->getTimestamp()) ? 1 : 0;
             }
         }

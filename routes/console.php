@@ -5,6 +5,11 @@ use App\Services\BackupService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
 use App\Sync\FtthApiClient;
+use App\WhatsApp\Gateway;
+use App\WhatsApp\Inbox;
+use App\WhatsApp\Notifier;
+use App\WhatsApp\Outbox;
+use App\WhatsApp\WahaGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -54,21 +59,28 @@ Artisan::command('company:keep-session', function (FtthApiClient $client) {
 // EarthLink ends idle sign-ins after a while; renewing every 10 minutes keeps the refresh token valid.
 Schedule::command('company:keep-session')->everyTenMinutes()->withoutOverlapping(5);
 
-Artisan::command('whatsapp:scan', function (App\WhatsApp\Notifier $notifier, App\WhatsApp\Inbox $inbox) {
+Artisan::command('whatsapp:scan', function (Notifier $notifier, Inbox $inbox) {
     $inbox->closeStuck();
     $alerts = $notifier->scanSecondaryExpiring();
     $messages = $notifier->scanSubscribers();
     $this->info("Queued {$alerts} staff alerts and {$messages} subscriber messages.");
 })->purpose('Queue the WhatsApp alerts for staff and the automatic messages for subscribers');
 
-Artisan::command('whatsapp:dispatch', function (App\WhatsApp\Outbox $outbox, App\WhatsApp\Gateway $gateway, Settings $settings) {
+Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway, Settings $settings) {
+    $separate = $outbox->separateLines();
     // With the QR connection, nothing is tried while the phone is not linked: the queue waits.
-    if ($settings->get('whatsapp.driver') !== 'meta' && ! ($gateway instanceof App\WhatsApp\WahaGateway && $gateway->isConnected())) {
-        return 0;
+    if ($settings->get('whatsapp.driver') === 'meta' || ($gateway instanceof WahaGateway && $gateway->isConnected())) {
+        [$sent, $failed] = $outbox->dispatch($gateway, line: $separate ? 'main' : 'all');
+        if ($sent + $failed > 0) {
+            $this->info("Sent {$sent}, failed {$failed}.");
+        }
     }
-    [$sent, $failed] = $outbox->dispatch($gateway);
-    if ($sent + $failed > 0) {
-        $this->info("Sent {$sent}, failed {$failed}.");
+    // The subscribers' messages wait for the second phone; they never go out from the staff's number.
+    if ($separate && ($notify = WahaGateway::line('notify'))->isConnected()) {
+        [$sent, $failed] = $outbox->dispatch($notify, line: 'notify');
+        if ($sent + $failed > 0) {
+            $this->info("Notifications line: sent {$sent}, failed {$failed}.");
+        }
     }
 
     return 0;

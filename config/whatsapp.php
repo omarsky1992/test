@@ -13,6 +13,15 @@ return [
         'webhook_url' => env('WAHA_WEBHOOK_URL', 'http://app:8080/whatsapp/qr-webhook'),
     ],
 
+    // The optional second phone that only sends the subscribers' messages (service «waha-notify»).
+    // Same key; no webhook, so nothing written to it is ever read as a command.
+    'waha_notify' => [
+        'url' => env('WAHA_NOTIFY_URL', 'http://waha-notify:3000'),
+        'api_key' => env('WAHA_API_KEY'),
+        'session' => env('WAHA_NOTIFY_SESSION', 'default'),
+        'webhook_url' => null,
+    ],
+
     // Seconds between two messages sent from the linked phone (random within the range), to look human.
     'send_delay' => [(int) env('WHATSAPP_SEND_DELAY_MIN', 3), (int) env('WHATSAPP_SEND_DELAY_MAX', 8)],
 

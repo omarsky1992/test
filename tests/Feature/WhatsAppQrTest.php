@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\ActivationKind;
 use App\Enums\PaymentMethod;
 use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Pages\WhatsappSettings;
@@ -10,6 +11,7 @@ use App\Models\Account;
 use App\Models\MessageTemplate;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappOutbox;
+use App\Services\ActivationService;
 use App\Services\PaymentService;
 use App\Services\RenewalService;
 use App\Services\Settings;
@@ -321,6 +323,96 @@ class WhatsAppQrTest extends TestCase
         $this->assertStringContainsString('زينب كريم', $message->body);
 
         Livewire::test(ListWhatsappOutbox::class)->assertOk()->assertSee('زينب كريم');
+    }
+
+    public function test_every_activation_messages_the_subscriber_with_the_new_end_date(): void
+    {
+        app(Settings::class)->set('subscriber_messages.enabled', true);
+
+        // In the panel (7 or 30 days).
+        $panel = $this->account('سارة علي', phone: '07901110010');
+        $activation = app(ActivationService::class)->activate($panel, $this->plan(), ActivationKind::Full30);
+        $message = WhatsappOutbox::where('account_id', $panel->id)->sole();
+        $this->assertSame(['sub_renewal', '9647901110010'], [$message->kind, $message->to_phone]);
+        $this->assertStringContainsString($activation->ends_at->format('Y/m/d'), $message->body);
+
+        // By WhatsApp: the message carries the new end date, not the old one.
+        $this->enableCommands();
+        $wa = $this->account('كرار حسن', phone: '07901110011');
+        $wa->update(['current_plan_id' => $this->plan()->id, 'external_ends_at' => now()->subDays(3)]);
+        $fake = new FakeWhatsApp;
+        $this->app->instance(Gateway::class, $fake);
+        $this->postEvent($this->message(['body' => 'كرار حسن فعلته سبع ايام']));
+        $body = WhatsappOutbox::where('account_id', $wa->id)->sole()->body;
+        $this->assertStringContainsString(now()->addDays(7)->format('Y/m/d'), $body);
+    }
+
+    public function test_only_the_30_day_subscribers_are_told_before_and_at_the_end(): void
+    {
+        app(Settings::class)->set('subscriber_messages.enabled', true);
+        app(Settings::class)->set('subscriber_messages.renewal', false);
+        app(Settings::class)->set('subscriber_messages.debt', false);
+        $short = $this->renewed('قصير', days: 7);
+        $full = $this->renewed('كامل', days: 30);
+        $completed = $this->renewed('مكمل', days: 7);
+
+        $this->travelTo(now()->addDays(6)->addHours(10));
+        // The 7-day activation was completed to 30 days on the company site.
+        $completed->update(['external_ends_at' => now()->addHours(14)->addDays(23)]);
+        $notifier = app(Notifier::class);
+        $notifier->scanSubscribers();
+        $this->assertSame(0, WhatsappOutbox::count(), 'the 7-day subscriber is not told it ends');
+
+        $this->travelTo(now()->addDays(23)->addHours(10));
+        $notifier->scanSubscribers();
+        $this->assertEqualsCanonicalizing([$full->id, $completed->id], WhatsappOutbox::where('kind', 'sub_expiring')->pluck('account_id')->all());
+
+        $this->travelTo(now()->addDays(1));
+        $notifier->scanSubscribers();
+        $this->assertEqualsCanonicalizing([$full->id, $completed->id], WhatsappOutbox::where('kind', 'sub_expired')->pluck('account_id')->all());
+        $this->assertFalse(WhatsappOutbox::where('account_id', $short->id)->exists());
+    }
+
+    public function test_a_second_phone_sends_the_subscribers_messages_and_the_first_keeps_the_staffs(): void
+    {
+        $outbox = app(Outbox::class);
+        $outbox->queue('07901110001', 'رسالة مشترك', 'sub_expiring');
+        $outbox->queue('07901110002', 'تذكير يدوي', 'reminder');
+        $outbox->queue('07702222222', 'تنبيه', 'alert_must_activate');
+        $at = CarbonImmutable::parse('2026-09-22 10:00');
+
+        app(Settings::class)->set('whatsapp.notify_separate', true);
+        [$main, $notify] = [new FakeWhatsApp, new FakeWhatsApp];
+        $outbox->dispatch($main, $at, 'main');
+        $outbox->dispatch($notify, $at, 'notify');
+        $this->assertSame(['تنبيه'], array_column($main->sent, 'text'));
+        $this->assertSame(['رسالة مشترك', 'تذكير يدوي'], array_column($notify->sent, 'text'));
+
+        // Through the scheduler: each line from its own WAHA service; nothing waits on the other.
+        $this->fakeWaha();
+        config(['whatsapp.waha_notify.url' => 'http://waha-notify:3000', 'whatsapp.waha_notify.api_key' => 'waha-key']);
+        $outbox->queue('07901110003', 'مشترك ثاني', 'sub_debt');
+        $outbox->queue('07702222222', 'تنبيه ثاني', 'alert_must_activate');
+        $this->artisan('whatsapp:dispatch')->assertSuccessful();
+        Http::assertSent(fn (Request $r) => $r->url() === 'http://waha-notify:3000/api/sendText' && $r['text'] === 'مشترك ثاني');
+        Http::assertSent(fn (Request $r) => $r->url() === 'http://waha:3000/api/sendText' && $r['text'] === 'تنبيه ثاني');
+        Http::assertNotSent(fn (Request $r) => $r->url() === 'http://waha:3000/api/sendText' && $r['text'] === 'مشترك ثاني');
+    }
+
+    public function test_the_second_phone_is_linked_from_the_settings_without_a_webhook(): void
+    {
+        $this->fakeWaha('MISSING', exists: false);
+        config(['whatsapp.waha_notify.api_key' => 'waha-key']);
+        Livewire::test(WhatsappSettings::class)->assertDontSeeHtml("linkPhone('notify')")
+            ->fillForm(['notify_separate' => true])->call('save');
+        $this->assertTrue((bool) app(Settings::class)->get('whatsapp.notify_separate'));
+
+        Livewire::test(WhatsappSettings::class)->assertSeeHtml("linkPhone('notify')")->call('linkPhone', 'notify');
+        Http::assertSent(fn (Request $r) => $r->url() === 'http://waha-notify:3000/api/sessions' && $r->method() === 'POST' && $r['config']['webhooks'] === []);
+        Http::assertNotSent(fn (Request $r) => $r->url() === 'http://waha:3000/api/sessions' && $r->method() === 'POST');
+
+        $this->get(route('whatsapp.qr', ['line' => 'notify']))->assertOk();
+        Http::assertSent(fn (Request $r) => str_starts_with($r->url(), 'http://waha-notify:3000/api/default/auth/qr'));
     }
 
     public function test_settings_switches_are_saved(): void

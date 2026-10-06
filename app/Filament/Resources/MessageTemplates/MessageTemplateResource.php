@@ -9,6 +9,7 @@ use BackedEnum;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -40,7 +41,7 @@ class MessageTemplateResource extends Resource
 
     protected static ?string $pluralModelLabel = 'قوالب الرسائل';
 
-    public const EVENTS = ['renewal' => 'التجديد', 'expiring' => 'قرب انتهاء الاشتراك', 'expired' => 'انتهاء الاشتراك', 'debt' => 'تذكير بالديون'];
+    public const EVENTS = ['renewal' => 'التفعيل (7 أو 30 يوماً)', 'expiring' => 'قرب انتهاء الاشتراك', 'expired' => 'انتهاء الاشتراك', 'debt' => 'تذكير بالديون'];
 
     public static function canViewAny(): bool
     {
@@ -55,7 +56,7 @@ class MessageTemplateResource extends Resource
             TextInput::make('title')->label('العنوان')->required()->maxLength(80),
             TextInput::make('icon')->label('رمز (إيموجي)')->maxLength(10)->placeholder('⏳'),
             Textarea::make('body')->label('نص الرسالة')->required()->rows(6)->columnSpanFull()->helperText($help),
-            \Filament\Forms\Components\Select::make('auto_event')->label('تُرسل تلقائياً عند')->placeholder('لا (يدوي فقط)')
+            Select::make('auto_event')->label('تُرسل تلقائياً عند')->placeholder('لا (يدوي فقط)')
                 ->options(self::EVENTS)->unique(ignoreRecord: true)
                 ->helperText('تشغيل الرسائل التلقائية وإيقافها من «إعدادات واتساب».'),
             TextInput::make('sort_order')->label('الترتيب')->integer()->default(0),

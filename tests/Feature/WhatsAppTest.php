@@ -3,16 +3,21 @@
 namespace Tests\Feature;
 
 use App\Enums\DebtBucket;
+use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
+use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\WhatsappSettings;
+use App\Filament\Resources\CommandPatterns\Pages\ManageCommandPatterns;
 use App\Filament\Resources\WhatsappMessages\Pages\ListWhatsappMessages;
 use App\Filament\Resources\WhatsappNumbers\Pages\ManageWhatsappNumbers;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\AuditLog;
+use App\Models\CommandPattern;
 use App\Models\Debt;
-use App\Models\EmployeeAdvance;
+use App\Models\DeviceSale;
 use App\Models\Expense;
+use App\Models\MoneyAccount;
 use App\Models\Payment;
 use App\Models\User;
 use App\Models\WhatsappMessage;
@@ -21,15 +26,22 @@ use App\Services\EmployeeFinance;
 use App\Services\Ledger;
 use App\Services\Settings;
 use App\Services\TreasuryService;
+use App\Support\SubscriberStatus;
+use App\Sync\CompanyClient;
+use App\Sync\CompanySync;
 use App\WhatsApp\ClaudeInterpreter;
 use App\WhatsApp\Command;
+use App\WhatsApp\CustomPatterns;
 use App\WhatsApp\Gateway;
+use App\WhatsApp\HttpTranscriber;
+use App\WhatsApp\LocalWhisperTranscriber;
 use App\WhatsApp\NumberRegistry;
 use App\WhatsApp\RuleInterpreter;
 use App\WhatsApp\Transcriber;
-use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\Support\FakeClaude;
+use Tests\Support\FakeCompanyClient;
 use Tests\Support\FakeWhatsApp;
 use Tests\TestCase;
 
@@ -200,19 +212,19 @@ class WhatsAppTest extends TestCase
 
     public function test_a_company_sync_after_a_whatsapp_activation_does_not_add_a_second_debt(): void
     {
-        $site = new \Tests\Support\FakeCompanyClient;
-        $this->app->instance(\App\Sync\CompanyClient::class, $site);
+        $site = new FakeCompanyClient;
+        $this->app->instance(CompanyClient::class, $site);
         $record = ['customer_id' => '2825350', 'name' => 'محمد رمضان', 'plan' => 'BASIC', 'status' => 'Expired',
             'ends_at' => '2026-09-01T10:00:00Z', 'username' => 'FBG876F33P08', 'subscription_id' => '13525583'];
         $site->set($record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
 
         $this->text('محمد رمضان فعلته سبع ايام');
         $this->assertSame(1, Debt::count());
 
         $this->travelTo(now()->addHour());
         $site->set(['status' => 'Active', 'ends_at' => now()->addDays(7)->subHour()->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
 
         $this->assertSame(1, Debt::count());
         $this->assertSame(1, AccountRenewal::count());
@@ -287,7 +299,7 @@ class WhatsAppTest extends TestCase
         $this->assertStringContainsString('كم يوم', $this->wa->lastReply());
         $this->assertSame(0, Debt::count());
 
-        $this->text("سبع ايام");
+        $this->text('سبع ايام');
 
         $this->assertSame(1, Debt::count());
         $this->assertCount(1, $this->claude->calls, 'the short answer is completed without the AI');
@@ -378,13 +390,59 @@ class WhatsAppTest extends TestCase
         $this->text('سجل دين على محمد رمضان 25 الف');
 
         $debt = Debt::sole();
-        $this->assertSame([DebtBucket::Primary, 25000, $account->id, \App\Enums\DebtSource::Manual], [$debt->bucket, $debt->balance, $debt->account_id, $debt->source]);
+        $this->assertSame([DebtBucket::Primary, 25000, $account->id, DebtSource::Manual], [$debt->bucket, $debt->balance, $debt->account_id, $debt->source]);
         $this->assertSame(25000, $this->balanceOf(Ledger::AR_PRIMARY));
         $this->assertStringContainsString('دين أولي', $this->wa->lastReply());
         $this->assertSame('whatsapp', AuditLog::where('action', 'debt.created')->sole()->source);
 
         $this->text('محمد رمضان عليه 10 الف دين ثانوي');
         $this->assertSame(DebtBucket::Secondary, Debt::latest('id')->first()->bucket);
+    }
+
+    public function test_a_primary_debt_on_an_ended_subscription_activates_it(): void
+    {
+        $account = $this->subscriber();
+        $account->update(['external_ends_at' => now()->subDays(4)]);
+
+        $this->text('سجل دين اولي على محمد رمضان 35 الف');
+
+        $account->refresh();
+        $this->assertTrue($account->external_ends_at->equalTo(now()->addDays(30)));
+        $this->assertSame('activated', AccountRenewal::sole()->status, 'a full activation: the debt is the primary one only');
+        $this->assertSame([DebtBucket::Primary, 35000], [Debt::sole()->bucket, Debt::sole()->balance]);
+        $this->assertSame([$account->id], SubscriberStatus::apply(SubscriberStatus::base(), 'active_primary')->pluck('accounts.id')->all());
+        $this->assertSame(0, SubscriberStatus::apply(SubscriberStatus::base(), 'expired_primary')->count());
+        $this->assertStringContainsString('تم تفعيله 30 يوم', $this->wa->lastReply());
+
+        // A subscription still running is left as it is.
+        $running = $this->subscriber('علي حسين');
+        $running->update(['external_ends_at' => now()->addDays(10)]);
+        $this->text('علي حسين عليه 20 الف دين اولي');
+        $this->assertTrue($running->fresh()->external_ends_at->equalTo(now()->addDays(10)));
+        $this->assertSame(1, AccountRenewal::count());
+    }
+
+    public function test_activating_on_a_primary_debt_owes_the_plan_price(): void
+    {
+        $account = $this->subscriber();
+        $account->update(['external_ends_at' => now()->addDays(2)]);
+
+        $this->text('تفعيل محمد رمضان دين اولي');
+
+        $this->assertSame([DebtBucket::Primary, 35000], [Debt::sole()->bucket, Debt::sole()->balance]);
+        $this->assertSame(30, AccountRenewal::sole()->new_days);
+        $this->assertTrue($account->fresh()->external_ends_at->equalTo(now()->addDays(32)), 'added after the days left');
+
+        $other = $this->subscriber('علي حسين');
+        $this->text('فعلت علي حسين شهر بدين اولي 40 الف');
+        $this->assertSame(40000, Debt::where('account_id', $other->id)->sole()->balance);
+        $this->assertTrue($other->fresh()->external_ends_at->greaterThan(now()->addDays(29)));
+
+        // Never a seven-day activation on a primary debt (that one is a secondary debt by itself).
+        $third = $this->subscriber('حسن جبار');
+        $this->text('تفعيل حسن جبار 7 دين اولي');
+        $this->assertFalse(Debt::where('account_id', $third->id)->exists());
+        $this->assertStringContainsString('ديناً ثانوياً', $this->wa->lastReply());
     }
 
     public function test_recording_a_debt_needs_the_permission(): void
@@ -401,7 +459,7 @@ class WhatsAppTest extends TestCase
     public function test_a_voice_note_without_the_transcription_key_gets_a_clear_answer(): void
     {
         config(['whatsapp.transcribe.api_key' => null]);
-        $this->app->instance(Transcriber::class, new \App\WhatsApp\HttpTranscriber);
+        $this->app->instance(Transcriber::class, new HttpTranscriber);
 
         $this->voice();
 
@@ -414,15 +472,15 @@ class WhatsAppTest extends TestCase
     {
         config(['whatsapp.transcribe.api_key' => null, 'whatsapp.transcribe.local_url' => 'http://whisper:9000']);
         $this->app->forgetInstance(Transcriber::class);
-        $this->assertInstanceOf(\App\WhatsApp\LocalWhisperTranscriber::class, app(Transcriber::class));
+        $this->assertInstanceOf(LocalWhisperTranscriber::class, app(Transcriber::class));
         config(['whatsapp.transcribe.api_key' => 'sk-test']);
-        $this->assertInstanceOf(\App\WhatsApp\HttpTranscriber::class, app(Transcriber::class));
+        $this->assertInstanceOf(HttpTranscriber::class, app(Transcriber::class));
 
-        \Illuminate\Support\Facades\Http::fake(['whisper:9000/*' => \Illuminate\Support\Facades\Http::response(['text' => ' محمد رمضان فعلته سبع ايام ', 'language' => 'ar'])]);
-        $text = (new \App\WhatsApp\LocalWhisperTranscriber)->transcribe('OGG-BYTES', 'audio/ogg; codecs=opus');
+        Http::fake(['whisper:9000/*' => Http::response(['text' => ' محمد رمضان فعلته سبع ايام ', 'language' => 'ar'])]);
+        $text = (new LocalWhisperTranscriber)->transcribe('OGG-BYTES', 'audio/ogg; codecs=opus');
 
         $this->assertSame('محمد رمضان فعلته سبع ايام', $text);
-        \Illuminate\Support\Facades\Http::assertSent(fn ($r) => str_starts_with($r->url(), 'http://whisper:9000/asr?')
+        Http::assertSent(fn ($r) => str_starts_with($r->url(), 'http://whisper:9000/asr?')
             && str_contains($r->url(), 'language=ar') && str_contains($r->url(), 'output=json'));
     }
 
@@ -491,7 +549,7 @@ class WhatsAppTest extends TestCase
         $this->assertSame([150000, 40000], Expense::orderBy('id')->pluck('amount')->all());
 
         $this->text('بعت 2 راوتر ب 80 الف');
-        $sale = \App\Models\DeviceSale::sole();
+        $sale = DeviceSale::sole();
         $this->assertSame([80000, 2, 'router'], [$sale->total_amount, $sale->quantity, $sale->itemType->key]);
         $this->assertSame(500000 - 190000 + 80000, app(TreasuryService::class)->balance($this->cash()));
         $this->assertSame([], $this->claude->calls, 'all understood without the AI');
@@ -513,11 +571,11 @@ class WhatsAppTest extends TestCase
         $this->subscriber();
         $this->text('محمد رمضان فعلته سبع ايام');
         config(['whatsapp.transcribe.local_url' => 'http://whisper:9000']);
-        \Illuminate\Support\Facades\Http::fake(['whisper:9000/*' => \Illuminate\Support\Facades\Http::response(['text' => 'نص'])]);
+        Http::fake(['whisper:9000/*' => Http::response(['text' => 'نص'])]);
 
-        (new \App\WhatsApp\LocalWhisperTranscriber)->transcribe('OGG', 'audio/ogg');
+        (new LocalWhisperTranscriber)->transcribe('OGG', 'audio/ogg');
 
-        \Illuminate\Support\Facades\Http::assertSent(function ($r) {
+        Http::assertSent(function ($r) {
             parse_str((string) parse_url($r->url(), PHP_URL_QUERY), $q);
 
             return str_contains($q['initial_prompt'], 'فعلته سبع أيام') && str_contains($q['initial_prompt'], 'محمد رمضان') && $q['vad_filter'] === 'true';
@@ -532,17 +590,17 @@ class WhatsAppTest extends TestCase
         $this->assertSame(1, Debt::count());
 
         $this->text('قبض محمد رمضان 35');
-        $this->assertSame(35000, \App\Models\Payment::sole()->amount, 'the seeded phrasing counts the amount in thousands');
+        $this->assertSame(35000, Payment::sole()->amount, 'the seeded phrasing counts the amount in thousands');
 
-        \App\Models\CommandPattern::create(['pattern' => 'وصل من {الاسم} مبلغ {المبلغ}', 'action' => 'payment', 'sort_order' => 0]);
+        CommandPattern::create(['pattern' => 'وصل من {الاسم} مبلغ {المبلغ}', 'action' => 'payment', 'sort_order' => 0]);
         $this->text('وصل من محمد رمضان مبلغ خمسة آلاف');
-        $this->assertSame([35000, 5000], \App\Models\Payment::orderBy('id')->pluck('amount')->all());
+        $this->assertSame([35000, 5000], Payment::orderBy('id')->pluck('amount')->all());
         $this->assertSame([], $this->claude->calls);
     }
 
     public function test_phrasings_split_the_name_from_the_days_and_amounts(): void
     {
-        $custom = app(\App\WhatsApp\CustomPatterns::class);
+        $custom = app(CustomPatterns::class);
         $read = fn (string $t) => $custom->match($t)?->toArray();
 
         $this->assertSame(['intent' => 'activate', 'subscriber' => 'محمد رمضان', 'days' => 7], $read('تفعيل محمد رمضان سبعة أيام'));
@@ -554,7 +612,7 @@ class WhatsAppTest extends TestCase
 
     public function test_phrasings_are_managed_by_the_admin_with_checks_and_a_test_button(): void
     {
-        $page = \App\Filament\Resources\CommandPatterns\Pages\ManageCommandPatterns::class;
+        $page = ManageCommandPatterns::class;
         Livewire::test($page)
             ->assertSee('قبض {الاسم} {المبلغ}')
             ->callAction('create', ['pattern' => 'قبض من {الاسم}', 'action' => 'payment', 'sort_order' => 1, 'is_active' => true])
@@ -567,7 +625,7 @@ class WhatsAppTest extends TestCase
         $this->assertTrue(AuditLog::where('action', 'command_pattern.created')->exists());
 
         $this->actingAs($this->employee('07702222222'));
-        $this->get(\App\Filament\Resources\CommandPatterns\Pages\ManageCommandPatterns::getUrl())->assertForbidden();
+        $this->get(ManageCommandPatterns::getUrl())->assertForbidden();
     }
 
     // ---- Queries ----
@@ -645,6 +703,12 @@ class WhatsAppTest extends TestCase
         $this->assertSame(['query', 'محمد', null, null], $read('شكد دين على محمد'));
         $this->assertSame('purchase', $rules->interpret('شريت كيبل 30 متر سعر المتر 5 آلاف')->intent, 'purchases no longer need the AI');
         $this->assertNull($rules->interpret('شلون الشغل اليوم'), 'free text goes to the AI');
+
+        // Activated on a primary debt, without the admin's phrasings.
+        $primary = fn (string $t) => (fn ($c) => [$c->intent, $c->subscriber, $c->days, $c->amount, $c->bucket])($rules->interpret($t));
+        $this->assertSame(['add_debt', 'محمد رمضان', 30, null, 'primary'], $primary('تفعيل محمد رمضان دين أولي'));
+        $this->assertSame(['add_debt', 'علي', 30, 40000, 'primary'], $primary('فعلت علي شهر بدين اولي 40 الف'));
+        $this->assertSame(['add_debt', 'علي حسين', 30, null, 'primary'], $primary('علي حسين فعلته 30 يوم على دين اولي'));
     }
 
     public function test_claude_request_uses_a_json_schema_and_server_side_fallbacks(): void
@@ -683,7 +747,7 @@ class WhatsAppTest extends TestCase
         try {
             $registry->add('07703334444', $this->admin);
             $this->fail('duplicate number accepted');
-        } catch (\App\Exceptions\BusinessRuleException) {
+        } catch (BusinessRuleException) {
         }
 
         $registry->setActive($number, false);
@@ -714,7 +778,7 @@ class WhatsAppTest extends TestCase
         $this->get(ManageWhatsappNumbers::getUrl())->assertForbidden();
     }
 
-    private function cashWith(int $amount): \App\Models\MoneyAccount
+    private function cashWith(int $amount): MoneyAccount
     {
         app(TreasuryService::class)->openingBalance($this->cash(), $amount);
 

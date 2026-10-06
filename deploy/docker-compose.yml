@@ -49,6 +49,23 @@ services:
       - waha_sessions:/app/.sessions
       - waha_media:/app/.media
 
+  # The optional second phone that only sends the subscribers' messages (linked from the WhatsApp
+  # settings). Its own sessions, no webhook: nothing it receives reaches the system.
+  waha-notify:
+    image: devlikeapro/waha:gows-2026.9.2
+    restart: unless-stopped
+    environment:
+      WAHA_API_KEY: ${WAHA_API_KEY}
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WAHA_BASE_URL: http://waha-notify:3000
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WHATSAPP_DOWNLOAD_MEDIA: "false"
+      TZ: Asia/Baghdad
+    volumes:
+      - waha_notify_sessions:/app/.sessions
+
   # Free speech to text for WhatsApp voice notes (Whisper, runs on this server, nothing is sent out).
   # «medium» understands Iraqi speech much better than «small»; it needs about 2 GB of memory while
   # working and is unloaded after 15 idle minutes. Set WHISPER_MODEL in .env to change it
@@ -116,6 +133,7 @@ volumes:
   whisper_models:
   waha_sessions:
   waha_media:
+  waha_notify_sessions:
   pgdata:
   storage:
   caddy_data:

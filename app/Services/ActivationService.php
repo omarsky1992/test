@@ -22,6 +22,7 @@ use App\Models\Debt;
 use App\Models\MoneyAccount;
 use App\Models\Promotion;
 use App\Models\ServicePlan;
+use App\WhatsApp\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Auth;
@@ -35,8 +36,7 @@ class ActivationService
         private Audit $audit,
         private Settings $settings,
         private Pricing $pricing,
-    ) {
-    }
+    ) {}
 
     /**
      * Records an activation done on the company site. The start is queued after any running
@@ -162,6 +162,7 @@ class ActivationService
             } elseif ($settlement === Settlement::Credit) {
                 app(PaymentService::class)->applyCredit($account, $debt->fresh());
             }
+            app(Notifier::class)->activation($activation);
 
             return $activation->fresh();
         }));

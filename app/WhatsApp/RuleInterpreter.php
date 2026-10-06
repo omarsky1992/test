@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use App\Services\Settings;
 use App\Support\Arabic;
 
 /**
@@ -86,6 +87,19 @@ class RuleInterpreter implements Interpreter
         // «شكد دين محمد» / «كم دين محمد»
         if (preg_match('/^(?:شكد|كم|شقد)\s+(?:دين|ديون|عليه\s+دين)\s+(.+)$/u', $t, $m)) {
             return new Command('query', subscriber: $m[1], query: 'subscriber_debt');
+        }
+        // «تفعيل محمد دين اولي» / «فعلت محمد شهر بدين اولي 35 الف»: activated on a primary debt.
+        if (preg_match('/^(.+?)\s+(?:بخصوص\s+)?ب?(?:دين|ديون)\s+(?:اولي|اوليه)(?:\s+(.+))?$/u', $t, $m)) {
+            $amount = isset($m[2]) ? self::amount($m[2]) : null;
+            $head = $this->match($m[1]);
+            if ($head?->intent === 'activate') {
+                [$name, $days] = [$head->subscriber, $head->days];
+            } elseif (preg_match('/^(?:'.self::ACTIVATE_VERBS.'|فعل|تجديد)\s+(.+)$/u', $m[1], $a)) {
+                [$name, $days] = [$a[1], app(Settings::class)->fullDays()];
+            }
+            if (isset($name) && (! isset($m[2]) || $amount !== null)) {
+                return new Command('add_debt', subscriber: $name, days: $days, amount: $amount, bucket: 'primary');
+            }
         }
         // «محمد رمضان فعلته سبع أيام» / «فعلت محمد رمضان شهر»
         if (preg_match('/^(.+?)\s+(?:'.self::ACTIVATE_VERBS.')\s+(.+)$/u', $t, $m)

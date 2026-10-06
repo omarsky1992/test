@@ -11,6 +11,7 @@ class CommandPattern extends Model
     /** What a phrasing does, and the blanks it must contain. */
     public const ACTIONS = [
         'activate' => ['تفعيل (دين ثانوي حتى 7 أيام)', ['{الاسم}']],
+        'activate_primary' => ['تفعيل بدين أولي (30 يوماً، المبلغ سعر الفئة إذا لم يُذكر)', ['{الاسم}']],
         'payment' => ['قبض', ['{الاسم}', '{المبلغ}']],
         'add_debt_primary' => ['تسجيل دين أولي', ['{الاسم}', '{المبلغ}']],
         'add_debt_secondary' => ['تسجيل دين ثانوي', ['{الاسم}', '{المبلغ}']],

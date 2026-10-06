@@ -14,7 +14,7 @@ class WhatsappOutbox extends Model
     public const KINDS = [
         'alert_must_activate' => 'تنبيه: يجب التفعيل',
         'alert_secondary_expiring' => 'تنبيه: دين ثانوي ينتهي قريباً',
-        'sub_renewal' => 'للمشترك: تم التجديد',
+        'sub_renewal' => 'للمشترك: تم التفعيل',
         'sub_expiring' => 'للمشترك: قرب الانتهاء',
         'sub_expired' => 'للمشترك: انتهى الاشتراك',
         'sub_debt' => 'للمشترك: تذكير بالدين',

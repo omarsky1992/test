@@ -2,11 +2,13 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\WhatsappOutbox;
 use App\Services\Audit;
 use App\Services\Settings as SettingsService;
 use App\WhatsApp\ClaudeInterpreter;
 use App\WhatsApp\CloudApiGateway;
 use App\WhatsApp\HttpTranscriber;
+use App\WhatsApp\LocalWhisperTranscriber;
 use App\WhatsApp\WahaGateway;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -54,6 +56,7 @@ class WhatsappSettings extends Page
         'alert_must_activate' => 'alerts.must_activate',
         'alert_secondary_expiring' => 'alerts.secondary_expiring',
         'alert_hours_before' => 'alerts.hours_before',
+        'notify_separate' => 'whatsapp.notify_separate',
         'sub_enabled' => 'subscriber_messages.enabled',
         'sub_renewal' => 'subscriber_messages.renewal',
         'sub_expiring' => 'subscriber_messages.expiring',
@@ -69,7 +72,7 @@ class WhatsappSettings extends Page
 
     private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
 
-    private const BOOLEANS = ['enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt'];
+    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt'];
 
     public static function canAccess(): bool
     {
@@ -84,26 +87,27 @@ class WhatsappSettings extends Page
 
     // ---- Linking the phone ----
 
-    public function linkPhone(): void
+    public function linkPhone(string $line = 'main'): void
     {
-        $this->qrAction(fn (WahaGateway $waha) => $waha->start(), 'whatsapp.qr_started', 'امسح الباركود من هاتفك: واتساب ← الأجهزة المرتبطة ← ربط جهاز.');
+        $this->qrAction($line, fn (WahaGateway $waha) => $waha->start(), 'whatsapp.qr_started', 'امسح الباركود من هاتفك: واتساب ← الأجهزة المرتبطة ← ربط جهاز.');
     }
 
-    public function restartPhone(): void
+    public function restartPhone(string $line = 'main'): void
     {
-        $this->qrAction(fn (WahaGateway $waha) => $waha->restart(), 'whatsapp.qr_restarted', 'أُعيد تشغيل الاتصال.');
+        $this->qrAction($line, fn (WahaGateway $waha) => $waha->restart(), 'whatsapp.qr_restarted', 'أُعيد تشغيل الاتصال.');
     }
 
-    public function unlinkPhone(): void
+    public function unlinkPhone(string $line = 'main'): void
     {
-        $this->qrAction(fn (WahaGateway $waha) => $waha->logout(), 'whatsapp.qr_unlinked', 'فُصل الهاتف. اربط جهازاً جديداً بالباركود.');
+        $this->qrAction($line, fn (WahaGateway $waha) => $waha->logout(), 'whatsapp.qr_unlinked', 'فُصل الهاتف. اربط جهازاً جديداً بالباركود.');
     }
 
-    private function qrAction(callable $callback, string $audit, string $done): void
+    private function qrAction(string $line, callable $callback, string $audit, string $done): void
     {
+        $line = $line === 'notify' ? 'notify' : 'main';
         try {
-            $callback(app(WahaGateway::class));
-            app(Audit::class)->log($audit, 'whatsapp');
+            $callback(WahaGateway::line($line));
+            app(Audit::class)->log($audit, 'whatsapp', null, ['line' => $line]);
             Notification::make()->success()->title($done)->send();
         } catch (\Throwable $e) {
             Notification::make()->danger()->title('تعذّر الاتصال بخدمة الربط')->body(mb_strimwidth($e->getMessage(), 0, 300, '…'))->send();
@@ -120,6 +124,12 @@ class WhatsappSettings extends Page
                     ToggleButtons::make('driver')->label('الإرسال والاستقبال عبر')->inline()->required()
                         ->options(['qr' => 'هاتف مربوط بالباركود', 'meta' => 'WhatsApp Cloud API (Meta)']),
                 ]),
+                Section::make('رقم ثانٍ لإشعارات المشتركين')
+                    ->description('هاتف منفصل يرسل رسائل المشتركين فقط (التفعيل، قرب الانتهاء، الديون)، ويبقى الرقم الأول لأوامر الموظفين وتنبيهاتهم. ما يكتبه المشتركون للرقم الثاني لا يُقرأ كأوامر.')
+                    ->schema([
+                        Toggle::make('notify_separate')->label('إرسال رسائل المشتركين من رقم ثانٍ')
+                            ->helperText('بعد الحفظ يظهر في أعلى الصفحة قسم «هاتف إشعارات المشتركين» لربطه بالباركود. حتى يُربط تبقى رسائل المشتركين بالانتظار ولا تُرسل من رقم الأوامر.'),
+                    ]),
                 Section::make('تنبيهات الموظفين')
                     ->description('تُرسل إلى الأرقام المعلَّم عليها «يستلم التنبيهات» في «الأرقام المصرح لها».')
                     ->columns(3)->schema([
@@ -131,9 +141,9 @@ class WhatsappSettings extends Page
                     ->description('نص كل رسالة من «قوالب الرسائل». لا تُرسل إلا للمشترك الذي له رقم هاتف، ومرة واحدة لكل مناسبة.')
                     ->columns(3)->schema([
                         Toggle::make('sub_enabled')->label('تشغيل رسائل المشتركين')->live()->columnSpanFull(),
-                        Toggle::make('sub_renewal')->label('عند التجديد')->disabled(fn (Get $get) => ! $get('sub_enabled')),
-                        Toggle::make('sub_expiring')->label('قرب انتهاء الاشتراك')->disabled(fn (Get $get) => ! $get('sub_enabled')),
-                        Toggle::make('sub_expired')->label('عند انتهاء الاشتراك')->disabled(fn (Get $get) => ! $get('sub_enabled')),
+                        Toggle::make('sub_renewal')->label('عند التفعيل (7 أو 30 يوماً)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
+                        Toggle::make('sub_expiring')->label('قرب انتهاء الاشتراك (لمفعّلي 30 يوماً فقط)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
+                        Toggle::make('sub_expired')->label('عند انتهاء الاشتراك (لمفعّلي 30 يوماً فقط)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         Toggle::make('sub_debt')->label('تذكير بالديون')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         TextInput::make('sub_expiring_hours')->label('«قرب الانتهاء» قبل (ساعة)')->integer()->minValue(1)->maxValue(168)->required(),
                         TextInput::make('sub_debt_every_days')->label('تذكير الدين كل (يوم)')->integer()->minValue(1)->maxValue(30)->required(),
@@ -180,22 +190,30 @@ class WhatsappSettings extends Page
 
     protected function getViewData(): array
     {
-        $qr = app(SettingsService::class)->get('whatsapp.driver') !== 'meta';
+        $settings = app(SettingsService::class);
+        $qr = $settings->get('whatsapp.driver') !== 'meta';
+        $lines = [];
+        if ($qr) {
+            $lines['main'] = ['title' => $settings->get('whatsapp.notify_separate') ? 'هاتف الأوامر والتنبيهات' : 'ربط الهاتف بالباركود', 'link' => WahaGateway::line('main')->status()];
+        }
+        if ($settings->get('whatsapp.notify_separate')) {
+            $lines['notify'] = ['title' => 'هاتف إشعارات المشتركين', 'link' => WahaGateway::line('notify')->status()];
+        }
 
         return [
             'qrMode' => $qr,
-            'link' => $qr ? app(WahaGateway::class)->status() : null,
+            'lines' => $lines,
             'statusLabels' => WahaGateway::STATUS_LABELS,
             'webhookUrl' => route('whatsapp.webhook'),
             'outbox' => [
-                'pending' => \App\Models\WhatsappOutbox::where('status', 'pending')->count(),
-                'sent_today' => \App\Models\WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', now()->startOfDay())->count(),
-                'failed' => \App\Models\WhatsappOutbox::where('status', 'failed')->count(),
+                'pending' => WhatsappOutbox::where('status', 'pending')->count(),
+                'sent_today' => WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', now()->startOfDay())->count(),
+                'failed' => WhatsappOutbox::where('status', 'failed')->count(),
             ],
             'checks' => [
                 ['WAHA_API_KEY + WAHA_WEBHOOK_SECRET', 'خدمة الربط بالباركود', WahaGateway::configured() && filled(config('whatsapp.waha.webhook_secret'))],
                 ['ANTHROPIC_API_KEY', 'فهم الأوامر الحرة والمشتريات (Claude)', ClaudeInterpreter::configured()],
-                [HttpTranscriber::configured() ? 'OPENAI_API_KEY' : 'whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', HttpTranscriber::configured() || \App\WhatsApp\LocalWhisperTranscriber::configured()],
+                [HttpTranscriber::configured() ? 'OPENAI_API_KEY' : 'whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', HttpTranscriber::configured() || LocalWhisperTranscriber::configured()],
                 ['WHATSAPP_ACCESS_TOKEN + WHATSAPP_PHONE_NUMBER_ID', 'Meta Cloud API (إذا اخترتها)', CloudApiGateway::configured()],
             ],
         ];
