@@ -7,7 +7,7 @@ namespace App\WhatsApp;
  */
 final class Command
 {
-    public const INTENTS = ['activate', 'payment', 'purchase', 'add_debt', 'void_debt', 'query', 'clarify', 'unknown'];
+    public const INTENTS = ['activate', 'payment', 'purchase', 'sale', 'add_debt', 'transfer', 'void_debt', 'query', 'clarify', 'unknown'];
 
     public const BUCKETS = ['primary', 'secondary'];
 
@@ -28,6 +28,7 @@ final class Command
         public ?string $query = null,
         public ?string $question = null,
         public ?string $bucket = null,
+        public bool $onCredit = false,
     ) {
         if ($this->bucket !== null && ! in_array($this->bucket, self::BUCKETS, true)) {
             $this->bucket = null;
@@ -58,6 +59,7 @@ final class Command
             query: filled($data['query'] ?? null) ? (string) $data['query'] : null,
             question: filled($data['question'] ?? null) ? (string) $data['question'] : null,
             bucket: filled($data['bucket'] ?? null) ? (string) $data['bucket'] : null,
+            onCredit: (bool) ($data['on_credit'] ?? false),
         );
     }
 
@@ -72,6 +74,7 @@ final class Command
             'query' => $this->query,
             'question' => $this->question,
             'bucket' => $this->bucket,
+            'on_credit' => $this->onCredit ?: null,
         ], fn ($v) => $v !== null);
     }
 }

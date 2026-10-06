@@ -33,6 +33,8 @@ class Permissions
         'payments.void' => ['إلغاء سند قبض', false],
         'receipts.print' => ['طباعة السند', true],
         'expenses.create' => ['تسجيل مصروف', true],
+        'sales.create' => ['تسجيل بيع أجهزة ومواد', true],
+        'sales.void' => ['إلغاء عملية بيع', false],
         'expenses.void' => ['إلغاء مصروف', false],
         'funds.transfer' => ['تحويل بين الصناديق وشحن رصيد الشركة', false],
         'settlements.manage' => ['الراجع وتقسيمه', false],

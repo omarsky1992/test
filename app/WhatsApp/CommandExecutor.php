@@ -58,6 +58,8 @@ class CommandExecutor
                 'payment' => $this->payment($command, $user, $messageId),
                 'purchase' => $this->purchase($command, $user),
                 'add_debt' => $this->addDebt($command, $user),
+                'transfer' => $this->transfer($command, $user),
+                'sale' => $this->sale($command, $user),
                 'void_debt' => $this->voidDebt($command, $user),
                 'query' => $this->query($command, $user),
                 'clarify' => Result::clarify($command->question ?? 'ما فهمت الطلب تماماً، وضّحه أكثر.'),
@@ -70,7 +72,7 @@ class CommandExecutor
 
     public static function help(): string
     {
-        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• سجل دين على محمد 20 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
+        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• سجل دين على محمد 20 الف\n• ناقل دين محمد\n• بعت راوتر ب 40 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
     }
 
     private function activate(Command $c, User $user): Result
@@ -212,6 +214,95 @@ class CommandExecutor
         return Result::done("✅ تم تسجيل دين {$label} ".Money::format($c->amount)." على {$account->subscriber->full_name} ({$debt->number})\nمجموع ديونه: ".Money::format($total), [
             'debt' => $debt->number, 'amount' => $c->amount, 'bucket' => $bucket->value, 'account_id' => $account->id,
         ]);
+    }
+
+    /** مناقلة: the oldest open secondary debt moves to the primary debts. */
+    private function transfer(Command $c, User $user): Result
+    {
+        if (! $user->can('transfers.create')) {
+            return Result::denied();
+        }
+        if ($c->subscriber === null) {
+            return Result::clarify('دين منو أناقل؟');
+        }
+        $account = $this->findAccount($c->subscriber);
+        if (is_string($account)) {
+            return Result::clarify($account);
+        }
+        $name = $account->subscriber->full_name;
+        $debt = Debt::where('account_id', $account->id)->where('bucket', DebtBucket::Secondary)
+            ->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->orderBy('debt_date')->orderBy('id')->first();
+        if (! $debt) {
+            return Result::failed("{$name} ما عليه دين ثانوي للمناقلة.");
+        }
+        $transfer = $this->debts->transfer($debt, 'مناقلة عبر واتساب');
+
+        return Result::done("🔁 تمت المناقلة {$transfer->number}: ".Money::format($transfer->amount)." من الثانوية إلى الأولية على {$name}"
+            .($transfer->days_added ? "\nأُضيفت {$transfer->days_added} يوماً، نفّذها على موقع الشركة." : ''), [
+            'transfer' => $transfer->number, 'amount' => $transfer->amount, 'account_id' => $account->id,
+        ]);
+    }
+
+    /** مبيعات: devices or items sold, paid now into the seller's box, or on credit to a named subscriber. */
+    private function sale(Command $c, User $user): Result
+    {
+        if (! $user->can('sales.create')) {
+            return Result::denied();
+        }
+        $items = array_values(array_filter($c->items, fn ($i) => $i['description'] !== ''));
+        if ($items === []) {
+            return Result::clarify('شنو اللي بعته وبكم؟');
+        }
+        $account = null;
+        if ($c->onCredit) {
+            if ($c->subscriber === null) {
+                return Result::clarify('على منو البيع بالدين؟');
+            }
+            $account = $this->findAccount($c->subscriber);
+            if (is_string($account)) {
+                return Result::clarify($account);
+            }
+        }
+        $box = $account ? null : ($user->collects_to_custody ? $this->employees->custodyAccount($user) : $this->cashBox($user));
+
+        $lines = [];
+        foreach ($items as $item) {
+            $quantity = max(1, (int) ($item['quantity'] ?? 1));
+            $unit = $item['unit_price'] ?? ($item['total'] !== null && $item['total'] % $quantity === 0 ? intdiv($item['total'], $quantity) : null);
+            if ($unit === null && $item['total'] !== null) {
+                [$unit, $quantity] = [$item['total'], 1];
+            }
+            if ($unit === null || $unit <= 0) {
+                return Result::clarify("بكم بعت {$item['description']}؟");
+            }
+            $lines[] = [$item['description'], $unit, $quantity];
+        }
+
+        $sales = DB::transaction(fn () => array_map(fn (array $l) => $this->treasury->recordDeviceSale(
+            self::deviceType($l[0]), mb_substr($l[0], 0, 200), $l[1], $l[2], null, $box, $account, $account?->subscriber?->full_name, null, 'عبر واتساب',
+        ), $lines));
+
+        $total = array_sum(array_map(fn ($s) => $s->total_amount, $sales));
+        $list = implode("\n", array_map(fn ($s) => "• {$s->description}: ".Money::format($s->total_amount, false), $sales));
+
+        return Result::done("✅ تم تسجيل المبيعات".($account ? " بالدين على {$account->subscriber->full_name}" : " في {$box->name}")."\n{$list}\nالمجموع: ".Money::format($total), [
+            'sales' => array_map(fn ($s) => ['number' => $s->number, 'amount' => $s->total_amount], $sales), 'total' => $total,
+            'account_id' => $account?->id,
+        ]);
+    }
+
+    private static function deviceType(string $description): \App\Models\DeviceType
+    {
+        $d = Arabic::normalize($description);
+        $key = match (true) {
+            (bool) preg_match('/راوتر|router/u', $d) => 'router',
+            (bool) preg_match('/ont|اونتي|جهاز/u', $d) => 'ont',
+            (bool) preg_match('/مقوي|ريبيتر|اكسس/u', $d) => 'repeater',
+            (bool) preg_match('/كيبل|كابل|سلك/u', $d) => 'cable',
+            default => 'other',
+        };
+
+        return \App\Models\DeviceType::where('key', $key)->first() ?? \App\Models\DeviceType::firstOrCreate(['key' => 'other'], ['name_ar' => 'أخرى']);
     }
 
     private function voidDebt(Command $c, User $user): Result
@@ -378,7 +469,23 @@ class CommandExecutor
             $subscribers = $exact->count() === 1 ? $exact : $subscribers;
         }
         if ($subscribers->isEmpty()) {
-            return "ما لقيت مشترك باسم «{$term}». اكتب الاسم الكامل أو رقم الهاتف أو اليوزر.";
+            // A misheard or misspelt name: the closest names by letter similarity (pg_trgm).
+            $name = Arabic::normalize($term);
+            $close = Subscriber::query()->select('subscribers.*')->selectRaw('similarity(name_search, ?) as score', [$name])
+                ->whereRaw('similarity(name_search, ?) > 0.3', [$name])->orderByDesc('score')->limit(4)
+                ->with(['accounts' => fn ($q) => $q->where('status', '<>', AccountStatus::Closed)])->get();
+            $best = $close->first();
+            $second = $close->get(1);
+            // Clearly one person: use it (the reply names them in full). Otherwise ask.
+            if ($best && $best->score >= 0.55 && (! $second || $best->score - $second->score >= 0.15)) {
+                $subscribers = collect([$best]);
+            } elseif ($close->isNotEmpty()) {
+                $list = $close->map(fn (Subscriber $s) => "• {$s->full_name}")->implode("\n");
+
+                return "ما لقيت «{$term}» بالضبط. تقصد:\n{$list}\nاكتب الاسم الصحيح.";
+            } else {
+                return "ما لقيت مشترك باسم «{$term}». اكتب الاسم الكامل أو رقم الهاتف أو اليوزر.";
+            }
         }
         if ($subscribers->count() > 1) {
             $list = $subscribers->take(5)->map(fn (Subscriber $s) => "• {$s->full_name}".($s->phone ? " – {$s->phone}" : ''))->implode("\n");

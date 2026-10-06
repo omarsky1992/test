@@ -477,6 +477,53 @@ class WhatsAppTest extends TestCase
         $this->assertStringContainsString('🎤 سمعت: «شلونكم اليوم»', $this->wa->lastReply());
     }
 
+    public function test_transfer_purchase_and_sale_work_by_text_without_the_ai(): void
+    {
+        $account = $this->subscriber();
+        $this->text('محمد رمضان فعلته سبع ايام');
+        app(TreasuryService::class)->openingBalance($this->cash(), 500000);
+
+        $this->text('ناقل دين محمد رمضان');
+        $this->assertSame(DebtBucket::Primary, Debt::sole()->bucket);
+        $this->assertStringContainsString('تمت المناقلة', $this->wa->lastReply());
+
+        $this->text('شريت كيبل 30 متر سعر المتر 5 آلاف وراوتر بـ 40 الف');
+        $this->assertSame([150000, 40000], Expense::orderBy('id')->pluck('amount')->all());
+
+        $this->text('بعت 2 راوتر ب 80 الف');
+        $sale = \App\Models\DeviceSale::sole();
+        $this->assertSame([80000, 2, 'router'], [$sale->total_amount, $sale->quantity, $sale->itemType->key]);
+        $this->assertSame(500000 - 190000 + 80000, app(TreasuryService::class)->balance($this->cash()));
+        $this->assertSame([], $this->claude->calls, 'all understood without the AI');
+    }
+
+    public function test_a_misheard_name_still_finds_the_subscriber(): void
+    {
+        $this->subscriber('محمد رمضان جاسم');
+        $this->subscriber('علي حسين كاظم');
+
+        $this->text('محمد رمضن جاسم فعلته سبع ايام');
+
+        $this->assertSame(1, Debt::count());
+        $this->assertStringContainsString('محمد رمضان جاسم', $this->wa->lastReply());
+    }
+
+    public function test_the_speech_model_gets_the_command_words_and_subscriber_names_as_a_hint(): void
+    {
+        $this->subscriber();
+        $this->text('محمد رمضان فعلته سبع ايام');
+        config(['whatsapp.transcribe.local_url' => 'http://whisper:9000']);
+        \Illuminate\Support\Facades\Http::fake(['whisper:9000/*' => \Illuminate\Support\Facades\Http::response(['text' => 'نص'])]);
+
+        (new \App\WhatsApp\LocalWhisperTranscriber)->transcribe('OGG', 'audio/ogg');
+
+        \Illuminate\Support\Facades\Http::assertSent(function ($r) {
+            parse_str((string) parse_url($r->url(), PHP_URL_QUERY), $q);
+
+            return str_contains($q['initial_prompt'], 'فعلته سبع أيام') && str_contains($q['initial_prompt'], 'محمد رمضان') && $q['vad_filter'] === 'true';
+        });
+    }
+
     // ---- Queries ----
 
     public function test_queries_answer_shortly(): void
@@ -550,7 +597,8 @@ class WhatsAppTest extends TestCase
         $this->assertSame(['add_debt', 'علي', 5000, 'primary'], $read('سجل دين على علي 5000'));
         $this->assertSame(['add_debt', 'علي حسين', 20000, 'primary'], $read('علي حسين عليه 20 الف دين'));
         $this->assertSame(['query', 'محمد', null, null], $read('شكد دين على محمد'));
-        $this->assertNull($rules->interpret('شريت كيبل 30 متر سعر المتر 5 آلاف'), 'free text goes to the AI');
+        $this->assertSame('purchase', $rules->interpret('شريت كيبل 30 متر سعر المتر 5 آلاف')->intent, 'purchases no longer need the AI');
+        $this->assertNull($rules->interpret('شلون الشغل اليوم'), 'free text goes to the AI');
     }
 
     public function test_claude_request_uses_a_json_schema_and_server_side_fallbacks(): void
@@ -560,7 +608,7 @@ class WhatsAppTest extends TestCase
 
         $this->assertSame('claude-opus-5-5', $request['model']);
         $this->assertSame('json_schema', $request['outputConfig']['format']['type']);
-        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket'], $request['outputConfig']['format']['schema']['required']);
+        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit'], $request['outputConfig']['format']['schema']['required']);
         $this->assertSame('default', $request['fallbacks']);
         $this->assertSame(['server-side-fallback-2026-07-01'], $request['betas']);
         $this->assertStringContainsString('كم يوم؟', $request['messages'][0]['content']);

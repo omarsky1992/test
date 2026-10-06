@@ -101,6 +101,18 @@ class RuleInterpreter implements Interpreter
                 }
             }
         }
+        // «ناقل دين محمد» / «مناقله محمد» / «انقل دين محمد للاولي»
+        if (preg_match('/^(?:ناقل|ناقله|مناقله|نقل|انقل)\s+(?:دين\s+|ديون\s+)?(?:بخصوص\s+)?(.+?)(?:\s+(?:لل|ل|الى\s+ال)(?:اولي|ديون\s+الاوليه|اوليه))?$/u', $t, $m)) {
+            return new Command('transfer', subscriber: $m[1]);
+        }
+        // «شريت كيبل 30 متر سعر المتر 5 الاف وراوتر ب 40 الف» / «مصروف بنزين 10 الف»
+        if (preg_match('/^(?:شريت|اشتريت|شرينا|مشتريات|صرفت|مصروف|مصاريف)\s+(.+)$/u', $t, $m) && ($items = self::items($m[1])) !== null) {
+            return new Command('purchase', items: $items);
+        }
+        // «بعت راوتر ب 40 الف» / «بعت 2 راوتر ب 40 الف»
+        if (preg_match('/^(?:بعت|بعنا|بيع|مبيعات)\s+(.+)$/u', $t, $m) && ($items = self::items($m[1])) !== null) {
+            return new Command('sale', items: $items);
+        }
         // «سجل دين على محمد 25 الف» / «سجل دين اولي على محمد 25 الف»
         if (preg_match('/^(?:سجل|سجلي|اضف|ضيف|حط|قيد)\s+(?:دين|ديون)(?:\s+(اولي|ثانوي))?\s+(?:بخصوص\s+|ل)?(.+)$/u', $t, $m)
             && ($debt = self::nameAndAmount($m[2])) !== null) {
@@ -140,6 +152,67 @@ class RuleInterpreter implements Interpreter
         }
 
         return null;
+    }
+
+    /**
+     * Items bought or sold, as written or spoken: «كيبل 30 متر سعر المتر 5 الاف وراوتر ب 40 الف».
+     * Each item has a description and either a unit price with a quantity or a total.
+     *
+     * @return array<int, array{description: string, quantity: ?int, unit_price: ?int, total: ?int}>|null
+     */
+    public static function items(string $text): ?array
+    {
+        $segments = [[]];
+        foreach (preg_split('/\s+/u', trim($text)) as $word) {
+            $current = &$segments[count($segments) - 1];
+            $hasNumber = (bool) array_filter($current, fn ($w) => self::amount(preg_replace('/^ب/u', '', $w)) !== null || ctype_digit($w));
+            // «وراوتر» / «و راوتر» after an item that already has its number starts the next item.
+            if ($hasNumber && ($word === 'و' || (mb_substr($word, 0, 1) === 'و' && mb_strlen($word) > 2
+                && self::wordsToNumber($word) === null && ! in_array(mb_substr($word, 1), ['الف', 'الاف'], true)))) {
+                unset($current);
+                $segments[] = $word === 'و' ? [] : [mb_substr($word, 1)];
+
+                continue;
+            }
+            $current[] = $word;
+            unset($current);
+        }
+
+        $items = [];
+        foreach ($segments as $words) {
+            if ($words === []) {
+                continue;
+            }
+            $segment = implode(' ', $words);
+            // «كيبل 30 متر سعر المتر 5 الاف»: a quantity and a unit price.
+            if (preg_match('/^(.+?)\s+(?:سعر|بسعر|السعر)\s+(?:ال?(?:متر|قطعه|حبه|واحد|وحده|الوحده)\s+)?(.+)$/u', $segment, $m)
+                && ($price = self::amount(preg_replace('/^ب/u', '', $m[2]))) !== null) {
+                preg_match('/(\d+)\s*(?:متر|قطعه|قطع|حبه|حبات|لفه|عدد)?/u', $m[1], $q);
+                $items[] = ['description' => $m[1], 'quantity' => isset($q[1]) ? (int) $q[1] : 1, 'unit_price' => $price, 'total' => null];
+
+                continue;
+            }
+            // «راوتر ب 40 الف» / «بنزين 10 الف»: a total at the end.
+            $found = null;
+            foreach ([4, 3, 2, 1] as $n) {
+                if (count($words) > $n) {
+                    $tail = array_slice($words, -$n);
+                    $tail[0] = preg_replace('/^ب(?=\S)/u', '', $tail[0]);
+                    $tail = array_values(array_filter($tail, fn ($w) => $w !== 'ب'));
+                    if ($tail !== [] && ($amount = self::amount(implode(' ', $tail))) !== null) {
+                        $found = [implode(' ', array_slice($words, 0, -$n)), $amount];
+                        break;
+                    }
+                }
+            }
+            if ($found === null || trim($found[0]) === '') {
+                return null;
+            }
+            preg_match('/^(\d+)\s+/u', $found[0], $q);
+            $items[] = ['description' => trim(preg_replace('/\s+ب$/u', '', $found[0])), 'quantity' => isset($q[1]) ? (int) $q[1] : null, 'unit_price' => null, 'total' => $found[1]];
+        }
+
+        return $items === [] ? null : $items;
     }
 
     /** The whole message is one of the fixed questions. */

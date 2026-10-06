@@ -26,6 +26,9 @@ class ClaudeInterpreter implements Interpreter
         - purchase: the agent bought things ("شريت كيبل 30 متر سعر المتر 5 آلاف وراوتر بـ 40 الف"). One item
           per thing bought: description (include the quantity and unit, e.g. "كيبل 30 متر"), quantity,
           unit_price, total (= quantity × unit_price when both are given; total alone when only a total is given).
+        - sale: the agent sold devices or items ("بعت راوتر بـ 40 الف", "بعت راوتر لعلي حسين بالدين 40 الف"). Items as in
+          purchase; subscriber and on_credit = true only when sold on credit to a named subscriber.
+        - transfer: move a subscriber's secondary debt to the primary debts, مناقلة ("ناقل دين محمد", "مناقلة محمد"). subscriber.
         - add_debt: record a new debt on a subscriber ("سجل دين على محمد 25 الف", "محمد عليه 20 الف دين أولي").
           subscriber and amount; bucket = "secondary" only if ثانوي is said, otherwise "primary".
         - void_debt: delete/cancel a subscriber's debt ("امسح دين محمد"). subscriber; amount only if stated.
@@ -129,8 +132,9 @@ class ClaudeInterpreter implements Interpreter
                 'query' => $nullable(['type' => 'string', 'enum' => Command::QUERIES]),
                 'question' => $nullable(['type' => 'string']),
                 'bucket' => $nullable(['type' => 'string', 'enum' => Command::BUCKETS]),
+                'on_credit' => $nullable(['type' => 'boolean']),
             ],
-            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket'],
+            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit'],
             'additionalProperties' => false,
         ];
     }
