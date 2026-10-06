@@ -7,7 +7,7 @@
             </x-slot>
         @endif
         @if ($rows === [])
-            <p style="font-size:13.5px;color:rgb(120 113 108)">لا توجد مقبوضات في هذه الفترة.</p>
+            <p style="font-size:13.5px;color:var(--subs-muted)">لا توجد مقبوضات في هذه الفترة.</p>
         @else
             <div style="display:flex;flex-direction:column;gap:12px">
                 @foreach ($rows as $row)
@@ -15,9 +15,9 @@
                     <div>
                         <div style="display:flex;gap:8px;font-size:13.5px">
                             <span style="font-weight:600">{{ $row['label'] }}</span>
-                            <span style="color:rgb(120 113 108)">{{ $row['count'] }} عملية</span>
+                            <span style="color:var(--subs-muted)">{{ $row['count'] }} عملية</span>
                             <span style="margin-inline-start:auto;font-weight:700">{{ Money::format($row['total']) }}</span>
-                            <span style="color:rgb(120 113 108);min-width:40px;text-align:left">{{ $share }}%</span>
+                            <span style="color:var(--subs-muted);min-width:40px;text-align:left">{{ $share }}%</span>
                         </div>
                         <div style="height:8px;border-radius:4px;background:rgba(120,113,108,.15);margin-top:6px;overflow:hidden" role="img" aria-label="{{ $row['label'] }} {{ $share }}%">
                             <div style="height:100%;width:{{ $share }}%;background:#2a78d6;border-radius:4px"></div>

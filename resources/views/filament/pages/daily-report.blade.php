@@ -36,9 +36,9 @@
             ['المصروفات', Money::format($report['expenses']['total']), 'الراجع المستلم '.Money::format($report['settlements'])],
         ] as [$label, $value, $hint])
             <x-filament::section>
-                <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">{{ $label }}</div>
+                <div style="font-size:13px;color:var(--subs-muted);font-weight:600">{{ $label }}</div>
                 <div style="font-size:24px;font-weight:700;margin-top:4px">{{ $value }}</div>
-                <div style="font-size:12px;color:rgb(120 113 108)">{{ $hint }}</div>
+                <div style="font-size:12px;color:var(--subs-muted)">{{ $hint }}</div>
             </x-filament::section>
         @endforeach
     </div>
@@ -54,13 +54,13 @@
         ] as $title => $rows)
             <x-filament::section :heading="$title">
                 @if (empty($rows))
-                    <p style="color:rgb(120 113 108);font-size:13px">لا توجد عمليات.</p>
+                    <p style="color:var(--subs-muted);font-size:13px">لا توجد عمليات.</p>
                 @else
                     <table style="width:100%;font-size:14px;border-collapse:collapse">
                         @foreach ($rows as $row)
-                            <tr style="border-bottom:1px solid rgb(231 229 228)">
+                            <tr style="border-bottom:1px solid var(--subs-border)">
                                 <td style="padding:6px 0">{{ $row['label'] }}</td>
-                                <td style="padding:6px 0;color:rgb(120 113 108);text-align:center">{{ $row['count'] }}</td>
+                                <td style="padding:6px 0;color:var(--subs-muted);text-align:center">{{ $row['count'] }}</td>
                                 <td style="padding:6px 0;font-weight:600;text-align:left">{{ Money::format($row['total']) }}</td>
                             </tr>
                         @endforeach
@@ -73,10 +73,10 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px">
         <x-filament::section heading="الأرصدة الآن">
             <table style="width:100%;font-size:14px;border-collapse:collapse">
-                <tr style="border-bottom:1px solid rgb(231 229 228)"><td style="padding:6px 0">الديون الثانوية</td><td style="text-align:left;font-weight:600">{{ Money::format($balances['secondary']) }}</td></tr>
-                <tr style="border-bottom:1px solid rgb(231 229 228)"><td style="padding:6px 0">الديون الأولية</td><td style="text-align:left;font-weight:600">{{ Money::format($balances['primary']) }}</td></tr>
+                <tr style="border-bottom:1px solid var(--subs-border)"><td style="padding:6px 0">الديون الثانوية</td><td style="text-align:left;font-weight:600">{{ Money::format($balances['secondary']) }}</td></tr>
+                <tr style="border-bottom:1px solid var(--subs-border)"><td style="padding:6px 0">الديون الأولية</td><td style="text-align:left;font-weight:600">{{ Money::format($balances['primary']) }}</td></tr>
                 @foreach ($balances['boxes'] as $box)
-                    <tr style="border-bottom:1px solid rgb(231 229 228)"><td style="padding:6px 0">{{ $box['name'] }}</td><td style="text-align:left;font-weight:600">{{ Money::format($box['balance']) }}</td></tr>
+                    <tr style="border-bottom:1px solid var(--subs-border)"><td style="padding:6px 0">{{ $box['name'] }}</td><td style="text-align:left;font-weight:600">{{ Money::format($box['balance']) }}</td></tr>
                 @endforeach
             </table>
         </x-filament::section>
@@ -84,7 +84,7 @@
             @forelse ($report['voids'] as $action => $count)
                 <div style="display:flex;justify-content:space-between;font-size:14px;padding:6px 0">{{ $voidLabels[$action] ?? $action }} <b>{{ $count }}</b></div>
             @empty
-                <p style="color:rgb(120 113 108);font-size:13px">لا توجد إلغاءات.</p>
+                <p style="color:var(--subs-muted);font-size:13px">لا توجد إلغاءات.</p>
             @endforelse
         </x-filament::section>
     </div>

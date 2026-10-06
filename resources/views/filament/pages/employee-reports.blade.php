@@ -1,9 +1,9 @@
 @php
     use App\Support\Money;
     use App\Filament\Pages\EmployeeStatement;
-    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:rgb(120 113 108);border-bottom:1px solid rgb(231 229 228);white-space:nowrap';
-    $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top';
-    $empty = '<p style="color:rgb(120 113 108);font-size:14px">لا توجد بيانات في هذه الفترة.</p>';
+    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:var(--subs-muted);border-bottom:1px solid var(--subs-border);white-space:nowrap';
+    $td = 'padding:8px 6px;border-bottom:1px solid var(--subs-subtle);vertical-align:top';
+    $empty = '<p style="color:var(--subs-muted);font-size:14px">لا توجد بيانات في هذه الفترة.</p>';
 @endphp
 <x-filament-panels::page>
     <x-filament::section>
@@ -20,12 +20,12 @@
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">العهد الموجودة مع الموظفين الآن</div>
-            <div style="font-size:24px;font-weight:700;margin-top:4px;color:rgb(180 83 9)">{{ Money::format($report['custody_total']) }}</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">العهد الموجودة مع الموظفين الآن</div>
+            <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--subs-amber)">{{ Money::format($report['custody_total']) }}</div>
         </x-filament::section>
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">السلف المستحقة على الموظفين</div>
-            <div style="font-size:24px;font-weight:700;margin-top:4px;color:rgb(185 28 28)">{{ Money::format($report['advances_outstanding']) }}</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">السلف المستحقة على الموظفين</div>
+            <div style="font-size:24px;font-weight:700;margin-top:4px;color:var(--subs-red)">{{ Money::format($report['advances_outstanding']) }}</div>
         </x-filament::section>
     </div>
 

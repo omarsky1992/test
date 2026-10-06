@@ -2,8 +2,8 @@
     use App\Support\Money;
     $statusColor = ['success' => 'success', 'failed' => 'danger', 'running' => 'warning'];
     $statusLabel = ['success' => 'نجحت', 'failed' => 'فشلت', 'running' => 'جارية'];
-    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:rgb(120 113 108);border-bottom:1px solid rgb(231 229 228);white-space:nowrap';
-    $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top';
+    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:var(--subs-muted);border-bottom:1px solid var(--subs-border);white-space:nowrap';
+    $td = 'padding:8px 6px;border-bottom:1px solid var(--subs-subtle);vertical-align:top';
 @endphp
 <x-filament-panels::page>
     <x-filament::section icon="heroicon-o-arrow-path" icon-color="primary" heading="المزامنة من موقع الشركة">
@@ -18,7 +18,7 @@
             </button>
             <span id="subs-sync-status" style="font-size:14px;font-weight:600"></span>
         </div>
-        <p style="font-size:13px;color:rgb(120 113 108);margin:0">
+        <p style="font-size:13px;color:var(--subs-muted);margin:0">
             يفتح تبويب الاشتراكات الفعّالة في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
             آخر مزامنة: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
         </p>
@@ -32,7 +32,7 @@
                 <li>اضغط <b>تحميل الإضافة غير المضغوطة</b> (Load unpacked) واختر مجلد <b dir="ltr">subs-sync</b>.</li>
                 <li>ارجع لهذه الصفحة واضغط <b>مزامنة الآن</b>.</li>
             </ol>
-            <p style="font-size:13px;color:rgb(120 113 108);margin:4px 0 0">إذا تغيّر عنوان النظام (الدومين) نزّل الإضافة من جديد واستبدلها.</p>
+            <p style="font-size:13px;color:var(--subs-muted);margin:4px 0 0">إذا تغيّر عنوان النظام (الدومين) نزّل الإضافة من جديد واستبدلها.</p>
         </details>
 
         <details style="margin-top:8px;font-size:14px;line-height:2">
@@ -40,7 +40,7 @@
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px">
                 <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات، ثم اضغطه وأنت في صفحة الاشتراكات في موقع الشركة.')"
                    style="display:inline-flex;padding:8px 14px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">⟳ مزامنة المشتركين</a>
-                <span style="font-size:13px;color:rgb(120 113 108)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions?filterBy=Active مسجّلاً ثم اضغطه.</span>
+                <span style="font-size:13px;color:var(--subs-muted)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions?filterBy=Active مسجّلاً ثم اضغطه.</span>
             </div>
         </details>
     </x-filament::section>
@@ -54,7 +54,7 @@
             const el = document.getElementById('subs-sync-status');
             if (!el) return;
             el.textContent = text;
-            el.style.color = cls === 'ok' ? 'rgb(21 128 61)' : (cls === 'bad' ? 'rgb(185 28 28)' : '');
+            el.style.color = cls === 'ok' ? 'var(--subs-green)' : (cls === 'bad' ? 'var(--subs-red)' : '');
         };
         let heard = false, watchdog = null;
         window.subsReceiver({
@@ -78,23 +78,23 @@
 
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px">
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">المزامنة التلقائية</div>
-            <div style="font-size:18px;font-weight:700;margin-top:4px;color:{{ $enabled ? 'rgb(21 128 61)' : 'rgb(120 113 108)' }}">{{ $enabled ? "كل {$interval} دقيقة" : 'متوقفة' }}</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">المزامنة التلقائية</div>
+            <div style="font-size:18px;font-weight:700;margin-top:4px;color:{{ $enabled ? 'var(--subs-green)' : 'var(--subs-muted)' }}">{{ $enabled ? "كل {$interval} دقيقة" : 'متوقفة' }}</div>
         </x-filament::section>
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">آخر مزامنة ناجحة</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">آخر مزامنة ناجحة</div>
             <div style="font-size:18px;font-weight:700;margin-top:4px" dir="ltr">{{ $last?->started_at->format('Y/m/d H:i') ?? '—' }}</div>
             @if ($last)
-                <div style="font-size:13px;color:rgb(120 113 108)">{{ $last->stats['received'] ?? 0 }} سجل · {{ $last->stats['renewals'] ?? 0 }} تجديد</div>
+                <div style="font-size:13px;color:var(--subs-muted)">{{ $last->stats['received'] ?? 0 }} سجل · {{ $last->stats['renewals'] ?? 0 }} تجديد</div>
             @endif
         </x-filament::section>
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">جلسة موقع الشركة</div>
-            <div style="font-size:18px;font-weight:700;margin-top:4px;color:{{ $hasRefreshToken ? 'rgb(21 128 61)' : 'rgb(120 113 108)' }}">{{ $hasRefreshToken ? 'متصلة' : 'غير متصلة' }}</div>
-            <div style="font-size:13px;color:rgb(120 113 108)" dir="ltr">{{ $refreshedAt ? 'آخر تجديد '.$refreshedAt->format('Y/m/d H:i') : '' }}</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">جلسة موقع الشركة</div>
+            <div style="font-size:18px;font-weight:700;margin-top:4px;color:{{ $hasRefreshToken ? 'var(--subs-green)' : 'var(--subs-muted)' }}">{{ $hasRefreshToken ? 'متصلة' : 'غير متصلة' }}</div>
+            <div style="font-size:13px;color:var(--subs-muted)" dir="ltr">{{ $refreshedAt ? 'آخر تجديد '.$refreshedAt->format('Y/m/d H:i') : '' }}</div>
         </x-filament::section>
         <x-filament::section>
-            <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">قاعدة التجديد</div>
+            <div style="font-size:13px;color:var(--subs-muted);font-weight:600">قاعدة التجديد</div>
             <div style="font-size:13.5px;margin-top:4px;line-height:1.7">آخر أيام = 0 ثم: 7 أيام أو أقل ← دين ثانوي بسعر الفئة · أكثر من 7 أيام ← تفعيل بدون دين. مرة واحدة لكل تجديد.</div>
         </x-filament::section>
     </div>
@@ -126,7 +126,7 @@
 
     <x-filament::section heading="التجديدات المكتشفة">
         @if ($renewals->isEmpty())
-            <p style="color:rgb(120 113 108);font-size:14px">لا توجد تجديدات بعد.</p>
+            <p style="color:var(--subs-muted);font-size:14px">لا توجد تجديدات بعد.</p>
         @else
             <div style="overflow-x:auto">
                 <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:720px">
@@ -161,7 +161,7 @@
 
     <x-filament::section heading="سجل المزامنة">
         @if ($runs->isEmpty())
-            <p style="color:rgb(120 113 108);font-size:14px">لم تُنفَّذ أي مزامنة بعد.</p>
+            <p style="color:var(--subs-muted);font-size:14px">لم تُنفَّذ أي مزامنة بعد.</p>
         @else
             <div style="overflow-x:auto">
                 <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:720px">
@@ -175,7 +175,7 @@
                             <tr>
                                 <td style="{{ $td }}" dir="ltr">{{ $run->started_at->format('Y/m/d H:i') }}</td>
                                 <td style="{{ $td }}"><x-filament::badge :color="$statusColor[$run->status]">{{ $statusLabel[$run->status] }}</x-filament::badge>
-                                    @if ($run->error)<div style="color:rgb(185 28 28);font-size:12px;margin-top:4px">{{ $run->error }}</div>@endif
+                                    @if ($run->error)<div style="color:var(--subs-red);font-size:12px;margin-top:4px">{{ $run->error }}</div>@endif
                                 </td>
                                 <td style="{{ $td }}">{{ $s['received'] ?? 0 }}</td>
                                 <td style="{{ $td }}">{{ ($s['subscribers_created'] ?? 0) }} مشترك · {{ ($s['accounts_created'] ?? 0) }} حساب</td>
@@ -184,7 +184,7 @@
                                 <td style="{{ $td }}">
                                     @php $errors = $s['errors'] ?? []; @endphp
                                     @if ($errors)
-                                        <details><summary style="cursor:pointer;color:rgb(185 28 28)">{{ count($errors) }}</summary>
+                                        <details><summary style="cursor:pointer;color:var(--subs-red)">{{ count($errors) }}</summary>
                                             <ul style="font-size:12px;margin-top:4px">@foreach ($errors as $e)<li>{{ $e['username'] ?? $e['customer_id'] ?? '—' }}: {{ $e['message'] }}</li>@endforeach</ul>
                                         </details>
                                     @else 0 @endif

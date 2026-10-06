@@ -1,7 +1,7 @@
 @php
     use App\Support\Money;
-    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:rgb(120 113 108);border-bottom:1px solid rgb(231 229 228);white-space:nowrap';
-    $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top';
+    $th = 'padding:8px 6px;text-align:right;font-weight:600;color:var(--subs-muted);border-bottom:1px solid var(--subs-border);white-space:nowrap';
+    $td = 'padding:8px 6px;border-bottom:1px solid var(--subs-subtle);vertical-align:top';
     $n = fn (int $v) => $v === 0 ? '' : number_format($v);
 @endphp
 <x-filament-panels::page>
@@ -27,20 +27,20 @@
     </x-filament::section>
 
     @if (! $statement)
-        <p style="color:rgb(120 113 108)">لا توجد صناديق.</p>
+        <p style="color:var(--subs-muted)">لا توجد صناديق.</p>
     @else
-        <div style="font-size:18px;font-weight:700">{{ $account->name }} <span style="font-size:13px;font-weight:500;color:rgb(120 113 108)">· {{ $periodLabel }}</span></div>
+        <div style="font-size:18px;font-weight:700">{{ $account->name }} <span style="font-size:13px;font-weight:500;color:var(--subs-muted)">· {{ $periodLabel }}</span></div>
 
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
             @foreach ([
                 ['الرصيد في بداية الفترة', $statement['opening'], null],
-                ['الداخل', $statement['total_in'], 'rgb(21 128 61)'],
-                ['الخارج', $statement['total_out'], 'rgb(185 28 28)'],
+                ['الداخل', $statement['total_in'], 'var(--subs-green)'],
+                ['الخارج', $statement['total_out'], 'var(--subs-red)'],
                 ['الرصيد في نهاية الفترة', $statement['closing'], null],
                 ['الرصيد الحالي', $statement['current'], 'rgb(15 118 110)'],
             ] as [$label, $value, $color])
                 <x-filament::section>
-                    <div style="font-size:13px;color:rgb(120 113 108);font-weight:600">{{ $label }}</div>
+                    <div style="font-size:13px;color:var(--subs-muted);font-weight:600">{{ $label }}</div>
                     <div style="font-size:22px;font-weight:700;margin-top:4px;{{ $color ? "color:$color" : '' }}" dir="ltr">{{ Money::format($value) }}</div>
                 </x-filament::section>
             @endforeach
@@ -48,10 +48,10 @@
 
         <x-filament::section heading="الحركات">
             @if ($statement['rows']->isEmpty())
-                <p style="color:rgb(120 113 108);font-size:14px">لا توجد حركات في هذه الفترة.</p>
+                <p style="color:var(--subs-muted);font-size:14px">لا توجد حركات في هذه الفترة.</p>
             @else
                 @if ($statement['truncated'])
-                    <p style="color:rgb(180 83 9);font-size:13px">عُرضت أول {{ number_format($statement['rows']->count()) }} حركة فقط؛ ضيّق الفترة لرؤية الباقي.</p>
+                    <p style="color:var(--subs-amber);font-size:13px">عُرضت أول {{ number_format($statement['rows']->count()) }} حركة فقط؛ ضيّق الفترة لرؤية الباقي.</p>
                 @endif
                 <div style="overflow-x:auto">
                     <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:820px">
@@ -69,8 +69,8 @@
                                     <td style="{{ $td }}" dir="ltr">{{ $r['at']->format('Y/m/d H:i') }}</td>
                                     <td style="{{ $td }};white-space:nowrap">{{ $r['label'] }}</td>
                                     <td style="{{ $td }}">{{ $r['details'] }}</td>
-                                    <td style="{{ $td }};font-weight:600;color:rgb(21 128 61)" dir="ltr">{{ $n($r['in']) }}</td>
-                                    <td style="{{ $td }};font-weight:600;color:rgb(185 28 28)" dir="ltr">{{ $n($r['out']) }}</td>
+                                    <td style="{{ $td }};font-weight:600;color:var(--subs-green)" dir="ltr">{{ $n($r['in']) }}</td>
+                                    <td style="{{ $td }};font-weight:600;color:var(--subs-red)" dir="ltr">{{ $n($r['out']) }}</td>
                                     <td style="{{ $td }};font-weight:700" dir="ltr">{{ number_format($r['balance']) }}</td>
                                     <td style="{{ $td }}">{{ $r['by'] ?? 'تلقائي' }}</td>
                                 </tr>

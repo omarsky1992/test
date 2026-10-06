@@ -11,12 +11,12 @@
 
     <div style="font-weight:700;margin-top:12px">التسديدات</div>
     @forelse ($advance->repayments as $r)
-        <div style="border-top:1px solid rgb(231 229 228);padding:6px 0">
+        <div style="border-top:1px solid var(--subs-border);padding:6px 0">
             {{ $r->number }} · <b>{{ Money::format($r->amount) }}</b> · <span dir="ltr">{{ $r->paid_at->format('Y/m/d H:i') }}</span>
             · إلى {{ $r->moneyAccount?->name }} · بواسطة {{ $r->creator?->name ?? '—' }}
-            @if ($r->notes)<div style="color:rgb(120 113 108)">{{ $r->notes }}</div>@endif
+            @if ($r->notes)<div style="color:var(--subs-muted)">{{ $r->notes }}</div>@endif
         </div>
     @empty
-        <div style="color:rgb(120 113 108)">لا توجد تسديدات بعد.</div>
+        <div style="color:var(--subs-muted)">لا توجد تسديدات بعد.</div>
     @endforelse
 </div>

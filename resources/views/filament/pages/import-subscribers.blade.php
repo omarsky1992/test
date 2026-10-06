@@ -20,7 +20,7 @@
             @else
                 {{ $this->previewAction }}
                 {{ $this->backAction }}
-                <span style="align-self:center;font-size:13px;color:rgb(120 113 108)">الملف: {{ $originalName }} · {{ number_format($rowCount) }} صف</span>
+                <span style="align-self:center;font-size:13px;color:var(--subs-muted)">الملف: {{ $originalName }} · {{ number_format($rowCount) }} صف</span>
             @endif
         </div>
     @endif
@@ -38,7 +38,7 @@
                 ['صفوف فيها أخطاء (لن تُستورد)', $stats['rows_error'], 'danger'],
             ] as [$label, $value, $color])
                 <x-filament::section>
-                    <div style="font-size:12.5px;color:rgb(120 113 108);font-weight:600">{{ $label }}</div>
+                    <div style="font-size:12.5px;color:var(--subs-muted);font-weight:600">{{ $label }}</div>
                     <div style="font-size:26px;font-weight:700;margin-top:4px">
                         <x-filament::badge :color="$color" size="lg">{{ number_format($value) }}</x-filament::badge>
                     </div>
@@ -50,19 +50,19 @@
             <div style="overflow-x:auto">
                 <table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:720px">
                     <thead>
-                        <tr style="text-align:right;color:rgb(120 113 108);border-bottom:1px solid rgb(231 229 228)">
+                        <tr style="text-align:right;color:var(--subs-muted);border-bottom:1px solid var(--subs-border)">
                             <th style="padding:8px 4px">الصف</th><th style="padding:8px 10px">الاسم</th><th style="padding:8px 10px">الهاتف</th><th style="padding:8px 10px">اليوزر</th><th style="padding:8px 10px">النتيجة</th><th style="padding:8px 10px">ملاحظات</th>
                         </tr>
                     </thead>
                     <tbody>
                         @foreach ($previewRows as $row)
-                            <tr style="border-bottom:1px solid rgb(245 245 244);{{ $row['status'] === 'error' ? 'background:rgb(254 242 242)' : '' }}">
+                            <tr style="border-bottom:1px solid var(--subs-subtle);{{ $row['status'] === 'error' ? 'background:var(--tr-bg)' : '' }}">
                                 <td style="padding:7px 4px">{{ $row['line'] }}</td>
                                 <td style="font-weight:600;padding:7px 10px">{{ $row['name'] ?: '—' }}</td>
                                 <td dir="ltr" style="text-align:right;padding:7px 10px;white-space:nowrap">{{ $row['phone'] ?: '—' }}</td>
                                 <td dir="ltr" style="text-align:right;padding:7px 10px;white-space:nowrap">{{ $row['username'] ?: '—' }}</td>
                                 <td style="padding:7px 10px"><x-filament::badge :color="$labels[$row['status']][1]">{{ $labels[$row['status']][0] }}</x-filament::badge></td>
-                                <td style="font-size:12.5px;color:{{ $row['status'] === 'error' ? 'rgb(185 28 28)' : 'rgb(87 83 78)' }}">{{ implode(' · ', $row['messages']) }}</td>
+                                <td style="font-size:12.5px;color:{{ $row['status'] === 'error' ? 'var(--subs-red)' : 'var(--subs-text-2)' }}">{{ implode(' · ', $row['messages']) }}</td>
                             </tr>
                         @endforeach
                     </tbody>
@@ -93,15 +93,15 @@
     @if ($step === 1)
         <x-filament::section heading="آخر عمليات الاستيراد" collapsible collapsed>
             @forelse ($this->recentRuns() as $run)
-                <div style="display:flex;gap:12px;font-size:13.5px;padding:6px 0;border-bottom:1px solid rgb(245 245 244)">
+                <div style="display:flex;gap:12px;font-size:13.5px;padding:6px 0;border-bottom:1px solid var(--subs-subtle)">
                     <span dir="ltr">{{ $run->created_at->format('Y/m/d H:i') }}</span>
                     <span>{{ $run->file_name }}</span>
                     <x-filament::badge :color="$run->status === 'success' ? 'success' : 'danger'">{{ $run->status === 'success' ? 'نجح' : 'فشل' }}</x-filament::badge>
-                    <span style="color:rgb(120 113 108)">+{{ $run->stats['subscribers_create'] ?? 0 }} مشترك · +{{ $run->stats['accounts_create'] ?? 0 }} حساب</span>
+                    <span style="color:var(--subs-muted)">+{{ $run->stats['subscribers_create'] ?? 0 }} مشترك · +{{ $run->stats['accounts_create'] ?? 0 }} حساب</span>
                     <span style="margin-inline-start:auto">{{ $run->creator?->name }}</span>
                 </div>
             @empty
-                <p style="font-size:13px;color:rgb(120 113 108)">لا توجد عمليات بعد.</p>
+                <p style="font-size:13px;color:var(--subs-muted)">لا توجد عمليات بعد.</p>
             @endforelse
         </x-filament::section>
     @endif

@@ -1,6 +1,6 @@
 @php
-    $row = 'display:grid;grid-template-columns:130px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid rgb(245 245 244);font-size:14px';
-    $label = 'color:rgb(120 113 108);font-weight:600';
+    $row = 'display:grid;grid-template-columns:130px 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--subs-subtle);font-size:14px';
+    $label = 'color:var(--subs-muted);font-weight:600';
     $json = fn ($v) => json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT);
 @endphp
 <div>
@@ -22,6 +22,6 @@
     @endif
     <div style="{{ $row }}"><span style="{{ $label }}">الرد</span><span style="white-space:pre-wrap">{{ $message->reply ?? '—' }}</span></div>
     @if ($message->error)
-        <div style="{{ $row }}"><span style="{{ $label }}">الخطأ</span><span style="white-space:pre-wrap;color:rgb(185 28 28)">{{ $message->error }}</span></div>
+        <div style="{{ $row }}"><span style="{{ $label }}">الخطأ</span><span style="white-space:pre-wrap;color:var(--subs-red)">{{ $message->error }}</span></div>
     @endif
 </div>

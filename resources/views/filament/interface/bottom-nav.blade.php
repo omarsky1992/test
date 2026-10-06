@@ -11,8 +11,8 @@
 <style>
     .subs-bottom-nav{display:none}
     @media (max-width: 1023px){
-        .subs-bottom-nav{display:flex;position:fixed;inset-inline:0;bottom:0;z-index:30;height:64px;background:white;border-top:1px solid rgb(231 229 228);justify-content:space-around;align-items:center;padding-bottom:env(safe-area-inset-bottom)}
-        .subs-bottom-nav a,.subs-bottom-nav button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:700;color:rgb(120 113 108);background:none;border:0}
+        .subs-bottom-nav{display:flex;position:fixed;inset-inline:0;bottom:0;z-index:30;height:64px;background:var(--subs-surface);border-top:1px solid var(--subs-border);justify-content:space-around;align-items:center;padding-bottom:env(safe-area-inset-bottom)}
+        .subs-bottom-nav a,.subs-bottom-nav button{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;font-weight:700;color:var(--subs-muted);background:none;border:0}
         .subs-bottom-nav .on{color:var(--primary-600)}
         .subs-bottom-nav .fab{width:54px;height:54px;border-radius:50%;background:var(--primary-600);color:white;margin-top:-26px;justify-content:center;box-shadow:0 6px 14px rgba(0,0,0,.2)}
         .fi-main{padding-bottom:84px}

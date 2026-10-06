@@ -1,7 +1,7 @@
 @php
-    $td = 'padding:8px 6px;border-bottom:1px solid rgb(245 245 244);vertical-align:top;font-size:14px';
+    $td = 'padding:8px 6px;border-bottom:1px solid var(--subs-subtle);vertical-align:top;font-size:14px';
     $status = $link['status'] ?? null;
-    $color = match ($status) { 'WORKING' => 'rgb(21 128 61)', 'SCAN_QR_CODE', 'STARTING' => 'rgb(180 83 9)', default => 'rgb(185 28 28)' };
+    $color = match ($status) { 'WORKING' => 'var(--subs-green)', 'SCAN_QR_CODE', 'STARTING' => 'var(--subs-amber)', default => 'var(--subs-red)' };
 @endphp
 <x-filament-panels::page>
     @if ($qrMode)
@@ -14,7 +14,7 @@
                     @if ($status === 'WORKING')
                         <div style="font-size:14px;margin-bottom:10px">الهاتف المربوط: <b dir="ltr">{{ $link['phone'] }}</b> {{ $link['name'] ? '('.$link['name'].')' : '' }}</div>
                     @elseif ($status === 'UNREACHABLE')
-                        <div style="font-size:13.5px;color:rgb(120 113 108);margin-bottom:10px">خدمة الربط لا تعمل على السيرفر. شغّل التحديث: <code dir="ltr">bash ~/subs/deploy/update.sh</code></div>
+                        <div style="font-size:13.5px;color:var(--subs-muted);margin-bottom:10px">خدمة الربط لا تعمل على السيرفر. شغّل التحديث: <code dir="ltr">bash ~/subs/deploy/update.sh</code></div>
                     @endif
                     <div style="display:flex;flex-wrap:wrap;gap:8px">
                         @if ($status !== 'WORKING')
@@ -25,16 +25,16 @@
                             <x-filament::button color="danger" wire:click="unlinkPhone" wire:confirm="فصل الهاتف المربوط؟ لن تُرسل أو تُستقبل رسائل حتى تربط هاتفاً من جديد." icon="heroicon-o-link-slash">فصل الهاتف</x-filament::button>
                         @endif
                     </div>
-                    <div style="display:flex;gap:16px;margin-top:14px;font-size:13.5px;color:rgb(87 83 78)">
+                    <div style="display:flex;gap:16px;margin-top:14px;font-size:13.5px;color:var(--subs-text-2)">
                         <span>بانتظار الإرسال: <b>{{ $outbox['pending'] }}</b></span>
                         <span>أُرسلت اليوم: <b>{{ $outbox['sent_today'] }}</b></span>
-                        <span>فشلت: <b style="color:rgb(185 28 28)">{{ $outbox['failed'] }}</b></span>
+                        <span>فشلت: <b style="color:var(--subs-red)">{{ $outbox['failed'] }}</b></span>
                     </div>
                 </div>
                 @if ($status === 'SCAN_QR_CODE')
                     <div style="text-align:center">
-                        <img src="{{ route('whatsapp.qr') }}?t={{ now()->timestamp }}" alt="باركود الربط" style="width:260px;height:260px;border:1px solid rgb(231 229 228);border-radius:12px;background:white">
-                        <div style="font-size:12px;color:rgb(120 113 108);margin-top:4px">يتجدد تلقائياً</div>
+                        <img src="{{ route('whatsapp.qr') }}?t={{ now()->timestamp }}" alt="باركود الربط" style="width:260px;height:260px;border:1px solid var(--subs-border);border-radius:12px;background:var(--subs-surface)">
+                        <div style="font-size:12px;color:var(--subs-muted);margin-top:4px">يتجدد تلقائياً</div>
                     </div>
                 @endif
             </div>
@@ -46,7 +46,7 @@
             <tbody>
                 @foreach ($checks as [$env, $purpose, $ok])
                     <tr>
-                        <td style="{{ $td }};width:28px">{!! $ok ? '<span style="color:rgb(21 128 61)">✔</span>' : '<span style="color:rgb(185 28 28)">✘</span>' !!}</td>
+                        <td style="{{ $td }};width:28px">{!! $ok ? '<span style="color:var(--subs-green)">✔</span>' : '<span style="color:var(--subs-red)">✘</span>' !!}</td>
                         <td style="{{ $td }}">{{ $purpose }}</td>
                         <td style="{{ $td }};font-family:monospace;font-size:12.5px" dir="ltr">{{ $env }}</td>
                     </tr>
