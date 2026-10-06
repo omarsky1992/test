@@ -35,7 +35,7 @@ class LocalWhisperTranscriber implements Transcriber
                 ->orWhereRaw(\App\Support\SubscriberStatus::ENDS.' between ? and ?', [now()->subDays(3), now()->addDays(7)]))
             ->latest('updated_at')->limit(25)->pluck('full_name')->implode('، ');
 
-        return mb_substr(trim($phrases.' '.$names), 0, 600);
+        return mb_substr(trim($phrases.' '.CustomPatterns::words().' '.$names), 0, 600);
     }
 
     public static function configured(): bool

@@ -9,13 +9,14 @@ namespace App\WhatsApp;
  */
 class CommandInterpreter implements Interpreter
 {
-    public function __construct(private RuleInterpreter $rules, private ClaudeInterpreter $ai)
+    public function __construct(private RuleInterpreter $rules, private ClaudeInterpreter $ai, private CustomPatterns $custom)
     {
     }
 
     public function interpret(string $text, ?array $previous = null): ?Command
     {
-        if ($command = $this->rules->interpret($text)) {
+        // The admin's own phrasings first, then the built-in rules, then the AI.
+        if ($command = $this->custom->match($text) ?? $this->rules->interpret($text)) {
             return $command;
         }
 

@@ -524,6 +524,52 @@ class WhatsAppTest extends TestCase
         });
     }
 
+    public function test_the_admins_own_phrasings_are_understood_and_run(): void
+    {
+        $account = $this->subscriber();
+
+        $this->text('تفعيل محمد رمضان 7');
+        $this->assertSame(1, Debt::count());
+
+        $this->text('قبض محمد رمضان 35');
+        $this->assertSame(35000, \App\Models\Payment::sole()->amount, 'the seeded phrasing counts the amount in thousands');
+
+        \App\Models\CommandPattern::create(['pattern' => 'وصل من {الاسم} مبلغ {المبلغ}', 'action' => 'payment', 'sort_order' => 0]);
+        $this->text('وصل من محمد رمضان مبلغ خمسة آلاف');
+        $this->assertSame([35000, 5000], \App\Models\Payment::orderBy('id')->pluck('amount')->all());
+        $this->assertSame([], $this->claude->calls);
+    }
+
+    public function test_phrasings_split_the_name_from_the_days_and_amounts(): void
+    {
+        $custom = app(\App\WhatsApp\CustomPatterns::class);
+        $read = fn (string $t) => $custom->match($t)?->toArray();
+
+        $this->assertSame(['intent' => 'activate', 'subscriber' => 'محمد رمضان', 'days' => 7], $read('تفعيل محمد رمضان سبعة أيام'));
+        $this->assertSame(['intent' => 'activate', 'subscriber' => 'محمد رمضان', 'days' => 7], $read('تفعيل محمد رمضان'), 'default days');
+        $this->assertSame(['intent' => 'payment', 'subscriber' => 'علي حسين', 'amount' => 35000], $read('قبض علي حسين خمسة وثلاثين الف'));
+        $this->assertSame('secondary', $read('دين ثانوي محمد 20')['bucket']);
+        $this->assertNull($read('شي ما له صيغة'));
+    }
+
+    public function test_phrasings_are_managed_by_the_admin_with_checks_and_a_test_button(): void
+    {
+        $page = \App\Filament\Resources\CommandPatterns\Pages\ManageCommandPatterns::class;
+        Livewire::test($page)
+            ->assertSee('قبض {الاسم} {المبلغ}')
+            ->callAction('create', ['pattern' => 'قبض من {الاسم}', 'action' => 'payment', 'sort_order' => 1, 'is_active' => true])
+            ->assertHasActionErrors(['pattern']);
+        Livewire::test($page)
+            ->callAction('create', ['pattern' => 'سدد {الاسم} {المبلغ}', 'action' => 'payment', 'amount_in_thousands' => true, 'sort_order' => 1, 'is_active' => true])
+            ->assertHasNoActionErrors()
+            ->callAction('test', ['message' => 'سدد علي حسين 25'])
+            ->assertNotified('مفهومة (صيغة مخصصة)');
+        $this->assertTrue(AuditLog::where('action', 'command_pattern.created')->exists());
+
+        $this->actingAs($this->employee('07702222222'));
+        $this->get(\App\Filament\Resources\CommandPatterns\Pages\ManageCommandPatterns::getUrl())->assertForbidden();
+    }
+
     // ---- Queries ----
 
     public function test_queries_answer_shortly(): void
