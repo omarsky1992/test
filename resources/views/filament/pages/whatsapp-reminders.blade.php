@@ -24,7 +24,7 @@
         @else
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;max-height:360px;overflow:auto">
                 @foreach ($accounts as $a)
-                    <label style="display:flex;gap:8px;align-items:center;border:1px solid var(--subs-border);border-radius:12px;padding:7px 10px;cursor:pointer;background:var(--subs-surface)">
+                    <label class="{{ \App\Support\SubscriberFlags::hasNotes($a->subscriber_id) ? 'subs-note-box' : '' }}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--subs-border);border-radius:12px;padding:7px 10px;cursor:pointer;background:var(--subs-surface)">
                         <x-filament::input.checkbox wire:model.live="selected" value="{{ $a->id }}" />
                         <span style="min-width:0">
                             <b style="font-size:13.5px">{{ $a->subscriber?->full_name }} {{ \App\Support\SubscriberFlags::badges($a->subscriber_id) }}</b>
@@ -71,7 +71,7 @@
             <p style="font-size:13px;color:var(--subs-muted);margin-bottom:8px">أو افتح كل رسالة في واتساب هاتفك وأرسلها بنفسك:</p>
             <div style="display:flex;flex-direction:column;gap:8px">
                 @foreach ($messages as $m)
-                    <div style="border:1px solid var(--subs-border);border-radius:14px;padding:10px 12px;background:var(--subs-surface)">
+                    <div class="{{ \App\Support\SubscriberFlags::hasNotes($m['account']->subscriber_id) ? 'subs-note-box' : '' }}" style="border:1px solid var(--subs-border);border-radius:14px;padding:10px 12px;background:var(--subs-surface)">
                         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                             <b>{{ $m['account']->subscriber?->full_name }}</b>
                             @if ($m['url'])

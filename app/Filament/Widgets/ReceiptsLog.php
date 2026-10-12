@@ -35,6 +35,8 @@ class ReceiptsLog extends TableWidget
     public function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->heading(fn () => 'سجل الاستلام المالي — '.ReportService::periodRange($this->pageFilters)[2])
             ->query(function () {
                 [$from, $to] = ReportService::periodRange($this->pageFilters);

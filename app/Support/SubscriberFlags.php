@@ -86,6 +86,12 @@ class SubscriberFlags
         return $parts === [] ? null : implode(' · ', $parts);
     }
 
+    /** The CSS class that shades a subscriber's row or card while it has an active note. */
+    public static function rowClass(?int $subscriberId): ?string
+    {
+        return self::hasNotes($subscriberId) ? 'subs-has-note' : null;
+    }
+
     /** The marks as text, for the Blade views (cards, lists). */
     public static function badges(?int $subscriberId): string
     {

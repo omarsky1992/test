@@ -57,6 +57,8 @@ class BlacklistResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'adder', 'remover']))
             ->defaultSort('added_at', 'desc')
             ->emptyStateHeading('القائمة السوداء فارغة')

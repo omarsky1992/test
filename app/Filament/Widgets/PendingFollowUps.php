@@ -15,7 +15,7 @@ use Filament\Widgets\TableWidget;
 
 class PendingFollowUps extends TableWidget
 {
-    protected static ?int $sort = 6;
+    protected static ?int $sort = 7;
 
     // Render with the page in one request instead of one request per widget.
     protected static bool $isLazy = false;
@@ -27,6 +27,8 @@ class PendingFollowUps extends TableWidget
     public function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->query(fn () => FollowUpResource::getEloquentQuery()->with(['subscriber', 'account', 'plan', 'debt'])
                 ->where('ends_at', '<', now()->addDay()->endOfDay())->orderBy('ends_at'))
             ->paginated([5, 10, 25])

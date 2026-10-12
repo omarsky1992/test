@@ -14,7 +14,7 @@
     $expired = $ends && $ends->getTimestamp() <= now()->getTimestamp();
     $phone = $a->phone ?? $a->subscriber?->phone;
 @endphp
-<div class="subs-card subs-tone-{{ $tone }}" style="border:1px solid;border-radius:14px;padding:10px 12px;width:100%">
+<div class="subs-card subs-tone-{{ $tone }} {{ \App\Support\SubscriberFlags::rowClass($a->subscriber_id) }}" style="border:1px solid;border-radius:14px;padding:10px 12px;width:100%">
     <div style="display:flex;align-items:center;gap:10px">
         <div style="min-width:40px;height:40px;border-radius:50%;background:{{ $dot }};color:white;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1">
             @if ($a->must_activate)

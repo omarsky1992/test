@@ -10,6 +10,7 @@
         --tr-bg: rgb(254 242 242); --tr-bd: rgb(254 202 202);
         --tg-bg: rgb(240 253 244); --tg-bd: rgb(187 247 208);
         --tt-bg: rgb(240 253 250); --tt-bd: rgb(153 246 228);
+        --note-bg: rgb(254 249 195); --note-bd: rgb(234 179 8);
     }
     .dark {
         --subs-surface: rgb(28 25 23); --subs-subtle: rgb(41 37 36); --subs-border: rgb(68 64 60);
@@ -21,6 +22,7 @@
         --tr-bg: rgb(220 38 38 / .14); --tr-bd: rgb(248 113 113 / .45);
         --tg-bg: rgb(22 163 74 / .14); --tg-bd: rgb(74 222 128 / .4);
         --tt-bg: rgb(13 148 136 / .16); --tt-bd: rgb(45 212 191 / .4);
+        --note-bg: rgb(234 179 8 / .2); --note-bd: rgb(250 204 21 / .7);
     }
     .subs-card { color: var(--subs-text); }
     .subs-tone-violet { background: var(--tv-bg); border-color: var(--tv-bd) !important; }
@@ -28,4 +30,8 @@
     .subs-tone-red { background: var(--tr-bg); border-color: var(--tr-bd) !important; }
     .subs-tone-green { background: var(--tg-bg); border-color: var(--tg-bd) !important; }
     .subs-tone-gray { background: var(--subs-surface); border-color: var(--subs-border) !important; }
+    /* A subscriber with an active note in «وضع المشترك»: the whole row or card is shaded until the note ends. */
+    .fi-ta-row.subs-has-note > td, .fi-ta-row.subs-has-note:hover > td { background: var(--note-bg) !important; }
+    .fi-ta-row.subs-has-note > td:first-child { box-shadow: inset -4px 0 0 var(--note-bd); }
+    .subs-has-note.subs-card, .subs-note-box { background: var(--note-bg) !important; border-color: var(--note-bd) !important; border-width: 2px !important; }
 </style>

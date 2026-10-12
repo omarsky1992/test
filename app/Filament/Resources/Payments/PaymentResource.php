@@ -56,6 +56,8 @@ class PaymentResource extends Resource
     public static function buildTable(Table $table, bool $showSubscriber): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'moneyAccount', 'creator', 'lines.method', 'whatsappNotice']))
             ->defaultSort('received_at', 'desc')
             ->columns([

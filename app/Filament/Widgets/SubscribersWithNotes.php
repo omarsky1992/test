@@ -32,6 +32,8 @@ class SubscribersWithNotes extends TableWidget
     public function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->id))
             ->query(fn () => Subscriber::query()
                 ->whereHas('notes', fn (Builder $n) => $n->where('status', 'active'))
                 ->withCount(['notes as active_notes' => fn (Builder $n) => $n->where('status', 'active')])

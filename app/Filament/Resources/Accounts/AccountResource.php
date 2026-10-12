@@ -77,6 +77,8 @@ class AccountResource extends Resource
     public static function buildTable(Table $table, bool $showSubscriber): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'currentPlan'])
                 ->withSum(['debts as open_debt' => fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])], 'balance'))
             ->columns([

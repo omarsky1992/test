@@ -117,17 +117,19 @@ class SubscriberResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make()->columns(4)->schema([
-                TextEntry::make('full_name')->label('الاسم')->weight('bold')->size('lg')
-                    ->suffix(fn (Subscriber $r) => ($b = SubscriberFlags::badges($r->id)) !== '' ? ' '.$b : null)
-                    ->helperText(fn (Subscriber $r) => SubscriberFlags::tooltip($r->id))
-                    ->url(fn (Subscriber $r) => SubscriberFlags::hasNotes($r->id) ? SubscriberFlags::notesUrl($r->id) : null),
-                TextEntry::make('phone')->label('رقم الهاتف')->url(fn (Subscriber $r) => "tel:{$r->phone}")->extraAttributes(['dir' => 'ltr']),
-                TextEntry::make('code')->label('رقم المشترك'),
-                TextEntry::make('status')->label('الحالة')->badge(),
-                TextEntry::make('address')->label('العنوان')->placeholder('—')->columnSpan(2),
-                TextEntry::make('notes')->label('ملاحظات')->placeholder('—')->columnSpan(2),
-            ]),
+            Section::make()->columns(4)
+                ->extraAttributes(fn (Subscriber $record) => SubscriberFlags::hasNotes($record->id) ? ['class' => 'subs-note-box'] : [])
+                ->schema([
+                    TextEntry::make('full_name')->label('الاسم')->weight('bold')->size('lg')
+                        ->suffix(fn (Subscriber $r) => ($b = SubscriberFlags::badges($r->id)) !== '' ? ' '.$b : null)
+                        ->helperText(fn (Subscriber $r) => SubscriberFlags::tooltip($r->id))
+                        ->url(fn (Subscriber $r) => SubscriberFlags::hasNotes($r->id) ? SubscriberFlags::notesUrl($r->id) : null),
+                    TextEntry::make('phone')->label('رقم الهاتف')->url(fn (Subscriber $r) => "tel:{$r->phone}")->extraAttributes(['dir' => 'ltr']),
+                    TextEntry::make('code')->label('رقم المشترك'),
+                    TextEntry::make('status')->label('الحالة')->badge(),
+                    TextEntry::make('address')->label('العنوان')->placeholder('—')->columnSpan(2),
+                    TextEntry::make('notes')->label('ملاحظات')->placeholder('—')->columnSpan(2),
+                ]),
             Grid::make(3)->schema([
                 TextEntry::make('secondary_total')->label('دين ثانوي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Secondary)))->color('warning')->weight('bold'),
                 TextEntry::make('primary_total')->label('دين أولي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Primary)))->color('info')->weight('bold'),
@@ -139,6 +141,8 @@ class SubscriberResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->id))
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount('accounts')
                 ->withSum(['debts as open_debt' => fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])], 'balance')
                 ->withMax('accounts as service_ends_at', 'service_ends_at'))

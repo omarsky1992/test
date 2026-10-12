@@ -69,6 +69,8 @@ class FollowUpResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            // A subscriber with an active note is shaded wherever it appears, until the note is closed.
+            ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'plan', 'debt'])
                 ->addSelect(['last_outcome' => FollowUp::select('outcome')->whereColumn('follow_ups.activation_id', 'activations.id')->latest('id')->limit(1)])
                 ->addSelect(['next_follow_up_at' => FollowUp::select('next_follow_up_at')->whereColumn('follow_ups.activation_id', 'activations.id')->latest('id')->limit(1)]))

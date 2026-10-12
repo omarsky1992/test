@@ -7,16 +7,19 @@ use App\Enums\DebtSource;
 use App\Enums\DocumentStatus;
 use App\Enums\PaymentMethod;
 use App\Exceptions\BusinessRuleException;
+use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\EmployeeHome;
 use App\Filament\Pages\WhatsappBroadcast;
 use App\Filament\Resources\Blacklist\Pages\ManageBlacklist;
 use App\Filament\Resources\Debts\Pages\ListDebts;
 use App\Filament\Resources\Payments\Pages\ListPayments;
+use App\Filament\Resources\SubscriberCards\SubscriberCardResource;
 use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
 use App\Filament\Resources\Subscribers\RelationManagers\NotesRelationManager;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Filament\Resources\WhatsappBroadcasts\Pages\ListWhatsappBroadcasts;
+use App\Filament\Widgets\BlacklistedSubscribers;
 use App\Filament\Widgets\SubscribersWithNotes;
 use App\Models\Account;
 use App\Models\AuditLog;
@@ -177,7 +180,15 @@ class NotesBlacklistAndMessagesTest extends TestCase
         Livewire::withQueryParams(['relation' => 'notes'])->test(ViewSubscriber::class, ['record' => $subscriber->id])->assertSet('activeRelationManager', 'notes');
         Livewire::test(ListSubscribers::class)->filterTable('has_notes')->assertCountTableRecords(1);
 
+        // The whole row (or card) is shaded while the note is active.
+        Livewire::test(ListSubscribers::class)->assertSeeHtml('subs-has-note');
+        Livewire::test(ListDebts::class, ['activeTab' => 'secondary'])->assertSeeHtml('subs-has-note');
+        $this->assertSame('subs-has-note', SubscriberFlags::rowClass($subscriber->id));
+        $this->get(SubscriberCardResource::getUrl())->assertOk()->assertSee('subs-has-note', false);
+
         app(SubscriberNoteService::class)->close($note);
+        Livewire::test(ListSubscribers::class)->assertDontSeeHtml('subs-has-note');
+        $this->assertNull(SubscriberFlags::rowClass($subscriber->id));
         Livewire::test(ListSubscribers::class)->assertDontSeeHtml(e($notesUrl));
         Livewire::test(ListDebts::class, ['activeTab' => 'primary'])->assertDontSeeHtml(e($notesUrl));
         $this->assertStringNotContainsString('📝', SubscriberResource::getGlobalSearchResults('زينب')->first()->title);
@@ -215,6 +226,26 @@ class NotesBlacklistAndMessagesTest extends TestCase
         [$primary, $secondary] = $before[0];
         $this->assertSame([$primary - 20000, $secondary], array_slice($this->money(), 0, 2));
         $this->assertSame($before[1]['status'], $account->fresh()->status->value);
+    }
+
+    public function test_the_blacklist_is_on_the_home_pages(): void
+    {
+        $listed = $this->account('كرار حسن')->subscriber;
+        $other = $this->account('حسن جبار')->subscriber;
+        $entry = app(BlacklistService::class)->add($listed, 'broken_promises');
+
+        Livewire::test(BlacklistedSubscribers::class)
+            ->assertCanSeeTableRecords([$entry])->assertSee('كرار حسن')->assertDontSee('حسن جبار')
+            ->assertSee('تكرار التأخر عن الموعد المتفق عليه')
+            ->callTableAction('remove', $entry, data: ['reason' => 'التزم']);
+        $this->assertNotNull($entry->fresh()->removed_at);
+        Livewire::test(BlacklistedSubscribers::class)->assertCountTableRecords(0);
+
+        app(BlacklistService::class)->add($other, 'late_payments');
+        Livewire::test(Dashboard::class)->assertOk()->assertSeeLivewire(BlacklistedSubscribers::class);
+        $this->actingAs($this->employee());
+        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('القائمة السوداء');
+        Livewire::test(BlacklistedSubscribers::class)->assertSee('حسن جبار')->assertTableActionHidden('remove', BlacklistEntry::current()->sole());
     }
 
     public function test_managing_the_blacklist_needs_the_permission(): void

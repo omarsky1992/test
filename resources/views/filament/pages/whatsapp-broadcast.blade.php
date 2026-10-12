@@ -25,7 +25,7 @@
         @else
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px;max-height:340px;overflow:auto">
                 @foreach ($accounts as $a)
-                    <label wire:key="bc-{{ $a->id }}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--subs-border);border-radius:12px;padding:7px 10px;cursor:pointer;background:var(--subs-surface)">
+                    <label wire:key="bc-{{ $a->id }}" class="{{ \App\Support\SubscriberFlags::hasNotes($a->subscriber_id) ? 'subs-note-box' : '' }}" style="display:flex;gap:8px;align-items:center;border:1px solid var(--subs-border);border-radius:12px;padding:7px 10px;cursor:pointer;background:var(--subs-surface)">
                         <x-filament::input.checkbox wire:model.live="selected" value="{{ $a->id }}" />
                         <span style="min-width:0">
                             <b style="font-size:13.5px">{{ $a->subscriber?->full_name }} {{ \App\Support\SubscriberFlags::badges($a->subscriber_id) }}</b>
