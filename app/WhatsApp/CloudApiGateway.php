@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -15,6 +16,24 @@ class CloudApiGateway implements Gateway
             'to' => $to,
             'type' => 'text',
             'text' => ['preview_url' => false, 'body' => mb_substr($text, 0, 4000)],
+        ])->throw();
+    }
+
+    public function supportsImages(): bool
+    {
+        return true;
+    }
+
+    public function sendImage(string $to, string $bytes, string $mimeType, string $caption): void
+    {
+        $media = $this->http()->attach('file', $bytes, 'image.'.(explode('/', $mimeType)[1] ?? 'jpg'), ['Content-Type' => $mimeType])
+            ->post($this->graph(config('whatsapp.phone_number_id').'/media'), ['messaging_product' => 'whatsapp', 'type' => $mimeType])->throw();
+        $this->http()->post($this->graph(config('whatsapp.phone_number_id').'/messages'), [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $to,
+            'type' => 'image',
+            'image' => ['id' => $media->json('id'), 'caption' => mb_substr($caption, 0, 1000)],
         ])->throw();
     }
 
@@ -34,7 +53,7 @@ class CloudApiGateway implements Gateway
         return filled(config('whatsapp.access_token')) && filled(config('whatsapp.phone_number_id'));
     }
 
-    private function http(): \Illuminate\Http\Client\PendingRequest
+    private function http(): PendingRequest
     {
         if (! self::configured()) {
             throw new RuntimeException('WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID are not set.');

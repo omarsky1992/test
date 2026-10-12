@@ -7,11 +7,11 @@ use App\Enums\CompletionStatus;
 use App\Enums\DocumentStatus;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Activations\Pages\ListActivations;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Activation;
 use App\Models\ServicePlan;
 use App\Models\User;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
@@ -57,8 +57,8 @@ class ActivationResource extends Resource
             ->defaultSort('created_at', 'desc')
             ->columns([
                 TextColumn::make('number')->label('الرقم')->searchable()->toggleable(),
-                TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
-                    ->url(fn (Activation $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
+                    ->url(fn (Activation $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Activation $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('plan.name_ar')->label('الفئة'),
                 TextColumn::make('kind')->label('النوع')->badge(),

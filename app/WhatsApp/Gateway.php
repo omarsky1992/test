@@ -10,6 +10,12 @@ interface Gateway
 {
     public function send(string $to, string $text): void;
 
+    /** Whether this connection sends real images (otherwise the image goes as a link in the text). */
+    public function supportsImages(): bool;
+
+    /** An image with its caption; only called when supportsImages() is true. */
+    public function sendImage(string $to, string $bytes, string $mimeType, string $caption): void;
+
     /**
      * @return array{0: string, 1: string} the file's bytes and its MIME type
      */

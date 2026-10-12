@@ -76,6 +76,14 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Custody handover requests: the employee asks, nothing moves until someone with `custody.settle` approves (then `EmployeeFinance::handOver`).
 - WhatsApp reminders open `wa.me` links from the admin's fixed `message_templates`; nothing is sent automatically.
 
+**Notes, blacklist, payment messages, bulk messages**
+- «وضع المشترك» (`subscriber_notes`, `SubscriberNoteService`): add/close/delete each check their permission (`notes.*`) in the service. Closing keeps the note (status `closed`); deleting is a soft delete with `deleted_by`. Names with active notes are marked through `App\Support\SubscriberFlags` (one query per request, `forget()` after every change); the notes tab is `?relation=notes` on the subscriber page; the home widget is `SubscribersWithNotes`.
+- «القائمة السوداء» (`blacklist_entries`, `BlacklistService`, permission `blacklist.manage`): by subscriber id, one current entry per subscriber (partial unique index), removal keeps the row. It never blocks or changes anything.
+- Notes, the blacklist and messages never touch money: no debt is voided, zeroed, moved or marked paid by them.
+- After a payment, `PaymentService::record` queues «تم استلام دفعتك» with `DB::afterCommit` (`Notifier::payment`, kind `sub_payment`, reference `sub:payment:{id}`, `whatsapp_outbox.payment_id`), only with a phone and a configured connection (`Notifier::canSend`). A failed send never touches the payment.
+- Bulk messages (`WhatsappBroadcast` page, `App\WhatsApp\BroadcastService`, permission `whatsapp.broadcast`): only the chosen accounts, one outbox row per phone (kind `sub_broadcast`, `broadcast_id`, optional `media_path`). `Gateway::supportsImages()`: Meta yes, WAHA only with `WAHA_PLUS=true`; otherwise the outbox sends the text with a signed link (`whatsapp.broadcast.image`).
+- Payment methods: Qi Card and Mastercard are separate methods; the transaction number is optional (`requires_reference` false unless the admin turns it on) and is shown on the receipt and in the payments list.
+
 **Permissions and safety**
 - Every screen and action checks a permission (`App\Support\Permissions`); admins pass everything via `Gate::before`.
 - System reset (Settings) is admin-only, needs the admin password and typing «تصفير»; it keeps users, settings, plans, payment methods and the audit log.

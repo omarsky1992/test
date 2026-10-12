@@ -7,12 +7,13 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Payments\Pages\ListPayments;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
 use App\Models\PaymentMethodType;
 use App\Models\User;
+use App\Models\WhatsappOutbox;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
@@ -55,17 +56,20 @@ class PaymentResource extends Resource
     public static function buildTable(Table $table, bool $showSubscriber): Table
     {
         return $table
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'moneyAccount', 'creator', 'lines.method']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'moneyAccount', 'creator', 'lines.method', 'whatsappNotice']))
             ->defaultSort('received_at', 'desc')
             ->columns([
                 TextColumn::make('receipt_number')->label('رقم السند')->searchable()->weight('bold'),
                 TextColumn::make('received_at')->label('الوقت')->dateTime('Y/m/d H:i')->sortable(),
-                TextColumn::make('subscriber.full_name')->label('المشترك')->visible($showSubscriber)
-                    ->url(fn (Payment $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->visible($showSubscriber)
+                    ->url(fn (Payment $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Payment $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('payment_type')->label('النوع')->badge(),
                 TextColumn::make('method')->label('الطريقة')->badge()
                     ->description(fn (Payment $r) => $r->lines->map(fn ($l) => $l->method->name_ar.($r->lines->count() > 1 ? ' '.Money::format($l->amount, false) : '').($l->receiver_name ? " ({$l->receiver_name})" : ''))->join(' + ')),
+                TextColumn::make('reference')->label('رقم العملية')->placeholder('—')->extraAttributes(['dir' => 'ltr'])
+                    ->state(fn (Payment $r) => $r->lines->pluck('reference')->filter()->implode('، ') ?: null)
+                    ->searchable(query: fn (Builder $query, string $search) => $query->whereHas('lines', fn ($l) => $l->where('reference', 'ilike', '%'.addcslashes($search, '%_\\').'%'))),
                 TextColumn::make('moneyAccount.name')->label('الصندوق')->toggleable(),
                 TextColumn::make('amount')->label('المبلغ')->weight('bold')->sortable()
                     ->formatStateUsing(fn ($state) => Money::format($state, false))
@@ -73,6 +77,10 @@ class PaymentResource extends Resource
                         ->formatStateUsing(fn ($state) => Money::format((int) $state))),
                 TextColumn::make('creator.name')->label('الموظف'),
                 TextColumn::make('status')->label('الحالة')->badge(),
+                TextColumn::make('whatsapp')->label('إشعار واتساب')->badge()->toggleable()->placeholder('—')
+                    ->state(fn (Payment $r) => $r->whatsappNotice ? (WhatsappOutbox::STATUSES[$r->whatsappNotice->status] ?? $r->whatsappNotice->status) : null)
+                    ->color(fn (Payment $r) => ['sent' => 'success', 'failed' => 'danger', 'skipped' => 'gray'][$r->whatsappNotice?->status] ?? 'warning')
+                    ->tooltip(fn (Payment $r) => $r->whatsappNotice?->error),
             ])
             ->filters([
                 Filter::make('received_at')->label('التاريخ')->schema([

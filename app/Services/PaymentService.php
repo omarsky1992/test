@@ -18,6 +18,7 @@ use App\Models\Payment;
 use App\Models\PaymentAllocation;
 use App\Models\PaymentLine;
 use App\Models\PaymentMethodType;
+use App\WhatsApp\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -32,8 +33,7 @@ class PaymentService
         private ActivationService $activations,
         private DebtService $debts,
         private ActivationDueService $dues,
-    ) {
-    }
+    ) {}
 
     /**
      * Records a receipt. Debt payments go to the chosen debts in order, else oldest first; anything
@@ -141,6 +141,9 @@ class PaymentService
                 'methods' => array_map(fn ($l) => [$l['method']->name_ar => $l['amount']], $lines),
                 'allocations' => array_map(fn ($r) => [$r['debt']->number => $r['amount']], $plan), 'credit' => $credit,
             ], subscriberId: $account->subscriber_id);
+
+            // The subscriber is told only once the payment is committed; a rollback sends nothing.
+            DB::afterCommit(fn () => app(Notifier::class)->payment($payment->fresh()));
 
             foreach ($plan as $row) {
                 $debt = $row['debt']->fresh();

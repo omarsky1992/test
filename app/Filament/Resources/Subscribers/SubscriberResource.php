@@ -9,11 +9,11 @@ use App\Filament\Resources\Subscribers\Pages\CreateSubscriber;
 use App\Filament\Resources\Subscribers\Pages\EditSubscriber;
 use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
-use App\Filament\Resources\Subscribers\RelationManagers;
 use App\Models\Subscriber;
 use App\Services\PaymentService;
 use App\Support\Arabic;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
@@ -23,6 +23,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -95,7 +96,7 @@ class SubscriberResource extends Resource
     }
 
     /**
-     * @return array<int, \Filament\Schemas\Components\Component>
+     * @return array<int, Component>
      */
     public static function accountFields(string $prefix = ''): array
     {
@@ -117,7 +118,10 @@ class SubscriberResource extends Resource
     {
         return $schema->components([
             Section::make()->columns(4)->schema([
-                TextEntry::make('full_name')->label('الاسم')->weight('bold')->size('lg'),
+                TextEntry::make('full_name')->label('الاسم')->weight('bold')->size('lg')
+                    ->suffix(fn (Subscriber $r) => ($b = SubscriberFlags::badges($r->id)) !== '' ? ' '.$b : null)
+                    ->helperText(fn (Subscriber $r) => SubscriberFlags::tooltip($r->id))
+                    ->url(fn (Subscriber $r) => SubscriberFlags::hasNotes($r->id) ? SubscriberFlags::notesUrl($r->id) : null),
                 TextEntry::make('phone')->label('رقم الهاتف')->url(fn (Subscriber $r) => "tel:{$r->phone}")->extraAttributes(['dir' => 'ltr']),
                 TextEntry::make('code')->label('رقم المشترك'),
                 TextEntry::make('status')->label('الحالة')->badge(),
@@ -140,8 +144,9 @@ class SubscriberResource extends Resource
                 ->withMax('accounts as service_ends_at', 'service_ends_at'))
             ->columns([
                 TextColumn::make('code')->label('الرقم')->sortable(),
-                TextColumn::make('full_name')->label('الاسم')->weight('bold')->sortable()
-                    ->searchable(query: fn (Builder $query, string $search) => $query->search($search)),
+                SubscriberFlags::mark(TextColumn::make('full_name')->label('الاسم')->weight('bold')->sortable()
+                    ->searchable(query: fn (Builder $query, string $search) => $query->search($search))
+                    ->url(fn (Subscriber $r) => SubscriberFlags::subscriberUrl($r->id)), fn (Subscriber $r) => $r->id),
                 TextColumn::make('phone')->label('الهاتف')->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('accounts_count')->label('الحسابات')->alignCenter(),
                 TextColumn::make('open_debt')->label('الدين')->formatStateUsing(fn ($state) => Money::format((int) $state))
@@ -154,6 +159,10 @@ class SubscriberResource extends Resource
             ->searchPlaceholder('الاسم، الهاتف، اليوزر، السيريال، رقم السند…')
             ->filters([
                 SelectFilter::make('status')->label('الحالة')->options(SubscriberStatus::class),
+                Filter::make('has_notes')->label('لديه ملاحظات نشطة')
+                    ->query(fn (Builder $query) => $query->whereHas('notes', fn (Builder $n) => $n->where('status', 'active'))),
+                Filter::make('blacklisted')->label('في القائمة السوداء')
+                    ->query(fn (Builder $query) => $query->whereHas('blacklistEntries', fn (Builder $b) => $b->whereNull('removed_at'))),
                 Filter::make('has_debt')->label('عليه دين')
                     ->query(fn (Builder $query) => $query->whereHas('debts', fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial]))),
             ])
@@ -169,6 +178,8 @@ class SubscriberResource extends Resource
             RelationManagers\PaymentsRelationManager::class,
             RelationManagers\FollowUpsRelationManager::class,
             RelationManagers\AuditLogsRelationManager::class,
+            // Keyed so a link can open it directly: ?relation=notes.
+            'notes' => RelationManagers\NotesRelationManager::class,
         ];
     }
 
@@ -186,7 +197,7 @@ class SubscriberResource extends Resource
     {
         return Subscriber::search($search)->with('accounts')->limit(10)->get()
             ->map(fn (Subscriber $s) => new GlobalSearchResult(
-                title: $s->full_name,
+                title: trim($s->full_name.' '.SubscriberFlags::badges($s->id)),
                 url: static::getUrl('view', ['record' => $s]),
                 details: ['الهاتف' => $s->phone, 'اليوزر' => $s->accounts->pluck('username')->join('، ')],
             ));

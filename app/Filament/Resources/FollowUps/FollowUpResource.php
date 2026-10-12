@@ -4,13 +4,14 @@ namespace App\Filament\Resources\FollowUps;
 
 use App\Enums\CompletionStatus;
 use App\Enums\DocumentStatus;
+use App\Enums\FollowUpOutcome;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Activations\ActivationResource;
 use App\Filament\Resources\FollowUps\Pages\ListFollowUps;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Activation;
 use App\Models\FollowUp;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Resources\Resource;
@@ -73,8 +74,8 @@ class FollowUpResource extends Resource
                 ->addSelect(['next_follow_up_at' => FollowUp::select('next_follow_up_at')->whereColumn('follow_ups.activation_id', 'activations.id')->latest('id')->limit(1)]))
             ->defaultSort('ends_at')
             ->columns([
-                TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
-                    ->url(fn (Activation $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
+                    ->url(fn (Activation $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Activation $r) => $r->subscriber_id),
                 TextColumn::make('subscriber.phone')->label('الهاتف')->extraAttributes(['dir' => 'ltr'])
                     ->url(fn (Activation $r) => 'tel:'.$r->subscriber->phone),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
@@ -85,8 +86,8 @@ class FollowUpResource extends Resource
                     ->state(fn (Activation $r) => ActivationResource::timeStatus($r)[0])
                     ->color(fn (Activation $r) => ActivationResource::timeStatus($r)[1]),
                 TextColumn::make('last_outcome')->label('آخر اتصال')->badge()->placeholder('—')
-                    ->formatStateUsing(fn ($state) => \App\Enums\FollowUpOutcome::tryFrom($state)?->getLabel())
-                    ->color(fn ($state) => \App\Enums\FollowUpOutcome::tryFrom((string) $state)?->getColor()),
+                    ->formatStateUsing(fn ($state) => FollowUpOutcome::tryFrom($state)?->getLabel())
+                    ->color(fn ($state) => FollowUpOutcome::tryFrom((string) $state)?->getColor()),
                 TextColumn::make('next_follow_up_at')->label('الاتصال التالي')->dateTime('m/d H:i')->placeholder('—'),
             ])
             ->recordActions([

@@ -111,7 +111,7 @@
                         <div style="display:flex;align-items:center;gap:10px;background:var(--tv-bg);border:1px solid var(--tv-bd);border-radius:14px;padding:9px 12px">
                             <div style="width:34px;height:34px;border-radius:50%;background:rgb(124 58 237);color:white;display:flex;align-items:center;justify-content:center;font-weight:800">✔</div>
                             <div style="flex:1;min-width:0">
-                                <div style="font-weight:800">{{ $due->subscriber?->full_name }}</div>
+                                <div style="font-weight:800">{{ $due->subscriber?->full_name }} {{ \App\Support\SubscriberFlags::badges($due->subscriber_id) }}</div>
                                 <div style="font-size:12px;color:var(--subs-muted)"><span dir="ltr">{{ $due->account?->username }}</span> · سدّد {{ Money::format($due->amount) }} · {{ $due->paid_at->diffForHumans() }}</div>
                             </div>
                             @if ($canMarkDone)

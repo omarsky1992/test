@@ -9,6 +9,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 /**
  * Messages the system sends are queued here and sent a few at a time by the scheduler, with a
@@ -19,7 +21,10 @@ class Outbox
 {
     public function __construct(private Settings $settings) {}
 
-    public function queue(string $phone, string $body, string $kind, ?string $reference = null, ?int $accountId = null): ?WhatsappOutbox
+    /**
+     * @param  array{payment_id?: int, broadcast_id?: int, media_path?: string, media_mime?: string}  $extra
+     */
+    public function queue(string $phone, string $body, string $kind, ?string $reference = null, ?int $accountId = null, array $extra = []): ?WhatsappOutbox
     {
         $phone = WhatsappNumber::normalize($phone);
         if (strlen($phone) < 10 || trim($body) === '') {
@@ -33,6 +38,7 @@ class Outbox
             return DB::transaction(fn () => WhatsappOutbox::create([
                 'to_phone' => $phone, 'body' => $body, 'kind' => $kind, 'reference' => $reference ? mb_substr($reference, 0, 120) : null,
                 'account_id' => $accountId, 'status' => 'pending', 'created_by' => Auth::id(),
+                ...array_intersect_key($extra, array_flip(['payment_id', 'broadcast_id', 'media_path', 'media_mime'])),
             ]));
         } catch (UniqueConstraintViolationException) {
             return null;
@@ -77,7 +83,7 @@ class Outbox
                 sleep(random_int(max(0, $min), max($min, $max)));
             }
             try {
-                $gateway->send($message->to_phone, $message->body);
+                $this->deliver($gateway, $message);
                 $message->update(['status' => 'sent', 'sent_at' => $now, 'attempts' => $message->attempts + 1, 'error' => null]);
                 $sent++;
             } catch (\Throwable $e) {
@@ -88,6 +94,29 @@ class Outbox
         }
 
         return [$sent, $failed];
+    }
+
+    /**
+     * Text, or an image with the text as its caption. A connection that cannot send images (the free
+     * WAHA Core) gets the text with a link to the image instead.
+     */
+    private function deliver(Gateway $gateway, WhatsappOutbox $message): void
+    {
+        if ($message->media_path === null) {
+            $gateway->send($message->to_phone, $message->body);
+
+            return;
+        }
+        $disk = Storage::disk('local');
+        if ($gateway->supportsImages() && $disk->exists($message->media_path)) {
+            $gateway->sendImage($message->to_phone, $disk->get($message->media_path), $message->media_mime ?? 'image/jpeg', $message->body);
+
+            return;
+        }
+        $link = $message->broadcast_id
+            ? URL::temporarySignedRoute('whatsapp.broadcast.image', now()->addDays(30), ['broadcast' => $message->broadcast_id])
+            : null;
+        $gateway->send($message->to_phone, $message->body.($link ? "\n\n🖼️ الصورة: {$link}" : ''));
     }
 
     public function duringDay(CarbonImmutable $now): bool

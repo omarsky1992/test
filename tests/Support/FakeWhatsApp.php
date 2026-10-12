@@ -22,7 +22,27 @@ class FakeWhatsApp implements Gateway, Transcriber
 
     public function send(string $to, string $text): void
     {
+        if ($this->fail) {
+            throw new \RuntimeException('WhatsApp is down');
+        }
         $this->sent[] = ['to' => $to, 'text' => $text];
+    }
+
+    public bool $images = false;
+
+    /** @var array<int, array{to: string, bytes: string, mime: string, caption: string}> */
+    public array $images_sent = [];
+
+    public bool $fail = false;
+
+    public function supportsImages(): bool
+    {
+        return $this->images;
+    }
+
+    public function sendImage(string $to, string $bytes, string $mimeType, string $caption): void
+    {
+        $this->images_sent[] = ['to' => $to, 'bytes' => $bytes, 'mime' => $mimeType, 'caption' => $caption];
     }
 
     public function downloadMedia(string $mediaId): array

@@ -2,10 +2,14 @@
 
 namespace App\Filament\Resources\Subscribers\Pages;
 
+use App\Filament\Actions\NoteActions;
 use App\Filament\Actions\Operations;
+use App\Filament\Resources\Blacklist\BlacklistResource;
 use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Resources\Subscribers\SubscriberResource;
+use App\Support\SubscriberFlags;
 use Filament\Actions\Action;
+use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
@@ -22,6 +26,7 @@ class ViewSubscriber extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            NoteActions::open('subscriberNotes', $this->getRecord()),
             Operations::activate(),
             Operations::pay(),
             DebtResource::manualDebtAction($this->getRecord()->accounts()->count() === 1 ? $this->getRecord()->accounts()->first() : null),
@@ -29,6 +34,10 @@ class ViewSubscriber extends ViewRecord
                 ->url(fn () => 'tel:'.$this->getRecord()->phone),
             Action::make('whatsapp')->label('واتساب')->icon(Heroicon::OutlinedChatBubbleLeftRight)->color('gray')
                 ->url(fn () => 'https://wa.me/'.$this->getRecord()->phone_normalized)->openUrlInNewTab(),
+            ActionGroup::make([
+                BlacklistResource::addAction($this->getRecord()),
+            ])->label('المزيد')->button()->color('gray')
+                ->visible(fn () => auth()->user()->can('blacklist.manage') && ! SubscriberFlags::blacklisted($this->getRecord()->id)),
             EditAction::make(),
         ];
     }

@@ -8,14 +8,14 @@ use App\Enums\DebtStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Debts\Pages\ListDebts;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Account;
 use App\Models\Debt;
 use App\Services\DebtService;
 use App\Support\Money;
+use App\Support\Options;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Carbon\CarbonImmutable;
-use App\Support\Options;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
@@ -32,7 +32,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use UnitEnum;
 
 class DebtResource extends Resource
@@ -71,8 +70,8 @@ class DebtResource extends Resource
             ->defaultSort('debt_date', 'desc')
             ->columns([
                 TextColumn::make('number')->label('الرقم')->searchable(),
-                TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
-                    ->url(fn (Debt $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
+                    ->url(fn (Debt $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Debt $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('source')->label('المصدر')->badge(),
                 TextColumn::make('bucket')->label('النوع')->badge(),

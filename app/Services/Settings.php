@@ -41,6 +41,7 @@ class Settings
         'subscriber_messages.expiring' => true,
         'subscriber_messages.expired' => true,
         'subscriber_messages.debt' => true,
+        'subscriber_messages.payment' => true,
         'subscriber_messages.expiring_hours' => 24,
         'subscriber_messages.debt_every_days' => 3,
     ];

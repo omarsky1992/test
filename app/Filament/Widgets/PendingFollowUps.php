@@ -5,9 +5,10 @@ namespace App\Filament\Widgets;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Activations\ActivationResource;
 use App\Filament\Resources\FollowUps\FollowUpResource;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Activation;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
+use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Filament\Widgets\TableWidget;
@@ -31,8 +32,8 @@ class PendingFollowUps extends TableWidget
             ->paginated([5, 10, 25])
             ->defaultPaginationPageOption(5)
             ->columns([
-                TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
-                    ->url(fn (Activation $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
+                    ->url(fn (Activation $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Activation $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('plan.name_ar')->label('الفئة'),
                 TextColumn::make('debt.balance')->label('المبلغ')->formatStateUsing(fn ($state) => Money::format((int) $state, false)),
@@ -42,7 +43,7 @@ class PendingFollowUps extends TableWidget
                     ->color(fn (Activation $r) => ActivationResource::timeStatus($r)[1]),
             ])
             ->headerActions([
-                \Filament\Actions\Action::make('allFollowUps')->label('عرض قائمة المتابعة')->link()->icon('heroicon-m-arrow-left')
+                Action::make('allFollowUps')->label('عرض قائمة المتابعة')->link()->icon('heroicon-m-arrow-left')
                     ->url(fn () => BalanceOverview::url(FollowUpResource::class))
                     ->visible(fn () => BalanceOverview::url(FollowUpResource::class) !== null),
             ])

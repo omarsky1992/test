@@ -2,10 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Enums\DebtBucket;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
+use App\Exceptions\BusinessRuleException;
+use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\EmployeeHome;
+use App\Filament\Pages\EmployeeStatement;
 use App\Filament\Pages\Settings as SettingsPage;
 use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Resources\HandoverRequests\Pages\ListHandoverRequests;
@@ -16,16 +20,21 @@ use App\Models\ActivationDue;
 use App\Models\AuditLog;
 use App\Models\CustodyHandoverRequest;
 use App\Models\Debt;
+use App\Models\DebtTransfer;
 use App\Models\MessageTemplate;
+use App\Models\Payment;
 use App\Models\PaymentMethodType;
 use App\Models\User;
 use App\Services\DebtService;
 use App\Services\EmployeeFinance;
+use App\Services\Ledger;
 use App\Services\PaymentService;
 use App\Services\RenewalService;
 use App\Services\Settings;
 use App\Services\TreasuryService;
 use App\Support\SubscriberStatus;
+use App\Sync\CompanyClient;
+use App\Sync\CompanySync;
 use Carbon\CarbonImmutable;
 use Filament\Support\Colors\Color;
 use Filament\Support\Facades\FilamentColor;
@@ -46,7 +55,7 @@ class EmployeeUiTest extends TestCase
         return $account->fresh();
     }
 
-    private function pay(Account $account, int $amount): \App\Models\Payment
+    private function pay(Account $account, int $amount): Payment
     {
         return app(PaymentService::class)->record($account, $amount, PaymentMethod::Cash, $this->cash());
     }
@@ -101,23 +110,23 @@ class EmployeeUiTest extends TestCase
     public function test_the_company_sync_closes_it_when_the_end_date_moves_forward(): void
     {
         $site = new FakeCompanyClient;
-        $this->app->instance(\App\Sync\CompanyClient::class, $site);
+        $this->app->instance(CompanyClient::class, $site);
         $record = ['customer_id' => '77', 'name' => 'زينب كريم', 'plan' => 'BASIC', 'status' => 'Active', 'username' => 'ZK1', 'subscription_id' => '501',
             'ends_at' => now()->addDays(7)->toIso8601String()];
         $site->set($record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
         $account = Account::sole();
         app(RenewalService::class)->record($account, 0, 7, null, $account->external_ends_at);
         $this->pay($account->fresh(), 35000);
 
         // A few minutes of difference on the site is not an activation.
         $site->set(['ends_at' => now()->addDays(7)->addMinutes(30)->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
         $this->assertSame('pending', ActivationDue::sole()->status);
 
         // The full activation adds the remaining days.
         $site->set(['ends_at' => now()->addDays(30)->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
         $due = ActivationDue::sole();
         $this->assertSame(['done', 'sync'], [$due->status, $due->resolved_via]);
     }
@@ -149,9 +158,9 @@ class EmployeeUiTest extends TestCase
             ->callTableAction('transfer', $account, ['reason' => 'لم يسدد'])->assertHasNoTableActionErrors();
 
         $debt = Debt::sole();
-        $this->assertSame(\App\Enums\DebtBucket::Primary, $debt->bucket);
-        $this->assertSame(1, \App\Models\DebtTransfer::count());
-        $this->assertSame($employee->id, \App\Models\DebtTransfer::sole()->performed_by);
+        $this->assertSame(DebtBucket::Primary, $debt->bucket);
+        $this->assertSame(1, DebtTransfer::count());
+        $this->assertSame($employee->id, DebtTransfer::sole()->performed_by);
 
         $other = $this->account('علي حسين');
         Livewire::test(ListSubscriberCards::class)->assertTableActionHidden('transfer', $other);
@@ -163,26 +172,26 @@ class EmployeeUiTest extends TestCase
     public function test_a_sync_never_deletes_or_moves_a_secondary_debt(): void
     {
         $site = new FakeCompanyClient;
-        $this->app->instance(\App\Sync\CompanyClient::class, $site);
+        $this->app->instance(CompanyClient::class, $site);
         $record = ['customer_id' => '88', 'name' => 'زينب كريم', 'plan' => 'BASIC', 'username' => 'ZK2', 'subscription_id' => '601'];
         $site->set(['status' => 'Expired', 'ends_at' => now()->subDays(3)->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
 
         $this->travelTo(now()->addHour());
         $site->set(['status' => 'Active', 'ends_at' => now()->addDays(7)->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
         $debt = Debt::sole();
-        $this->assertSame([\App\Enums\DebtBucket::Secondary, 35000], [$debt->bucket, $debt->balance]);
+        $this->assertSame([DebtBucket::Secondary, 35000], [$debt->bucket, $debt->balance]);
 
         // Activated in full on the site while still owing: the debt stays exactly as it is.
         $this->travelTo(now()->addDays(2));
         $site->set(['status' => 'Active', 'ends_at' => now()->addDays(30)->toIso8601String()] + $record);
-        app(\App\Sync\CompanySync::class)->run('manual');
+        app(CompanySync::class)->run('manual');
 
         $debt->refresh();
-        $this->assertSame([\App\Enums\DebtBucket::Secondary, DebtStatus::Open, 35000], [$debt->bucket, $debt->status, $debt->balance]);
-        $this->assertSame(0, \App\Models\DebtTransfer::count());
-        $this->assertSame(35000, $this->balanceOf(\App\Services\Ledger::AR_SECONDARY));
+        $this->assertSame([DebtBucket::Secondary, DebtStatus::Open, 35000], [$debt->bucket, $debt->status, $debt->balance]);
+        $this->assertSame(0, DebtTransfer::count());
+        $this->assertSame(35000, $this->balanceOf(Ledger::AR_SECONDARY));
         $this->assertSame(1, Debt::count());
     }
 
@@ -200,7 +209,7 @@ class EmployeeUiTest extends TestCase
         try {
             $finance->requestHandover($ahmed, 400000);
             $this->fail('more than the custody accepted');
-        } catch (\App\Exceptions\BusinessRuleException) {
+        } catch (BusinessRuleException) {
         }
         $request = $finance->requestHandover($ahmed, 300000, 'سلمتها باليد');
         $this->expectExceptionOnSecond(fn () => $finance->requestHandover($ahmed, 1000));
@@ -243,7 +252,7 @@ class EmployeeUiTest extends TestCase
             ['method' => PaymentMethodType::where('code', 'cash')->first(), 'money_account' => $finance->custodyAccount($ahmed), 'amount' => 80000],
         ]);
 
-        Livewire::test(\App\Filament\Pages\EmployeeStatement::class)
+        Livewire::test(EmployeeStatement::class)
             ->callAction('requestHandover', ['amount' => 80000, 'notes' => 'اليوم'])
             ->assertHasNoActionErrors();
 
@@ -295,7 +304,7 @@ class EmployeeUiTest extends TestCase
         $employee = $this->employee();
         $this->flushSession();
         $this->actingAs($employee);
-        Livewire::test(\App\Filament\Pages\Dashboard::class)->assertRedirect(EmployeeHome::getUrl());
+        Livewire::test(Dashboard::class)->assertRedirect(EmployeeHome::getUrl());
         $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('عهدتي الآن')->assertSee('يجب التفعيل');
         $this->post(route('ui.mode'))->assertForbidden();
 
@@ -303,7 +312,7 @@ class EmployeeUiTest extends TestCase
         $this->actingAs($this->admin);
         $this->post(route('ui.mode'))->assertRedirect(EmployeeHome::getUrl());
         $this->assertTrue($this->admin->fresh()->usesEmployeeUi());
-        $this->post(route('ui.mode'))->assertRedirect(\App\Filament\Pages\Dashboard::getUrl());
+        $this->post(route('ui.mode'))->assertRedirect(Dashboard::getUrl());
         $this->assertFalse($this->admin->fresh()->usesEmployeeUi());
     }
 
@@ -326,7 +335,7 @@ class EmployeeUiTest extends TestCase
     {
         $account = $this->renewed('زينب كريم', daysLeft: 3);
         $template = MessageTemplate::where('title', 'قرب نهاية الاشتراك')->sole();
-        $this->assertSame(4, MessageTemplate::count(), 'starter messages are seeded');
+        $this->assertSame(5, MessageTemplate::count(), 'starter messages are seeded');
 
         $page = Livewire::test(WhatsappReminders::class, ['preselect' => $account->id])
             ->set('template', $template->id)
@@ -367,7 +376,7 @@ class EmployeeUiTest extends TestCase
         try {
             $callback();
             $this->fail('a second pending request was accepted');
-        } catch (\App\Exceptions\BusinessRuleException) {
+        } catch (BusinessRuleException) {
         }
     }
 }

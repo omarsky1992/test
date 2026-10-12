@@ -41,7 +41,7 @@ class MessageTemplateResource extends Resource
 
     protected static ?string $pluralModelLabel = 'قوالب الرسائل';
 
-    public const EVENTS = ['renewal' => 'التفعيل (7 أو 30 يوماً)', 'expiring' => 'قرب انتهاء الاشتراك', 'expired' => 'انتهاء الاشتراك', 'debt' => 'تذكير بالديون'];
+    public const EVENTS = ['renewal' => 'التفعيل (7 أو 30 يوماً)', 'expiring' => 'قرب انتهاء الاشتراك', 'expired' => 'انتهاء الاشتراك', 'debt' => 'تذكير بالديون', 'payment' => 'استلام دفعة'];
 
     public static function canViewAny(): bool
     {

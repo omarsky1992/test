@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\DebtTransfers;
 
 use App\Filament\Resources\DebtTransfers\Pages\ListDebtTransfers;
-use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\DebtTransfer;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
@@ -42,8 +42,8 @@ class DebtTransferResource extends Resource
             ->columns([
                 TextColumn::make('number')->label('الرقم')->searchable()->weight('bold'),
                 TextColumn::make('performed_at')->label('الوقت')->dateTime('Y/m/d H:i')->sortable(),
-                TextColumn::make('subscriber.full_name')->label('المشترك')
-                    ->url(fn (DebtTransfer $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')
+                    ->url(fn (DebtTransfer $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (DebtTransfer $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('debt.number')->label('الدين'),
                 TextColumn::make('amount')->label('المبلغ')->formatStateUsing(fn ($state) => Money::format($state, false))

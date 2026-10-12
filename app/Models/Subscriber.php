@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Unguarded]
 class Subscriber extends Model
@@ -49,6 +50,22 @@ class Subscriber extends Model
     public function followUps(): HasMany
     {
         return $this->hasMany(FollowUp::class);
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(SubscriberNote::class);
+    }
+
+    /** The newest active note, for the one-row-per-subscriber lists. */
+    public function latestActiveNote(): HasOne
+    {
+        return $this->hasOne(SubscriberNote::class)->ofMany(['created_at' => 'max', 'id' => 'max'], fn (Builder $q) => $q->where('status', 'active'));
+    }
+
+    public function blacklistEntries(): HasMany
+    {
+        return $this->hasMany(BlacklistEntry::class);
     }
 
     public function devices(): HasMany

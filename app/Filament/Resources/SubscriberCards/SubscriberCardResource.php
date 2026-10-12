@@ -5,6 +5,7 @@ namespace App\Filament\Resources\SubscriberCards;
 use App\Enums\DebtBucket;
 use App\Enums\DebtStatus;
 use App\Exceptions\BusinessRuleException;
+use App\Filament\Actions\NoteActions;
 use App\Filament\Actions\Operations;
 use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Resources\SubscriberCards\Pages\ListSubscriberCards;
@@ -104,6 +105,7 @@ class SubscriberCardResource extends Resource
                 Action::make('remind')->label('واتساب')->icon(Heroicon::OutlinedChatBubbleLeftEllipsis)->color('success')->iconButton()
                     ->visible(fn () => auth()->user()->can('whatsapp.remind'))
                     ->url(fn (Account $record) => WhatsappReminders::getUrl(['account' => $record->id])),
+                NoteActions::open()->iconButton(),
                 Action::make('open')->label('كشف المشترك')->icon(Heroicon::OutlinedEye)->color('gray')->iconButton()
                     ->url(fn (Account $record) => SubscriberResource::getUrl('view', ['record' => $record->subscriber_id])),
             ]);

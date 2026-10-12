@@ -11,6 +11,7 @@ use App\Models\AccountRenewal;
 use App\Models\Activation;
 use App\Models\ActivationDue;
 use App\Models\MessageTemplate;
+use App\Models\Payment;
 use App\Models\WhatsappNumber;
 use App\Services\Settings;
 use App\Support\Money;
@@ -97,6 +98,42 @@ class Notifier
         if ($account = Account::with(['subscriber', 'currentPlan'])->find($activation->account_id)) {
             $this->toSubscriber($account, 'renewal', "sub:activation:{$activation->id}");
         }
+    }
+
+    /**
+     * «تم استلام دفعتك»: queued once the payment is saved (never before), once per payment (the
+     * reference is unique). A failed send stays in the outbox with its error; the payment is untouched.
+     */
+    public function payment(Payment $payment): void
+    {
+        if (! $this->subscriberMessage('payment') || ! self::canSend() || $payment->status !== DocumentStatus::Posted) {
+            return;
+        }
+        $template = MessageTemplate::where('auto_event', 'payment')->where('is_active', true)->first();
+        $account = Account::with(['subscriber', 'currentPlan'])->find($payment->account_id);
+        if (! $template || ! $account || ! ($phone = WhatsappReminders::phone($account))) {
+            return;
+        }
+        $payment->loadMissing('lines.method');
+        $values = WhatsappReminders::values($account) + [
+            '{المبلغ_المستلم}' => Money::format($payment->amount),
+            '{طريقة_الدفع}' => $payment->lines->map(fn ($l) => $l->method->name_ar)->unique()->implode(' + '),
+            '{تاريخ_الدفع}' => $payment->received_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i'),
+            '{رقم_الوصل}' => (string) $payment->receipt_number,
+            '{رقم_العملية}' => (string) ($payment->lines->pluck('reference')->filter()->implode('، ') ?: '—'),
+        ];
+        $this->outbox->queue($phone, $template->render($values), 'sub_payment', "sub:payment:{$payment->id}", $account->id, ['payment_id' => $payment->id]);
+    }
+
+    /** A WhatsApp connection is set up (keys present) for the subscribers' messages. */
+    public static function canSend(): bool
+    {
+        $settings = app(Settings::class);
+        if ($settings->get('whatsapp.driver') === 'meta') {
+            return CloudApiGateway::configured();
+        }
+
+        return WahaGateway::configured($settings->get('whatsapp.notify_separate') ? WahaGateway::LINES['notify'] : WahaGateway::LINES['main']);
     }
 
     /**

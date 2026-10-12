@@ -4,11 +4,13 @@ namespace App\Filament\Widgets;
 
 use App\Enums\DocumentStatus;
 use App\Filament\Actions\Operations;
-use App\Filament\Resources\Subscribers\SubscriberResource;
+use App\Filament\Resources\Payments\PaymentResource;
 use App\Models\Payment;
 use App\Models\PaymentMethodType;
 use App\Services\ReportService;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
+use Filament\Actions\Action;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
@@ -46,8 +48,8 @@ class ReceiptsLog extends TableWidget
             ->columns([
                 TextColumn::make('received_at')->label('الوقت')->dateTime('m/d H:i'),
                 TextColumn::make('receipt_number')->label('السند')->weight('bold'),
-                TextColumn::make('subscriber.full_name')->label('المشترك')
-                    ->url(fn (Payment $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')
+                    ->url(fn (Payment $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Payment $r) => $r->subscriber_id),
                 TextColumn::make('methods')->label('طريقة الدفع')->badge()
                     ->state(fn (Payment $r) => $r->lines->map(fn ($l) => $l->method->name_ar.($r->lines->count() > 1 ? ' '.Money::format($l->amount, false) : ''))->all()),
                 TextColumn::make('boxes')->label('استُلم في')
@@ -62,9 +64,9 @@ class ReceiptsLog extends TableWidget
                         fn ($query, $id) => $query->whereHas('lines', fn ($l) => $l->where('payment_method_id', $id)))),
             ])
             ->headerActions([
-                \Filament\Actions\Action::make('allPayments')->label('عرض كل السندات')->link()->icon('heroicon-m-arrow-left')
-                    ->url(fn () => BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class))
-                    ->visible(fn () => BalanceOverview::url(\App\Filament\Resources\Payments\PaymentResource::class) !== null),
+                Action::make('allPayments')->label('عرض كل السندات')->link()->icon('heroicon-m-arrow-left')
+                    ->url(fn () => BalanceOverview::url(PaymentResource::class))
+                    ->visible(fn () => BalanceOverview::url(PaymentResource::class) !== null),
             ])
             ->recordActions([Operations::receipt()]);
     }

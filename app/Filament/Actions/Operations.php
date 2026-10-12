@@ -23,16 +23,18 @@ use App\Models\Payment;
 use App\Models\PaymentMethodType;
 use App\Models\Promotion;
 use App\Models\ServicePlan;
+use App\Models\Subscriber;
 use App\Services\ActivationService;
 use App\Services\DebtService;
+use App\Services\EmployeeFinance;
 use App\Services\PaymentService;
 use App\Services\Pricing;
 use App\Services\Settings;
 use App\Services\SubscriberService;
 use App\Support\Money;
+use App\Support\Options;
 use Carbon\CarbonImmutable;
 use Closure;
-use App\Support\Options;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
@@ -211,7 +213,7 @@ class Operations
                             ->visible(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_receiver)
                             ->required(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_receiver),
                         TextInput::make('reference')
-                            ->label('رقم العملية / الحوالة')
+                            ->label('رقم العملية / الحوالة (اختياري)')->maxLength(100)
                             ->required(fn (Get $get) => (bool) PaymentMethodType::find($get('method_id'))?->requires_reference)
                             ->columnSpan(2),
                     ]),
@@ -468,7 +470,7 @@ class Operations
         return match (true) {
             $record instanceof Account => $record,
             $record instanceof Activation, $record instanceof Debt, $record instanceof Payment => $record->account,
-            $record instanceof \App\Models\Subscriber && $record->accounts()->count() === 1 => $record->accounts()->first(),
+            $record instanceof Subscriber && $record->accounts()->count() === 1 => $record->accounts()->first(),
             default => null,
         };
     }
@@ -535,7 +537,7 @@ class Operations
     {
         $user = auth()->user();
         if (($method?->category ?? PaymentMethod::Cash) === PaymentMethod::Cash && $user?->collects_to_custody) {
-            return app(\App\Services\EmployeeFinance::class)->custodyAccount($user)->id;
+            return app(EmployeeFinance::class)->custodyAccount($user)->id;
         }
 
         return $method?->money_account_id ?? self::defaultBox($method?->category ?? PaymentMethod::Cash);

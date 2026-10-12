@@ -6,12 +6,14 @@ use App\Http\Controllers\InterfaceController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use App\Imports\SubscriberImporter;
+use App\Models\WhatsappBroadcast;
 use App\Services\Audit;
 use App\Services\BackupService;
 use App\WhatsApp\WahaGateway;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Storage;
 
 Route::middleware('auth')->group(function () {
     Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
@@ -70,3 +72,12 @@ Route::post('/whatsapp/qr-webhook', [WhatsAppWebhookController::class, 'receiveQ
     ->withoutMiddleware(PreventRequestForgery::class)
     ->middleware('throttle:300,1')
     ->name('whatsapp.qr-webhook');
+
+// The image of a bulk message, for connections that send it as a link (free WAHA Core). Only with a
+// valid signature from the message itself; nothing else is reachable this way.
+Route::get('/whatsapp/broadcast/{broadcast}/image', function (WhatsappBroadcast $broadcast) {
+    $disk = Storage::disk('local');
+    abort_unless($broadcast->image_path && $disk->exists($broadcast->image_path), 404);
+
+    return response($disk->get($broadcast->image_path), 200, ['Content-Type' => $broadcast->image_mime ?? 'image/jpeg', 'Cache-Control' => 'private, max-age=86400']);
+})->middleware(['signed', 'throttle:120,1'])->name('whatsapp.broadcast.image');

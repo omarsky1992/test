@@ -131,6 +131,22 @@ class WahaGateway implements Gateway
         ]));
     }
 
+    /** Sending files is a WAHA Plus feature; the free WAHA Core sends text only (WAHA_PLUS=true when Plus runs). */
+    public function supportsImages(): bool
+    {
+        return (bool) config("whatsapp.{$this->config}.plus");
+    }
+
+    public function sendImage(string $to, string $bytes, string $mimeType, string $caption): void
+    {
+        $this->ensureOk($this->http()->timeout(60)->post($this->url('/api/sendImage'), [
+            'session' => $this->session(),
+            'chatId' => self::digits($to).'@c.us',
+            'file' => ['mimetype' => $mimeType, 'filename' => 'image.'.(explode('/', $mimeType)[1] ?? 'jpg'), 'data' => base64_encode($bytes)],
+            'caption' => mb_substr($caption, 0, 1000),
+        ]));
+    }
+
     /** $mediaId is the media URL WAHA put in the webhook. */
     public function downloadMedia(string $mediaId): array
     {

@@ -55,6 +55,13 @@ class Permissions
         'advances.manage' => ['تسجيل السلف وتسديدها', false],
         'activations.mark_done' => ['تأكيد «تم التفعيل» لمن سدّد دينه الثانوي', true],
         'whatsapp.remind' => ['إرسال تذكير واتساب للمشتركين من القوالب', true],
+        'notes.view' => ['قراءة «وضع المشترك» (الملاحظات)', true],
+        'notes.create' => ['إضافة ملاحظة على مشترك', true],
+        'notes.close' => ['إنهاء ملاحظة', true],
+        'notes.delete' => ['حذف ملاحظة', false],
+        'blacklist.view' => ['عرض القائمة السوداء', true],
+        'blacklist.manage' => ['الإضافة إلى القائمة السوداء والإزالة منها', false],
+        'whatsapp.broadcast' => ['الرسائل الجماعية عبر واتساب', false],
         'whatsapp.manage' => ['لوحة تحكم واتساب: الأرقام المصرح لها وسجل العمليات', false],
     ];
 

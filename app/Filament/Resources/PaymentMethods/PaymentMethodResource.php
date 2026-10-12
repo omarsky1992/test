@@ -66,7 +66,7 @@ class PaymentMethodResource extends Resource
                 ->options(fn () => MoneyAccount::where('is_active', true)->where('kind', '<>', MoneyAccountKind::Company)->pluck('name', 'id'))
                 ->placeholder('يختاره الموظف عند القبض'),
             Toggle::make('requires_receiver')->label('يتطلب اسم المستلم'),
-            Toggle::make('requires_reference')->label('يتطلب رقم العملية'),
+            Toggle::make('requires_reference')->label('رقم العملية إجباري')->helperText('اتركه مطفأً: رقم العملية اختياري ويُحفظ إذا كُتب.'),
             TextInput::make('sort_order')->label('الترتيب')->integer()->default(0),
             Toggle::make('is_active')->label('فعّالة')->default(true),
         ]);

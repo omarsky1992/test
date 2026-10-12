@@ -27,7 +27,7 @@
                     <label style="display:flex;gap:8px;align-items:center;border:1px solid var(--subs-border);border-radius:12px;padding:7px 10px;cursor:pointer;background:var(--subs-surface)">
                         <x-filament::input.checkbox wire:model.live="selected" value="{{ $a->id }}" />
                         <span style="min-width:0">
-                            <b style="font-size:13.5px">{{ $a->subscriber?->full_name }}</b>
+                            <b style="font-size:13.5px">{{ $a->subscriber?->full_name }} {{ \App\Support\SubscriberFlags::badges($a->subscriber_id) }}</b>
                             <span style="display:block;font-size:12px;color:var(--subs-muted)">
                                 {{ \App\Filament\Pages\WhatsappReminders::phone($a) ? '' : 'بدون رقم · ' }}باقي {{ \App\Support\SubscriberStatus::daysLeft($a) ?? '—' }} يوم · عليه {{ number_format((int) $a->open_due) }}
                             </span>

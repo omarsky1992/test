@@ -62,6 +62,7 @@ class WhatsappSettings extends Page
         'sub_expiring' => 'subscriber_messages.expiring',
         'sub_expired' => 'subscriber_messages.expired',
         'sub_debt' => 'subscriber_messages.debt',
+        'sub_payment' => 'subscriber_messages.payment',
         'sub_expiring_hours' => 'subscriber_messages.expiring_hours',
         'sub_debt_every_days' => 'subscriber_messages.debt_every_days',
         'send_from_hour' => 'whatsapp.send_from_hour',
@@ -72,7 +73,7 @@ class WhatsappSettings extends Page
 
     private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
 
-    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt'];
+    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
 
     public static function canAccess(): bool
     {
@@ -145,6 +146,7 @@ class WhatsappSettings extends Page
                         Toggle::make('sub_expiring')->label('قرب انتهاء الاشتراك (لمفعّلي 30 يوماً فقط)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         Toggle::make('sub_expired')->label('عند انتهاء الاشتراك (لمفعّلي 30 يوماً فقط)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         Toggle::make('sub_debt')->label('تذكير بالديون')->disabled(fn (Get $get) => ! $get('sub_enabled')),
+                        Toggle::make('sub_payment')->label('بعد استلام دفعة («تم استلام دفعتك»)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         TextInput::make('sub_expiring_hours')->label('«قرب الانتهاء» قبل (ساعة)')->integer()->minValue(1)->maxValue(168)->required(),
                         TextInput::make('sub_debt_every_days')->label('تذكير الدين كل (يوم)')->integer()->minValue(1)->maxValue(30)->required(),
                     ]),

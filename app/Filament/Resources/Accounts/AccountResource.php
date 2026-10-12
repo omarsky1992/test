@@ -10,6 +10,7 @@ use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Account;
 use App\Services\SubscriberService;
 use App\Support\Money;
+use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
@@ -79,8 +80,8 @@ class AccountResource extends Resource
             ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'currentPlan'])
                 ->withSum(['debts as open_debt' => fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])], 'balance'))
             ->columns([
-                TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
-                    ->url(fn (Account $r) => SubscriberResource::getUrl('view', ['record' => $r->subscriber_id])),
+                SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
+                    ->url(fn (Account $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Account $r) => $r->subscriber_id),
                 TextColumn::make('username')->label('اليوزر')->searchable()->copyable()->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('location_label')->label('البيت')->placeholder('—'),
                 TextColumn::make('currentPlan.name_ar')->label('الفئة')->placeholder('—'),

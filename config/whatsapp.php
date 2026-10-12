@@ -11,6 +11,8 @@ return [
         'session' => env('WAHA_SESSION', 'default'),
         'webhook_secret' => env('WAHA_WEBHOOK_SECRET'),
         'webhook_url' => env('WAHA_WEBHOOK_URL', 'http://app:8080/whatsapp/qr-webhook'),
+        // WAHA Plus (paid image) sends images; the free Core image sends text only, so images go as links.
+        'plus' => (bool) env('WAHA_PLUS', false),
     ],
 
     // The optional second phone that only sends the subscribers' messages (service «waha-notify»).
@@ -20,6 +22,7 @@ return [
         'api_key' => env('WAHA_API_KEY'),
         'session' => env('WAHA_NOTIFY_SESSION', 'default'),
         'webhook_url' => null,
+        'plus' => (bool) env('WAHA_PLUS', false),
     ],
 
     // Seconds between two messages sent from the linked phone (random within the range), to look human.

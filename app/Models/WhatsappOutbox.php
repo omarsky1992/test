@@ -18,6 +18,8 @@ class WhatsappOutbox extends Model
         'sub_expiring' => 'للمشترك: قرب الانتهاء',
         'sub_expired' => 'للمشترك: انتهى الاشتراك',
         'sub_debt' => 'للمشترك: تذكير بالدين',
+        'sub_payment' => 'للمشترك: تم استلام الدفعة',
+        'sub_broadcast' => 'رسالة جماعية',
         'reminder' => 'تذكير يدوي',
         'alert_stuck_reply' => 'رد: تعذّرت المعالجة',
     ];
@@ -32,6 +34,16 @@ class WhatsappOutbox extends Model
     public function account(): BelongsTo
     {
         return $this->belongsTo(Account::class);
+    }
+
+    public function payment(): BelongsTo
+    {
+        return $this->belongsTo(Payment::class);
+    }
+
+    public function broadcast(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappBroadcast::class, 'broadcast_id');
     }
 
     public function creator(): BelongsTo

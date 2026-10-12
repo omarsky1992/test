@@ -7,6 +7,7 @@ use App\Enums\DebtStatus;
 use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Enums\PaymentMethod;
+use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\PaymentMethodType;
 use App\Services\ActivationService;
@@ -46,9 +47,10 @@ class SplitPaymentTest extends TestCase
         $this->assertSame(0, $this->balanceOf($wallet->ledger_account_id));
     }
 
-    public function test_a_method_that_needs_a_reference_refuses_a_line_without_one(): void
+    public function test_a_method_the_admin_made_strict_refuses_a_line_without_a_reference(): void
     {
         $bank = app(TreasuryService::class)->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'حساب الرافدين');
+        $this->method('bank_transfer')->update(['requires_reference' => true]);
 
         $this->expectException(BusinessRuleException::class);
         app(PaymentService::class)->record($this->account(), lines: [
@@ -61,7 +63,7 @@ class SplitPaymentTest extends TestCase
         $box = app(TreasuryService::class)->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'فاست باي');
         $method = PaymentMethodType::create(['code' => 'fastpay', 'name_ar' => 'فاست باي', 'category' => 'electronic', 'money_account_id' => $box->id]);
 
-        $payment = app(PaymentService::class)->record($this->account(), type: \App\Enums\PaymentType::Advance, lines: [
+        $payment = app(PaymentService::class)->record($this->account(), type: PaymentType::Advance, lines: [
             ['method' => $method->id, 'amount' => 5000],
         ]);
 

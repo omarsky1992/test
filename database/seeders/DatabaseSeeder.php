@@ -8,6 +8,7 @@ use App\Models\Currency;
 use App\Models\DeviceType;
 use App\Models\ExpenseCategory;
 use App\Models\LedgerAccount;
+use App\Models\MessageTemplate;
 use App\Models\MoneyAccount;
 use App\Models\PaymentMethodType;
 use App\Models\ServicePlan;
@@ -62,9 +63,10 @@ class DatabaseSeeder extends Seeder
             ['cash', 'نقدي', 'cash', false, false, $cashBox?->id, 1],
             ['zain_cash', 'زين كاش', 'electronic', true, false, null, 2],
             ['asia_hawala', 'آسيا حوالة', 'electronic', true, false, null, 3],
-            ['qi_card', 'كي كارد / ماستر', 'card', false, true, null, 4],
-            ['bank_transfer', 'تحويل مصرفي', 'bank', false, true, null, 5],
-            ['super_key', 'سوبر كي', 'electronic', false, true, null, 6],
+            ['qi_card', 'كي كارد', 'card', false, false, null, 4],
+            ['mastercard', 'ماستر كارد', 'card', false, false, null, 4],
+            ['bank_transfer', 'تحويل مصرفي', 'bank', false, false, null, 5],
+            ['super_key', 'سوبر كي', 'electronic', false, false, null, 6],
         ] as [$code, $name, $category, $receiver, $reference, $box, $order]) {
             PaymentMethodType::firstOrCreate(['code' => $code], [
                 'name_ar' => $name, 'category' => $category, 'requires_receiver' => $receiver,
@@ -81,14 +83,15 @@ class DatabaseSeeder extends Seeder
         }
         // Starter WhatsApp messages, added once; the admin edits them in the settings. The ones with an
         // event are also the automatic messages to subscribers.
-        if (\App\Models\MessageTemplate::doesntExist()) {
+        if (MessageTemplate::doesntExist()) {
             foreach ([
                 ['✅', 'تم التجديد', 'renewal', "تحية طيبة {الاسم}،\nتم تجديد اشتراككم ({الفئة}) حتى {تاريخ_الانتهاء}.\nالمبلغ المطلوب: {المبلغ}.\nشكراً لكم."],
                 ['💰', 'تذكير بالمبلغ المتبقي', 'debt', "تحية طيبة {الاسم}،\nنذكّركم بأن المبلغ المتبقي على اشتراككم هو {المبلغ}.\nشكراً لكم."],
                 ['⏳', 'قرب نهاية الاشتراك', 'expiring', "تحية طيبة {الاسم}،\nاشتراككم ({الفئة}) ينتهي بعد {الأيام} يوم بتاريخ {تاريخ_الانتهاء}.\nللتجديد يرجى التواصل معنا."],
                 ['⛔', 'انتهاء الاشتراك', 'expired', "تحية طيبة {الاسم}،\nانتهى اشتراككم ({الفئة}). لإعادة التفعيل يرجى التواصل معنا."],
+                ['🧾', 'تم استلام الدفعة', 'payment', "تم استلام دفعتك بنجاح.\nاسم المشترك: {الاسم}\nالمبلغ المستلم: {المبلغ_المستلم}\nطريقة الدفع: {طريقة_الدفع}\nالتاريخ: {تاريخ_الدفع}\nشكراً لك."],
             ] as $i => [$icon, $title, $event, $body]) {
-                \App\Models\MessageTemplate::create(['icon' => $icon, 'title' => $title, 'auto_event' => $event, 'body' => $body, 'sort_order' => $i + 1]);
+                MessageTemplate::create(['icon' => $icon, 'title' => $title, 'auto_event' => $event, 'body' => $body, 'sort_order' => $i + 1]);
             }
         }
         foreach ([['router', 'راوتر'], ['ont', 'جهاز ONT'], ['repeater', 'مقوي'], ['cable', 'كابل'], ['other', 'أخرى']] as [$key, $name]) {

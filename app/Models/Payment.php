@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Unguarded;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Unguarded]
 class Payment extends Model
@@ -37,6 +38,12 @@ class Payment extends Model
     public function moneyAccount(): BelongsTo
     {
         return $this->belongsTo(MoneyAccount::class);
+    }
+
+    /** The WhatsApp message telling the subscriber the payment arrived, if one was queued. */
+    public function whatsappNotice(): HasOne
+    {
+        return $this->hasOne(WhatsappOutbox::class)->where('kind', 'sub_payment');
     }
 
     public function lines(): HasMany

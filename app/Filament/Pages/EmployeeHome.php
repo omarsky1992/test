@@ -7,7 +7,10 @@ use App\Enums\DebtStatus;
 use App\Enums\DocumentStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Actions\Operations;
+use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Resources\SubscriberCards\SubscriberCardResource;
+use App\Filament\Widgets\PendingFollowUps;
+use App\Filament\Widgets\SubscribersWithNotes;
 use App\Models\ActivationDue;
 use App\Models\CustodyHandoverRequest;
 use App\Models\Debt;
@@ -68,8 +71,11 @@ class EmployeeHome extends Page
 
     protected function getFooterWidgets(): array
     {
-        // The 7-day follow-up list with its pay and مناقلة buttons, as on the admin dashboard.
-        return auth()->user()->can('follow_ups.create') ? [\App\Filament\Widgets\PendingFollowUps::class] : [];
+        // The subscribers with notes, and the 7-day follow-up list with its pay and مناقلة buttons, as on the admin dashboard.
+        return array_values(array_filter([
+            auth()->user()->can('notes.view') ? SubscribersWithNotes::class : null,
+            auth()->user()->can('follow_ups.create') ? PendingFollowUps::class : null,
+        ]));
     }
 
     public function getFooterWidgetsColumns(): int|array
@@ -135,7 +141,7 @@ class EmployeeHome extends Page
             'handoverRequests' => $user->can('custody.settle') ? CustodyHandoverRequest::where('status', 'pending')->count() : 0,
             'cardsUrl' => fn (string $tab) => SubscriberCardResource::getUrl('index', ['tab' => $tab]),
             // The secondary debts list itself, where each debt has its pay and مناقلة buttons.
-            'secondaryUrl' => \App\Filament\Resources\Debts\DebtResource::getUrl('index', ['tab' => 'secondary']),
+            'secondaryUrl' => DebtResource::getUrl('index', ['tab' => 'secondary']),
         ];
     }
 }
