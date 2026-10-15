@@ -22,6 +22,7 @@ class Sequencer
         'settlement' => 'K',
         'advance' => 'L',
         'advance_repayment' => 'LR',
+        'card_reset' => 'Z',
     ];
 
     public function next(string $docType, DateTimeInterface $at): string

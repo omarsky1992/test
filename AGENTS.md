@@ -84,8 +84,17 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Bulk messages (`WhatsappBroadcast` page, `App\WhatsApp\BroadcastService`, permission `whatsapp.broadcast`): only the chosen accounts, one outbox row per phone (kind `sub_broadcast`, `broadcast_id`, optional `media_path`). `Gateway::supportsImages()`: Meta yes, WAHA only with `WAHA_PLUS=true`; otherwise the outbox sends the text with a signed link (`whatsapp.broadcast.image`).
 - Payment methods: Qi Card and Mastercard are separate methods; the transaction number is optional (`requires_reference` false unless the admin turns it on) and is shown on the receipt and in the payments list.
 
+**Internal transfers, cards, periods, card stock, house locations**
+- Transfers between employees (`InternalTransfers::betweenEmployees`, custody → custody) and between cards (`betweenCards`, electronic → electronic) are `fund_transfers` with `kind` custody/card and an `idempotency_key`; they lock both boxes, refuse an uncovered amount, are never income or expense, and are voided only by `Ledger::reverse()` (`TreasuryService::voidTransfer`).
+- «تصفير رصيد البطاقة» (`TreasuryService::resetBalance`, table `money_account_resets`) posts one adjustment against the system account `CARD_ADJUSTMENTS`; old movements stay, the reset is reversible.
+- Accounting periods (`AccountingPeriods`, table `period_closings`): purchases = expenses + company top-ups, sales = activations + device sales (as the dashboard). Closing stores a snapshot per scope (purchases/sales, separately or together); it deletes nothing and moves no balance. The open period starts after the last closing or at `periods.{scope}_start`.
+- Card stock (`VoucherStock`, table `voucher_cards`): codes normalized and unique, available → activated once (conditional update), or void. Inventory only.
+- House location (`LocationService`, table `subscriber_locations`, page `SubscriberLocationPage`): coordinates from the phone's GPS or a point on the map, never guessed; replacing needs confirmation and `locations.update`; the photo is optional, on the private disk, served only by `subscribers.house-photo` to `photos.view`. Leaflet is self-hosted in `public/vendor/leaflet` (BSD-2), tiles from OpenStreetMap; the map component is `filament.interface.location-map`.
+
 **Permissions and safety**
-- Every screen and action checks a permission (`App\Support\Permissions`); admins pass everything via `Gate::before`.
+- Every screen and action checks a permission (`App\Support\Permissions`, grouped in `Permissions::GROUPS`); admins pass everything via `Gate::before`.
+- Per employee: role permissions + direct grants − `users.denied_permissions` (`User::hasPermissionTo`), set from «إدارة صلاحيات الموظفين» (`PermissionService::apply`). Nobody edits their own permissions, only the admin assigns roles, and a non-admin manager cannot grant what they do not hold. Services re-check permissions (AuthorizationException), not only the buttons.
+- `deploy/update.sh` dumps the database to `deploy/backups/pre-update/` before pulling (keeps the last 10) and stops if the dump fails.
 - System reset (Settings) is admin-only, needs the admin password and typing «تصفير»; it keeps users, settings, plans, payment methods and the audit log.
 
 ## Code map

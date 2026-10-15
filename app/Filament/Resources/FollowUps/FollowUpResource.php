@@ -42,6 +42,11 @@ class FollowUpResource extends Resource
 
     protected static ?string $pluralModelLabel = 'المتابعة والاتصال';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('follow_ups.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

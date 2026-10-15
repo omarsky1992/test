@@ -40,6 +40,11 @@ class ActivationResource extends Resource
 
     protected static ?string $pluralModelLabel = 'التفعيلات';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('activations.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

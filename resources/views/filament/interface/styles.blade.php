@@ -34,4 +34,5 @@
     .fi-ta-row.subs-has-note > td, .fi-ta-row.subs-has-note:hover > td { background: var(--note-bg) !important; }
     .fi-ta-row.subs-has-note > td:first-child { box-shadow: inset -4px 0 0 var(--note-bd); }
     .subs-has-note.subs-card, .subs-note-box { background: var(--note-bg) !important; border-color: var(--note-bd) !important; border-width: 2px !important; }
+    [data-test=save]:disabled, [data-test=gps]:disabled { opacity: .5; cursor: not-allowed; }
 </style>

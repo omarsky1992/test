@@ -22,6 +22,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\GlobalSearch\GlobalSearchResult;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Infolists\Components\ViewEntry;
 use Filament\Resources\Resource;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Grid;
@@ -130,6 +131,9 @@ class SubscriberResource extends Resource
                     TextEntry::make('address')->label('العنوان')->placeholder('—')->columnSpan(2),
                     TextEntry::make('notes')->label('ملاحظات')->placeholder('—')->columnSpan(2),
                 ]),
+            Section::make('موقع المشترك')->compact()
+                ->visible(fn () => collect(['locations.view', 'locations.create', 'photos.view'])->contains(fn ($p) => auth()->user()->can($p)))
+                ->schema([ViewEntry::make('location')->hiddenLabel()->view('filament.locations.summary')]),
             Grid::make(3)->schema([
                 TextEntry::make('secondary_total')->label('دين ثانوي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Secondary)))->color('warning')->weight('bold'),
                 TextEntry::make('primary_total')->label('دين أولي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Primary)))->color('info')->weight('bold'),

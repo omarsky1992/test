@@ -1,11 +1,13 @@
 <?php
 
+use App\Exports\SubscriberExporter;
 use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BrowserSyncController;
 use App\Http\Controllers\InterfaceController;
 use App\Http\Controllers\ReceiptController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use App\Imports\SubscriberImporter;
+use App\Models\Subscriber;
 use App\Models\WhatsappBroadcast;
 use App\Services\Audit;
 use App\Services\BackupService;
@@ -14,9 +16,29 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 Route::middleware('auth')->group(function () {
     Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
+    // The house photo, only to who may see it; never a public file.
+    Route::get('/subscribers/{subscriber}/house-photo', function (Subscriber $subscriber) {
+        abort_unless(auth()->user()->can('photos.view'), 403);
+        $location = $subscriber->location;
+        $disk = Storage::disk('local');
+        abort_unless($location?->photo_path && $disk->exists($location->photo_path), 404);
+
+        return response($disk->get($location->photo_path), 200, [
+            'Content-Type' => $location->photo_mime ?? 'image/jpeg', 'Cache-Control' => 'private, no-store', 'X-Content-Type-Options' => 'nosniff',
+        ]);
+    })->name('subscribers.house-photo');
+    Route::get('/exports/subscribers.xlsx', function (SubscriberExporter $exporter) {
+        abort_unless(auth()->user()->can('subscribers.export'), 403);
+        $path = storage_path('app/private/export-'.Str::random(12).'.xlsx');
+        $rows = $exporter->write($path);
+        app(Audit::class)->log('subscribers.exported', 'subscribers', null, ['rows' => $rows]);
+
+        return response()->download($path, 'subscribers-'.now()->format('Y-m-d').'.xlsx')->deleteFileAfterSend();
+    })->name('subscribers.export');
     Route::get('/import/subscribers/template', function (SubscriberImporter $importer) {
         abort_unless(auth()->user()->can('subscribers.create'), 403);
         $path = tempnam(sys_get_temp_dir(), 'tpl').'.xlsx';

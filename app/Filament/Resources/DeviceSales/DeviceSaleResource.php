@@ -44,6 +44,11 @@ class DeviceSaleResource extends Resource
 
     protected static ?string $pluralModelLabel = 'مبيعات الأجهزة';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('sales.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

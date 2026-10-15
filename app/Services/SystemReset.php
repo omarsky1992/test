@@ -22,14 +22,12 @@ class SystemReset
         'activation_dues', 'custody_handover_requests', 'ledger_entries', 'payment_allocations', 'payment_lines', 'debt_transfers', 'account_renewals', 'follow_ups',
         'settlement_distributions', 'employee_advance_repayments', 'device_notes', 'devices', 'payments', 'debts',
         'activation_periods', 'activations', 'device_sales', 'expenses', 'fund_transfers', 'company_settlements',
-        'employee_advances', 'financial_transactions', 'sync_runs', 'import_runs', 'whatsapp_messages', 'whatsapp_outbox', 'document_sequences',
+        'employee_advances', 'money_account_resets', 'period_closings', 'voucher_cards', 'financial_transactions', 'sync_runs', 'import_runs', 'whatsapp_messages', 'whatsapp_outbox', 'document_sequences',
     ];
 
-    public const SUBSCRIBER_TABLES = ['accounts', 'subscribers'];
+    public const SUBSCRIBER_TABLES = ['subscriber_notes', 'blacklist_entries', 'subscriber_locations', 'accounts', 'subscribers'];
 
-    public function __construct(private Audit $audit)
-    {
-    }
+    public function __construct(private Audit $audit) {}
 
     /**
      * @return array<string, int> rows removed per table

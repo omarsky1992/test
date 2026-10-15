@@ -18,17 +18,30 @@ use InvalidArgumentException;
 class Ledger
 {
     public const AR_SECONDARY = 'AR_SECONDARY';
+
     public const AR_PRIMARY = 'AR_PRIMARY';
+
     public const CUSTOMER_CREDIT = 'CUSTOMER_CREDIT';
+
     public const REV_COMMISSION = 'REV_COMMISSION';
+
     public const REV_DEVICE_SALES = 'REV_DEVICE_SALES';
+
     public const REV_OTHER = 'REV_OTHER';
+
     public const EXP_GENERAL = 'EXP_GENERAL';
+
     public const EXP_PROMO_DISCOUNT = 'EXP_PROMO_DISCOUNT';
+
     public const DISTRIBUTIONS = 'DISTRIBUTIONS';
+
     public const OPENING_EQUITY = 'OPENING_EQUITY';
+
     public const RENEWALS_CLEARING = 'RENEWALS_CLEARING';
+
     public const EMPLOYEE_ADVANCES = 'EMPLOYEE_ADVANCES';
+
+    public const CARD_ADJUSTMENTS = 'CARD_ADJUSTMENTS';
 
     /** @var array<string, int> */
     private array $idsByCode = [];

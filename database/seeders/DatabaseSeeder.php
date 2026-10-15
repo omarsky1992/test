@@ -46,6 +46,7 @@ class DatabaseSeeder extends Seeder
             [Ledger::OPENING_EQUITY, 'الرصيد الابتدائي', 'equity'],
             [Ledger::RENEWALS_CLEARING, 'تجديدات مكتشفة من موقع الشركة', 'liability'],
             [Ledger::EMPLOYEE_ADVANCES, 'سلف الموظفين', 'asset'],
+            [Ledger::CARD_ADJUSTMENTS, 'تسويات تصفير البطاقات', 'equity'],
         ] as [$code, $name, $type]) {
             LedgerAccount::firstOrCreate(['code' => $code], ['name_ar' => $name, 'type' => $type, 'is_system' => true]);
         }

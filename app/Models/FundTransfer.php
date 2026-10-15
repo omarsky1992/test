@@ -29,6 +29,16 @@ class FundTransfer extends Model
         return $this->belongsTo(MoneyAccount::class, 'to_money_account_id');
     }
 
+    public function txn(): BelongsTo
+    {
+        return $this->belongsTo(FinancialTransaction::class, 'txn_id');
+    }
+
+    public function voider(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'voided_by');
+    }
+
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');

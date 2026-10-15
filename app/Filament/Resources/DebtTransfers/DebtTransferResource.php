@@ -29,6 +29,11 @@ class DebtTransferResource extends Resource
 
     protected static ?string $pluralModelLabel = 'المناقلات';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('transfers.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

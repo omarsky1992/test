@@ -38,6 +38,11 @@ class ExpenseResource extends Resource
 
     protected static ?string $pluralModelLabel = 'المشتريات والمصروفات';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('expenses.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

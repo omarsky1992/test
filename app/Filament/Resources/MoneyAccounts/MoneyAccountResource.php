@@ -4,13 +4,14 @@ namespace App\Filament\Resources\MoneyAccounts;
 
 use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
+use App\Filament\Pages\MoneyAccountStatement;
 use App\Filament\Resources\MoneyAccounts\Pages\ListMoneyAccounts;
 use App\Models\MoneyAccount;
 use App\Services\TreasuryService;
 use App\Support\Money;
+use App\Support\Options;
 use BackedEnum;
 use Closure;
-use App\Support\Options;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -39,6 +40,11 @@ class MoneyAccountResource extends Resource
 
     protected static ?string $pluralModelLabel = 'الصناديق ورصيد الشركة';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('money_accounts.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;
@@ -59,8 +65,8 @@ class MoneyAccountResource extends Resource
             ])
             ->recordActions([
                 Action::make('statement')->label('كشف الصندوق')->icon(Heroicon::OutlinedDocumentText)->color('gray')
-                    ->visible(fn () => \App\Filament\Pages\MoneyAccountStatement::canAccess())
-                    ->url(fn (MoneyAccount $record) => \App\Filament\Pages\MoneyAccountStatement::getUrl(['box' => $record->id])),
+                    ->visible(fn () => MoneyAccountStatement::canAccess())
+                    ->url(fn (MoneyAccount $record) => MoneyAccountStatement::getUrl(['box' => $record->id])),
                 Action::make('opening')->label('رصيد ابتدائي')->icon(Heroicon::OutlinedFlag)->color('gray')
                     ->authorize('cash.opening_balance')
                     ->schema([TextInput::make('amount')->label('المبلغ')->integer()->minValue(1)->suffix('د.ع')->required()])

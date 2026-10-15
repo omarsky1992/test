@@ -66,7 +66,7 @@ class ImportSubscribers extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->user()->can('subscribers.create');
+        return auth()->user()->can('import.run');
     }
 
     public function mount(): void

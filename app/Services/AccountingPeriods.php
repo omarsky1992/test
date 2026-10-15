@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\DocumentStatus;
+use App\Enums\MoneyAccountKind;
+use App\Exceptions\BusinessRuleException;
+use App\Models\Activation;
+use App\Models\DeviceSale;
+use App\Models\Expense;
+use App\Models\FundTransfer;
+use App\Models\MoneyAccount;
+use App\Models\PeriodClosing;
+use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+
+/**
+ * Purchases and sales by accounting period (any start and end, e.g. the 15th to the 14th). The same
+ * definitions as the dashboard: purchases = expenses + company balance top-ups; sales = activations
+ * + device sales. Closing a period only records its totals: nothing is deleted and no balance moves.
+ */
+class AccountingPeriods
+{
+    public function __construct(private Settings $settings, private Audit $audit) {}
+
+    /** Where the open period of purchases or sales starts. */
+    public function currentStart(string $scope): CarbonImmutable
+    {
+        $last = PeriodClosing::where('scope', $scope)->max('ends_on');
+        $chosen = $this->settings->get("periods.{$scope}_start");
+        $candidates = array_filter([
+            $last ? CarbonImmutable::parse($last)->addDay() : null,
+            filled($chosen) ? CarbonImmutable::parse($chosen) : null,
+        ]);
+        if ($candidates !== []) {
+            return collect($candidates)->max()->startOfDay();
+        }
+        $day = max(1, min(28, (int) $this->settings->get('periods.start_day')));
+        $today = CarbonImmutable::today();
+
+        return $today->day >= $day ? $today->setDay($day) : $today->subMonthNoOverflow()->setDay($day);
+    }
+
+    /**
+     * @return array{purchases: int, sales: int, difference: int, purchases_count: int, sales_count: int, breakdown: array<string, array{total: int, count: int}>}
+     */
+    public function totals(CarbonImmutable $from, CarbonImmutable $to): array
+    {
+        $range = [$from->startOfDay(), $to->endOfDay()];
+        $company = MoneyAccount::where('kind', MoneyAccountKind::Company)->pluck('id');
+        $part = fn ($query, string $column, string $amount) => ['total' => (int) (clone $query)->sum($amount), 'count' => (clone $query)->count()];
+        $breakdown = [
+            'expenses' => $part(Expense::where('status', DocumentStatus::Posted)->whereBetween('spent_at', $range), 'spent_at', 'amount'),
+            'company_topups' => $part(FundTransfer::where('status', DocumentStatus::Posted)->whereIn('to_money_account_id', $company)->whereBetween('transferred_at', $range), 'transferred_at', 'amount'),
+            'activations' => $part(Activation::where('status', DocumentStatus::Posted)->whereBetween('created_at', $range), 'created_at', 'final_price'),
+            'device_sales' => $part(DeviceSale::where('status', DocumentStatus::Posted)->whereBetween('sold_at', $range), 'sold_at', 'total_amount'),
+        ];
+        $purchases = $breakdown['expenses']['total'] + $breakdown['company_topups']['total'];
+        $sales = $breakdown['activations']['total'] + $breakdown['device_sales']['total'];
+
+        return [
+            'purchases' => $purchases,
+            'sales' => $sales,
+            'difference' => $sales - $purchases,
+            'purchases_count' => $breakdown['expenses']['count'] + $breakdown['company_topups']['count'],
+            'sales_count' => $breakdown['activations']['count'] + $breakdown['device_sales']['count'],
+            'breakdown' => $breakdown,
+        ];
+    }
+
+    /**
+     * The operations of a period, newest first.
+     *
+     * @return array{purchases: Collection<int, array>, sales: Collection<int, array>}
+     */
+    public function operations(CarbonImmutable $from, CarbonImmutable $to, int $limit = 300): array
+    {
+        $range = [$from->startOfDay(), $to->endOfDay()];
+        $company = MoneyAccount::where('kind', MoneyAccountKind::Company)->pluck('id');
+        $purchases = Expense::with('category')->where('status', DocumentStatus::Posted)->whereBetween('spent_at', $range)->latest('spent_at')->limit($limit)->get()->toBase()
+            ->map(fn (Expense $e) => ['at' => $e->spent_at, 'number' => $e->number, 'kind' => $e->category?->name_ar ?? 'مصروف', 'details' => $e->description, 'amount' => (int) $e->amount])
+            ->merge(FundTransfer::with('from')->where('status', DocumentStatus::Posted)->whereIn('to_money_account_id', $company)->whereBetween('transferred_at', $range)->latest('transferred_at')->limit($limit)->get()->toBase()
+                ->map(fn (FundTransfer $t) => ['at' => $t->transferred_at, 'number' => $t->number, 'kind' => 'شحن رصيد الشركة', 'details' => 'من '.$t->from?->name, 'amount' => (int) $t->amount]))
+            ->sortByDesc('at')->values();
+        $sales = Activation::with(['subscriber:id,full_name', 'plan:id,name_ar'])->where('status', DocumentStatus::Posted)->whereBetween('created_at', $range)->latest('created_at')->limit($limit)->get()->toBase()
+            ->map(fn (Activation $a) => ['at' => $a->created_at, 'number' => $a->number, 'kind' => 'تفعيل', 'details' => trim($a->subscriber?->full_name.' – '.$a->plan?->name_ar, ' –'), 'amount' => (int) $a->final_price])
+            ->merge(DeviceSale::where('status', DocumentStatus::Posted)->whereBetween('sold_at', $range)->latest('sold_at')->limit($limit)->get()->toBase()
+                ->map(fn (DeviceSale $s) => ['at' => $s->sold_at, 'number' => $s->number, 'kind' => 'بيع', 'details' => $s->description, 'amount' => (int) $s->total_amount]))
+            ->sortByDesc('at')->values();
+
+        return ['purchases' => $purchases, 'sales' => $sales];
+    }
+
+    /**
+     * Closes the open period of purchases, of sales, or both, up to $endsOn (inclusive).
+     *
+     * @param  array<int, string>  $scopes
+     * @return Collection<int, PeriodClosing>
+     */
+    public function close(array $scopes, CarbonImmutable $endsOn, ?string $notes = null): Collection
+    {
+        $this->authorize();
+        $scopes = array_values(array_intersect(['purchases', 'sales'], $scopes));
+        if ($scopes === []) {
+            throw new BusinessRuleException('اختر ما تريد إغلاقه.');
+        }
+        $endsOn = $endsOn->startOfDay();
+        if ($endsOn->greaterThan(CarbonImmutable::today())) {
+            throw new BusinessRuleException('لا يمكن إغلاق فترة تنتهي بعد اليوم.');
+        }
+
+        return DB::transaction(function () use ($scopes, $endsOn, $notes) {
+            $batch = (string) Str::uuid();
+            $closed = collect();
+            foreach ($scopes as $scope) {
+                $start = $this->currentStart($scope);
+                if ($endsOn->lessThan($start)) {
+                    throw new BusinessRuleException('نهاية الفترة قبل بدايتها ('.PeriodClosing::SCOPES[$scope].' تبدأ '.$start->format('Y/m/d').').');
+                }
+                $t = $this->totals($start, $endsOn);
+                $keys = $scope === 'purchases' ? ['expenses', 'company_topups'] : ['activations', 'device_sales'];
+                $closing = PeriodClosing::create([
+                    'scope' => $scope, 'starts_on' => $start, 'ends_on' => $endsOn,
+                    'total' => $t[$scope], 'operations' => $t["{$scope}_count"],
+                    'breakdown' => array_intersect_key($t['breakdown'], array_flip($keys)),
+                    'batch' => count($scopes) > 1 ? $batch : null, 'notes' => filled($notes) ? trim($notes) : null,
+                    'closed_by' => Auth::id(), 'closed_at' => now(),
+                ]);
+                $this->audit->log('period.closed', $closing, null, [
+                    'scope' => $scope, 'from' => $start->toDateString(), 'to' => $endsOn->toDateString(), 'total' => $closing->total, 'operations' => $closing->operations,
+                ], $closing->notes);
+                $closed->push($closing);
+            }
+
+            return $closed;
+        });
+    }
+
+    /** «فتح فترة جديدة»: the open period of purchases or sales starts on the chosen day (never inside a closed one). */
+    public function openNew(string $scope, CarbonImmutable $startsOn): void
+    {
+        $this->authorize();
+        if (! array_key_exists($scope, PeriodClosing::SCOPES)) {
+            throw new BusinessRuleException('اختر المشتريات أو المبيعات.');
+        }
+        $last = PeriodClosing::where('scope', $scope)->max('ends_on');
+        if ($last && $startsOn->startOfDay()->lessThanOrEqualTo(CarbonImmutable::parse($last))) {
+            throw new BusinessRuleException('الفترة الجديدة تبدأ بعد آخر فترة مغلقة ('.CarbonImmutable::parse($last)->format('Y/m/d').').');
+        }
+        $old = $this->currentStart($scope)->toDateString();
+        $this->settings->set("periods.{$scope}_start", $startsOn->toDateString());
+        $this->audit->log('period.opened', 'periods', ['scope' => $scope, 'starts_on' => $old], ['scope' => $scope, 'starts_on' => $startsOn->toDateString()]);
+    }
+
+    private function authorize(): void
+    {
+        if (! Auth::user()?->can('periods.close')) {
+            throw new AuthorizationException('ليست لديك صلاحية إغلاق الفترات.');
+        }
+    }
+}

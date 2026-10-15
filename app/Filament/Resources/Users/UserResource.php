@@ -2,15 +2,15 @@
 
 namespace App\Filament\Resources\Users;
 
+use App\Filament\Pages\EmployeePermissions;
 use App\Filament\Resources\Users\Pages\ManageUsers;
 use App\Models\Branch;
 use App\Models\User;
 use App\Services\Audit;
-use App\Support\Permissions;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -62,17 +62,11 @@ class UserResource extends Resource
                 Toggle::make('is_active')->label('فعّال')->default(true),
                 Toggle::make('collects_to_custody')->label('النقد الذي يستلمه يدخل في عهدته')->default(true)
                     ->helperText('يبقى المبلغ على الموظف حتى يسلّمه للصندوق. أطفئه للمدير الذي يستلم في القاصة مباشرة.'),
+                // Only the admin assigns roles: nobody else can make themselves (or anyone) an admin.
                 Select::make('roles')->label('الدور')->relationship('roles', 'name')->multiple()->preload()
+                    ->disabled(fn () => ! auth()->user()->isAdmin())->dehydrated(fn () => auth()->user()->isAdmin())
                     ->getOptionLabelFromRecordUsing(fn ($record) => ['admin' => 'مدير', 'employee' => 'موظف'][$record->name] ?? $record->name),
             ]),
-            Section::make('صلاحيات إضافية لهذا المستخدم')
-                ->description('تُضاف فوق صلاحيات الدور. مثال: منح موظف معيّن صلاحية حذف الدين.')
-                ->collapsed()
-                ->schema([
-                    CheckboxList::make('direct_permissions')->hiddenLabel()->columns(2)
-                        ->options(array_map(fn (array $p) => $p[0], Permissions::ALL))
-                        ->afterStateHydrated(fn (CheckboxList $component, ?User $record) => $component->state($record?->getDirectPermissions()->pluck('name')->all() ?? [])),
-                ]),
         ]);
     }
 
@@ -89,6 +83,9 @@ class UserResource extends Resource
                 IconColumn::make('is_active')->label('فعّال')->boolean(),
             ])
             ->recordActions([
+                Action::make('permissions')->label('الصلاحيات')->icon(Heroicon::OutlinedShieldCheck)->color('gray')
+                    ->visible(fn (User $record) => ! $record->isAdmin() && ! $record->is(auth()->user()))
+                    ->url(fn (User $record) => EmployeePermissions::getUrl(['user' => $record->id])),
                 EditAction::make()->using(fn (Model $record, array $data) => self::save($record, $data)),
             ]);
     }
@@ -100,20 +97,17 @@ class UserResource extends Resource
 
     private static function save(User $user, array $data): User
     {
-        $permissions = $data['direct_permissions'] ?? [];
-
-        return DB::transaction(function () use ($user, $data, $permissions) {
+        return DB::transaction(function () use ($user, $data) {
             if ($user->exists && $user->is(auth()->user()) && (! ($data['is_active'] ?? true))) {
                 throw ValidationException::withMessages(['is_active' => 'لا يمكنك تعطيل حسابك.']);
             }
             $isNew = ! $user->exists;
             $original = $user->getAttributes();
-            $user->fill(collect($data)->except(['roles', 'direct_permissions'])->all());
+            $user->fill(collect($data)->except(['roles'])->all());
             if (filled($data['password'] ?? null)) {
                 $user->password_changed_at = now();
             }
             $user->save();
-            $user->syncPermissions($permissions);
 
             if (! $isNew && ! $user->is_active) {
                 DB::table('sessions')->where('user_id', $user->id)->delete();
@@ -123,7 +117,7 @@ class UserResource extends Resource
             }
 
             app(Audit::class)->log($isNew ? 'user.created' : 'user.updated', $user, $isNew ? null : array_intersect_key($original, ['name' => 1, 'username' => 1, 'is_active' => 1]),
-                ['name' => $user->name, 'username' => $user->username, 'is_active' => $user->is_active, 'permissions' => $permissions]);
+                ['name' => $user->name, 'username' => $user->username, 'is_active' => $user->is_active]);
 
             return $user;
         });

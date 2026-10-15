@@ -63,6 +63,11 @@ class Subscriber extends Model
         return $this->hasOne(SubscriberNote::class)->ofMany(['created_at' => 'max', 'id' => 'max'], fn (Builder $q) => $q->where('status', 'active'));
     }
 
+    public function location(): HasOne
+    {
+        return $this->hasOne(SubscriberLocation::class);
+    }
+
     public function blacklistEntries(): HasMany
     {
         return $this->hasMany(BlacklistEntry::class);

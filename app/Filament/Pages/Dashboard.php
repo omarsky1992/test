@@ -19,14 +19,22 @@ class Dashboard extends BaseDashboard
     public function mount(): void
     {
         // Employees, and the admin who switched to the employee interface, land on their own home.
-        if (auth()->user()->usesEmployeeUi()) {
+        if (! self::opensForCurrentUser()) {
             $this->redirect(EmployeeHome::getUrl());
         }
     }
 
     public static function shouldRegisterNavigation(): bool
     {
-        return ! auth()->user()?->usesEmployeeUi();
+        return auth()->user() !== null && self::opensForCurrentUser();
+    }
+
+    /** The admin in the admin interface, or an employee the admin gave «لوحة التحكم». */
+    public static function opensForCurrentUser(): bool
+    {
+        $user = auth()->user();
+
+        return $user->isAdmin() ? ! $user->usesEmployeeUi() : $user->can('dashboard.view');
     }
 
     public function filtersForm(Schema $schema): Schema

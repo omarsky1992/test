@@ -43,6 +43,11 @@ class PaymentResource extends Resource
 
     protected static ?string $pluralModelLabel = 'سندات القبض';
 
+    public static function canViewAny(): bool
+    {
+        return auth()->user()->can('payments.view');
+    }
+
     public static function canCreate(): bool
     {
         return false;

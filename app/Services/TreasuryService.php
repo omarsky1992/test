@@ -2,27 +2,30 @@
 
 namespace App\Services;
 
+use App\Enums\DebtBucket;
+use App\Enums\DebtSource;
+use App\Enums\DebtStatus;
 use App\Enums\DistributionKind;
 use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
-use App\Enums\DebtBucket;
-use App\Enums\DebtSource;
-use App\Enums\DebtStatus;
 use App\Models\Account;
 use App\Models\Activation;
+use App\Models\CompanySettlement;
 use App\Models\Debt;
 use App\Models\DeviceSale;
 use App\Models\DeviceType;
-use App\Models\CompanySettlement;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\FinancialTransaction;
 use App\Models\FundTransfer;
 use App\Models\LedgerAccount;
+use App\Models\LedgerEntry;
 use App\Models\MoneyAccount;
+use App\Models\MoneyAccountReset;
 use App\Models\SettlementDistribution;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -32,9 +35,7 @@ use Illuminate\Support\Facades\DB;
  */
 class TreasuryService
 {
-    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit)
-    {
-    }
+    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit) {}
 
     public function createMoneyAccount(int $branchId, MoneyAccountKind $kind, string $name, ?string $holderName = null, ?int $userId = null): MoneyAccount
     {
@@ -77,16 +78,16 @@ class TreasuryService
      * A box's statement: every movement in and out, oldest first, with where it came from, who
      * recorded it and the balance after it. The opening balance is everything before $from.
      *
-     * @return array{opening: int, rows: \Illuminate\Support\Collection<int, array>, total_in: int, total_out: int, closing: int, current: int, truncated: bool}
+     * @return array{opening: int, rows: Collection<int, array>, total_in: int, total_out: int, closing: int, current: int, truncated: bool}
      */
     public function statement(MoneyAccount $moneyAccount, ?CarbonImmutable $from = null, ?CarbonImmutable $to = null, int $limit = 3000): array
     {
         $ledgerId = $moneyAccount->ledger_account_id;
         $opening = $from
-            ? (int) \App\Models\LedgerEntry::where('ledger_account_id', $ledgerId)->where('occurred_at', '<', $from->startOfDay())->sum(DB::raw('debit - credit'))
+            ? (int) LedgerEntry::where('ledger_account_id', $ledgerId)->where('occurred_at', '<', $from->startOfDay())->sum(DB::raw('debit - credit'))
             : 0;
 
-        $entries = \App\Models\LedgerEntry::query()
+        $entries = LedgerEntry::query()
             ->join('financial_transactions as t', 't.id', '=', 'ledger_entries.txn_id')
             ->leftJoin('users as u', 'u.id', '=', 't.created_by')
             ->leftJoin('subscribers as s', 's.id', '=', 'ledger_entries.subscriber_id')
@@ -138,6 +139,7 @@ class TreasuryService
         'advance_repayment' => 'تسديد سلفة',
         'activation_charge' => 'تفعيل',
         'reversal' => 'إلغاء عملية',
+        'card_reset' => 'تصفير رصيد بطاقة',
     ];
 
     public function openingBalance(MoneyAccount $moneyAccount, int $amount, ?string $notes = null): FinancialTransaction
@@ -158,8 +160,11 @@ class TreasuryService
     /**
      * Moves money between two boxes, e.g. topping up the company balance from the cash box.
      */
-    public function transfer(MoneyAccount $from, MoneyAccount $to, int $amount, ?string $reference = null, ?string $notes = null): FundTransfer
+    public function transfer(MoneyAccount $from, MoneyAccount $to, int $amount, ?string $reference = null, ?string $notes = null, ?string $idempotencyKey = null): FundTransfer
     {
+        if ($idempotencyKey !== null && ($existing = FundTransfer::where('idempotency_key', $idempotencyKey)->first())) {
+            return $existing;
+        }
         if ($from->is($to)) {
             throw new BusinessRuleException('اختر صندوقين مختلفين.');
         }
@@ -167,10 +172,18 @@ class TreasuryService
             throw new BusinessRuleException('المبلغ يجب أن يكون أكبر من صفر.');
         }
 
-        return DB::transaction(function () use ($from, $to, $amount, $reference, $notes) {
+        return DB::transaction(function () use ($from, $to, $amount, $reference, $notes, $idempotencyKey) {
             $now = CarbonImmutable::now();
+            // One transfer at a time per box, so two at once cannot both spend the same balance.
+            MoneyAccount::whereKey([$from->id, $to->id])->orderBy('id')->lockForUpdate()->get();
             $this->ensureCovers($from, $amount);
             $transfer = FundTransfer::create([
+                'kind' => match (true) {
+                    $from->kind === MoneyAccountKind::Custody && $to->kind === MoneyAccountKind::Custody => 'custody',
+                    $from->kind === MoneyAccountKind::Electronic && $to->kind === MoneyAccountKind::Electronic => 'card',
+                    default => 'box',
+                },
+                'idempotency_key' => $idempotencyKey,
                 'number' => $this->sequencer->next('fund_transfer', $now),
                 'from_money_account_id' => $from->id,
                 'to_money_account_id' => $to->id,
@@ -190,6 +203,100 @@ class TreasuryService
 
             return $transfer;
         });
+    }
+
+    /**
+     * Cancels a transfer by its exact reverse entry; the original stays in the history. The money
+     * goes back only if the receiving box still holds it.
+     */
+    public function voidTransfer(FundTransfer $transfer, string $reason): FundTransfer
+    {
+        return DB::transaction(function () use ($transfer, $reason) {
+            $transfer = FundTransfer::whereKey($transfer->id)->lockForUpdate()->firstOrFail();
+            if ($transfer->status !== DocumentStatus::Posted) {
+                throw new BusinessRuleException('العملية ملغاة مسبقاً.');
+            }
+            $this->ensureCovers($transfer->to, $transfer->amount);
+            $this->ledger->reverse($transfer->txn, CarbonImmutable::now(), "إلغاء التحويل {$transfer->number}: {$reason}");
+            $transfer->update(['status' => DocumentStatus::Voided, 'voided_at' => now(), 'voided_by' => Auth::id(), 'void_reason' => $reason]);
+            $this->audit->log('fund_transfer.voided', $transfer, ['status' => 'posted'], ['status' => 'voided'], $reason);
+
+            return $transfer;
+        });
+    }
+
+    /**
+     * «تصفير رصيد البطاقة»: one documented adjustment that brings the balance to zero (the card was
+     * emptied outside the system). Old movements are untouched; the adjustment can be reversed.
+     */
+    public function resetBalance(MoneyAccount $box, string $reason, ?string $idempotencyKey = null): MoneyAccountReset
+    {
+        if ($idempotencyKey !== null && ($existing = MoneyAccountReset::where('idempotency_key', $idempotencyKey)->first())) {
+            return $existing;
+        }
+        if (trim($reason) === '') {
+            throw new BusinessRuleException('اكتب سبب التصفير.');
+        }
+
+        return DB::transaction(function () use ($box, $reason, $idempotencyKey) {
+            $box = MoneyAccount::whereKey($box->id)->lockForUpdate()->firstOrFail();
+            $balance = $this->balance($box);
+            if ($balance === 0) {
+                throw new BusinessRuleException('رصيد البطاقة صفر أصلاً.');
+            }
+            $now = CarbonImmutable::now();
+            $reset = MoneyAccountReset::create([
+                'number' => $this->sequencer->next('card_reset', $now),
+                'money_account_id' => $box->id,
+                'amount' => $balance,
+                'reason' => trim($reason),
+                'idempotency_key' => $idempotencyKey,
+                'status' => DocumentStatus::Posted,
+                'created_by' => Auth::id(),
+            ]);
+            $abs = abs($balance);
+            $txn = $this->ledger->post('card_reset', $now, $balance > 0 ? [
+                ['account' => Ledger::CARD_ADJUSTMENTS, 'debit' => $abs],
+                ['account' => $box->ledger_account_id, 'credit' => $abs],
+            ] : [
+                ['account' => $box->ledger_account_id, 'debit' => $abs],
+                ['account' => Ledger::CARD_ADJUSTMENTS, 'credit' => $abs],
+            ], $reset, "تصفير {$box->name}: {$reason}", $box->branch_id);
+            $reset->update(['txn_id' => $txn->id]);
+            $this->audit->log('money_account.reset', $box, ['balance' => $balance], ['balance' => 0, 'reset' => $reset->number], $reason);
+
+            return $reset;
+        });
+    }
+
+    public function voidReset(MoneyAccountReset $reset, string $reason): MoneyAccountReset
+    {
+        return DB::transaction(function () use ($reset, $reason) {
+            $reset = MoneyAccountReset::whereKey($reset->id)->lockForUpdate()->firstOrFail();
+            if ($reset->status !== DocumentStatus::Posted) {
+                throw new BusinessRuleException('التصفير ملغى مسبقاً.');
+            }
+            $this->ledger->reverse($reset->txn, CarbonImmutable::now(), "إلغاء التصفير {$reset->number}: {$reason}");
+            $reset->update(['status' => DocumentStatus::Voided, 'voided_at' => now(), 'voided_by' => Auth::id(), 'void_reason' => $reason]);
+            $this->audit->log('money_account.reset_voided', $reset, ['status' => 'posted'], ['status' => 'voided', 'amount' => $reset->amount], $reason);
+
+            return $reset;
+        });
+    }
+
+    /**
+     * Money in and out of a box over a period (movements, not the balance), and its balance now.
+     *
+     * @return array{in: int, out: int, current: int}
+     */
+    public function movements(MoneyAccount $box, ?CarbonImmutable $from = null, ?CarbonImmutable $to = null): array
+    {
+        $row = LedgerEntry::where('ledger_account_id', $box->ledger_account_id)
+            ->when($from, fn ($q) => $q->where('occurred_at', '>=', $from->startOfDay()))
+            ->when($to, fn ($q) => $q->where('occurred_at', '<=', $to->endOfDay()))
+            ->selectRaw('coalesce(sum(debit), 0) as total_in, coalesce(sum(credit), 0) as total_out')->first();
+
+        return ['in' => (int) $row->total_in, 'out' => (int) $row->total_out, 'current' => $this->balance($box)];
     }
 
     /**

@@ -2,12 +2,14 @@
 
 namespace App\Filament\Pages;
 
+use App\Enums\MoneyAccountKind;
 use App\Models\MoneyAccount;
 use App\Services\TreasuryService;
 use BackedEnum;
 use Carbon\CarbonImmutable;
 use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Url;
 use UnitEnum;
 
@@ -40,18 +42,25 @@ class MoneyAccountStatement extends Page
 
     public static function canAccess(): bool
     {
-        return auth()->user()->can('money_accounts.manage');
+        return auth()->user()->can('money_accounts.manage') || auth()->user()->can('cards.view');
+    }
+
+    /** Who sees only the cards (cards.view without money_accounts.manage) is shown only the cards. */
+    private static function visibleBoxes(): Builder
+    {
+        return MoneyAccount::query()->when(! auth()->user()->can('money_accounts.manage'),
+            fn ($q) => $q->where('kind', MoneyAccountKind::Electronic));
     }
 
     public function mount(): void
     {
-        $this->box = $this->box ?: (string) (MoneyAccount::where('is_active', true)->orderByRaw("kind = 'cash' desc")->orderBy('id')->value('id') ?? '');
+        $this->box = $this->box ?: (string) (self::visibleBoxes()->where('is_active', true)->orderByRaw("kind = 'cash' desc")->orderBy('id')->value('id') ?? '');
         $this->from = $this->from ?: CarbonImmutable::today()->startOfMonth()->toDateString();
     }
 
     protected function getViewData(): array
     {
-        $boxes = MoneyAccount::orderBy('kind')->orderBy('name')->get();
+        $boxes = self::visibleBoxes()->orderBy('kind')->orderBy('name')->get();
         $box = $boxes->firstWhere('id', (int) $this->box) ?? $boxes->first();
         $from = filled($this->from) ? CarbonImmutable::parse($this->from) : null;
         $to = filled($this->to) ? CarbonImmutable::parse($this->to) : null;

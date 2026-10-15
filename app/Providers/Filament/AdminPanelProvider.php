@@ -3,7 +3,9 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Login;
+use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Support\InitialsAvatarProvider;
+use App\Http\Middleware\ApplyUserTheme;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -58,7 +60,7 @@ class AdminPanelProvider extends PanelProvider
                     ->group('المالية')
                     ->sort(2)
                     ->icon('heroicon-o-clock')
-                    ->url(fn (): string => \App\Filament\Resources\Debts\DebtResource::getUrl('index', ['tab' => 'secondary']))
+                    ->url(fn (): string => DebtResource::getUrl('index', ['tab' => 'secondary']))
                     ->isActiveWhen(fn (): bool => request()->routeIs('filament.admin.resources.debts.index') && request()->query('tab') === 'secondary')
                     ->visible(fn (): bool => auth()->user()?->can('debts.view') ?? false),
             ])
@@ -73,6 +75,7 @@ class AdminPanelProvider extends PanelProvider
                 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }</script>
             HTML))
             ->renderHook(PanelsRenderHook::HEAD_END, fn (): string => view('filament.interface.styles')->render())
+            ->renderHook(PanelsRenderHook::HEAD_END, fn (): string => view('filament.interface.location-map')->render())
             ->renderHook(PanelsRenderHook::USER_MENU_BEFORE, fn (): string => view('filament.interface.topbar')->render())
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.interface.bottom-nav')->render())
             ->middleware([
@@ -85,7 +88,7 @@ class AdminPanelProvider extends PanelProvider
                 SubstituteBindings::class,
                 DisableBladeIconComponents::class,
                 DispatchServingFilamentEvent::class,
-                \App\Http\Middleware\ApplyUserTheme::class,
+                ApplyUserTheme::class,
             ])
             ->authMiddleware([
                 Authenticate::class,
