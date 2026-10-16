@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Actions\Operations;
+use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Pages\Dashboard as BaseDashboard;
@@ -44,6 +45,7 @@ class Dashboard extends BaseDashboard
                 ->label('الفترة')
                 ->options([
                     'today' => 'اليوم',
+                    'open' => 'منذ آخر تصفير',
                     'week' => 'آخر 7 أيام',
                     'month' => 'هذا الشهر',
                     'last_month' => 'الشهر الماضي',
@@ -67,6 +69,9 @@ class Dashboard extends BaseDashboard
         return [
             Operations::pay('newPayment')->label('قبض'),
             Operations::activate('newActivation')->label('تفعيل جديد'),
+            ActionGroup::make(AccountingPeriodsPage::closeActions())
+                ->label('تصفير المبيعات والمشتريات')->icon('heroicon-o-arrow-path')->color('gray')->button()
+                ->visible(fn () => auth()->user()->can('periods.close')),
         ];
     }
 }

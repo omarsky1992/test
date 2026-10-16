@@ -42,9 +42,24 @@ class AccountingPeriodsPage extends Page
     #[Url]
     public string $to = '';
 
+    /** Exact moments (ISO) when showing an open or a closed period; empty for whole days from the date inputs. */
+    public string $sinceAt = '';
+
+    public string $untilAt = '';
+
     public static function canAccess(): bool
     {
         return auth()->user()->can('periods.view');
+    }
+
+    public function updatedFrom(): void
+    {
+        $this->sinceAt = $this->untilAt = '';
+    }
+
+    public function updatedTo(): void
+    {
+        $this->sinceAt = $this->untilAt = '';
     }
 
     public function mount(): void
@@ -59,25 +74,35 @@ class AccountingPeriodsPage extends Page
         $closing = PeriodClosing::findOrFail($id);
         $this->from = $closing->starts_on->toDateString();
         $this->to = $closing->ends_on->toDateString();
+        $this->sinceAt = $closing->starts_at->toIso8601String();
+        $this->untilAt = $closing->ends_at->toIso8601String();
     }
 
     public function showCurrent(string $scope): void
     {
-        $this->from = app(AccountingPeriods::class)->currentStart($scope)->toDateString();
+        $start = app(AccountingPeriods::class)->currentStart($scope);
+        $this->from = $start->setTimezone(config('app.timezone'))->toDateString();
         $this->to = CarbonImmutable::today()->toDateString();
+        $this->sinceAt = $start->toIso8601String();
+        $this->untilAt = '';
     }
 
-    protected function getHeaderActions(): array
+    /**
+     * «تصفير» purchases, sales or both = closing their open period: the totals are kept as a closed
+     * period, nothing is deleted and no balance moves. Also on the dashboard.
+     */
+    public static function closeAction(string $name, string $label, array $scopes, string $color): Action
     {
-        $close = fn (string $name, string $label, array $scopes, string $color) => Action::make($name)->label($label)->color($color)
+        return Action::make($name)->label($label)->color($color)
             ->icon(Heroicon::OutlinedLockClosed)
             ->visible(fn () => auth()->user()->can('periods.close'))
             ->fillForm(['ends_on' => CarbonImmutable::today()->toDateString()])
             ->modalHeading($label)
             ->schema([
-                Text::make(fn () => collect($scopes)->map(fn ($s) => PeriodClosing::SCOPES[$s].' تبدأ من '.app(AccountingPeriods::class)->currentStart($s)->format('Y/m/d'))->implode(' · ')
-                    .'. الإغلاق يحفظ المجاميع النهائية ولا يحذف أي عملية ولا يغيّر أرصدة الموظفين أو البطاقات.'),
-                DatePicker::make('ends_on')->label('نهاية الفترة (تشمل هذا اليوم)')->required()->maxDate(now()),
+                Text::make(fn () => collect($scopes)->map(fn ($s) => PeriodClosing::SCOPES[$s].' منذ '.app(AccountingPeriods::class)->currentStart($s)->setTimezone(config('app.timezone'))->format('Y/m/d H:i').': '
+                    .number_format(app(AccountingPeriods::class)->totals(app(AccountingPeriods::class)->currentStart($s), CarbonImmutable::now(), exact: true)[$s]).' د.ع')->implode(' · ')
+                    .'. التصفير يحفظ هذه المجاميع في «الفترات المغلقة» ويبدأ العدّ من الصفر الآن. لا يحذف أي عملية ولا يغيّر أي رصيد.'),
+                DatePicker::make('ends_on')->label('حتى (اليوم = الآن)')->required()->maxDate(now()),
                 Textarea::make('notes')->label('ملاحظات')->rows(2),
             ])
             ->requiresConfirmation()
@@ -90,13 +115,24 @@ class AccountingPeriodsPage extends Page
 
                     return;
                 }
-                Notification::make()->success()->title('أُغلقت الفترة')->body($closed->map(fn ($c) => PeriodClosing::SCOPES[$c->scope].': '.number_format($c->total))->implode(' · ').' — بدأت فترة جديدة من اليوم التالي.')->send();
+                Notification::make()->success()->title('تم التصفير')->body($closed->map(fn ($c) => PeriodClosing::SCOPES[$c->scope].': '.number_format($c->total))->implode(' · ').' — بدأت فترة جديدة من اليوم التالي.')->send();
             });
+    }
 
+    /** @return array<int, Action> */
+    public static function closeActions(): array
+    {
         return [
-            $close('closePurchases', 'إغلاق فترة المشتريات', ['purchases'], 'warning'),
-            $close('closeSales', 'إغلاق فترة المبيعات', ['sales'], 'info'),
-            $close('closeBoth', 'إغلاق المشتريات والمبيعات معاً', ['purchases', 'sales'], 'primary'),
+            self::closeAction('closePurchases', 'تصفير المشتريات', ['purchases'], 'warning'),
+            self::closeAction('closeSales', 'تصفير المبيعات', ['sales'], 'info'),
+            self::closeAction('closeBoth', 'تصفير المبيعات والمشتريات معاً', ['purchases', 'sales'], 'primary'),
+        ];
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            ...self::closeActions(),
             Action::make('openNew')->label('فتح فترة جديدة')->icon(Heroicon::OutlinedCalendar)->color('gray')
                 ->visible(fn () => auth()->user()->can('periods.close'))
                 ->modalDescription('تبدأ الفترة المفتوحة من اليوم الذي تختاره (مثلاً يوم 15). لا تغيّر أي عملية أو رصيد.')
@@ -125,22 +161,29 @@ class AccountingPeriodsPage extends Page
     protected function getViewData(): array
     {
         $periods = app(AccountingPeriods::class);
-        $from = filled($this->from) ? CarbonImmutable::parse($this->from) : CarbonImmutable::today();
-        $to = filled($this->to) ? CarbonImmutable::parse($this->to) : CarbonImmutable::today();
-        if ($to->lessThan($from)) {
-            [$from, $to] = [$to, $from];
+        $exact = filled($this->sinceAt);
+        if ($exact) {
+            $from = CarbonImmutable::parse($this->sinceAt);
+            $to = filled($this->untilAt) ? CarbonImmutable::parse($this->untilAt) : CarbonImmutable::now();
+        } else {
+            $from = filled($this->from) ? CarbonImmutable::parse($this->from) : CarbonImmutable::today();
+            $to = filled($this->to) ? CarbonImmutable::parse($this->to) : CarbonImmutable::today();
+            if ($to->lessThan($from)) {
+                [$from, $to] = [$to, $from];
+            }
         }
 
         return [
             'rangeFrom' => $from,
             'rangeTo' => $to,
-            'totals' => $periods->totals($from, $to),
-            'operations' => $periods->operations($from, $to),
+            'exact' => $exact,
+            'totals' => $periods->totals($from, $to, $exact),
+            'operations' => $periods->operations($from, $to, exact: $exact),
             'current' => [
                 'purchases' => $periods->currentStart('purchases'),
                 'sales' => $periods->currentStart('sales'),
             ],
-            'closings' => PeriodClosing::with('closer')->latest('ends_on')->latest('id')->limit(48)->get(),
+            'closings' => PeriodClosing::with('closer')->latest('ends_at')->latest('id')->limit(48)->get(),
         ];
     }
 }

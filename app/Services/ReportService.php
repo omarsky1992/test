@@ -10,10 +10,11 @@ use App\Models\Activation;
 use App\Models\AuditLog;
 use App\Models\CompanySettlement;
 use App\Models\Debt;
-use App\Models\DeviceSale;
-use App\Models\FundTransfer;
 use App\Models\DebtTransfer;
+use App\Models\DeviceSale;
+use App\Models\EmployeeAdvance;
 use App\Models\Expense;
+use App\Models\FundTransfer;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
 use App\Models\PaymentLine;
@@ -26,9 +27,7 @@ use Illuminate\Support\Facades\DB;
  */
 class ReportService
 {
-    public function __construct(private Ledger $ledger, private TreasuryService $treasury)
-    {
-    }
+    public function __construct(private Ledger $ledger, private TreasuryService $treasury) {}
 
     public function balances(): array
     {
@@ -47,7 +46,7 @@ class ReportService
             'custody_holders' => MoneyAccount::where('kind', MoneyAccountKind::Custody)->get()->filter(fn ($m) => $this->treasury->balance($m) !== 0)->count(),
             // Owed by employees: shown beside the balance, like the debts, not inside it.
             'advances' => $this->ledger->balance(Ledger::EMPLOYEE_ADVANCES),
-            'advances_count' => \App\Models\EmployeeAdvance::where('balance', '>', 0)->count(),
+            'advances_count' => EmployeeAdvance::where('balance', '>', 0)->count(),
         ];
     }
 
@@ -125,6 +124,8 @@ class ReportService
 
         return match ($period) {
             'week' => [$today->subDays(6), $today, 'آخر 7 أيام'],
+            'open' => [collect([app(AccountingPeriods::class)->currentStart('purchases'), app(AccountingPeriods::class)->currentStart('sales')])->min()
+                ->setTimezone(config('app.timezone'))->startOfDay(), $today, 'منذ آخر تصفير'],
             'month' => [$today->startOfMonth(), $today, 'هذا الشهر'],
             'last_month' => [$today->subMonthNoOverflow()->startOfMonth(), $today->subMonthNoOverflow()->endOfMonth()->startOfDay(), 'الشهر الماضي'],
             'custom' => [

@@ -16,7 +16,8 @@ class PeriodClosing extends Model
 
     protected function casts(): array
     {
-        return ['starts_on' => 'immutable_date', 'ends_on' => 'immutable_date', 'closed_at' => 'immutable_datetime', 'breakdown' => 'array'];
+        return ['starts_on' => 'immutable_date', 'ends_on' => 'immutable_date', 'closed_at' => 'immutable_datetime', 'breakdown' => 'array',
+            'starts_at' => 'immutable_datetime', 'ends_at' => 'immutable_datetime'];
     }
 
     public function closer(): BelongsTo

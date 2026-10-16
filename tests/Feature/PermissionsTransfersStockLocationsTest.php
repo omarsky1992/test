@@ -8,6 +8,7 @@ use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\AccountingPeriodsPage;
+use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\EmployeePermissions;
 use App\Filament\Pages\SubscriberLocationPage;
 use App\Filament\Resources\CardAccounts\CardAccountResource;
@@ -20,6 +21,7 @@ use App\Filament\Resources\EmployeeTransfers\Pages\ListEmployeeTransfers;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Filament\Resources\VoucherCards\Pages\ListVoucherCards;
 use App\Filament\Resources\VoucherCards\VoucherCardResource;
+use App\Filament\Widgets\PeriodStats;
 use App\Models\AuditLog;
 use App\Models\Debt;
 use App\Models\DeviceType;
@@ -223,25 +225,47 @@ class PermissionsTransfersStockLocationsTest extends TestCase
         $t = $periods->totals(CarbonImmutable::parse('2026-09-15'), CarbonImmutable::parse('2026-10-14'));
         $this->assertSame([50000, 60000, 10000], [$t['purchases'], $t['sales'], $t['difference']]);
 
+        $this->travelTo(now()->addMinute()); // the clock is frozen in tests; a reset comes after what it counts
         $periods->close(['purchases'], CarbonImmutable::today());
         $closing = PeriodClosing::sole();
         $this->assertSame(['purchases', 50000, 1, '2026-09-15', '2026-09-21'], [$closing->scope, $closing->total, $closing->operations, $closing->starts_on->toDateString(), $closing->ends_on->toDateString()]);
-        $this->assertSame('2026-09-22', $periods->currentStart('purchases')->toDateString());
+        $this->assertTrue($periods->currentStart('purchases')->equalTo(now()), 'a reset ends the period now');
         $this->assertSame('2026-09-15', $periods->currentStart('sales')->toDateString(), 'sales stay open');
+
         $this->assertSame($balances, $this->totalBalance(), 'closing changes no balance');
         $this->assertSame(1, Expense::count(), 'nothing is deleted');
+
+        // Later the same day: the new purchases period has it, the closed one does not lose or double it.
+        $this->travelTo(now()->addHours(2));
+        $treasury->recordExpense(ExpenseCategory::first(), 'بنزين', 7000, $this->cash());
+        $this->travelTo(now()->addMinute());
+        $open = $periods->totals($periods->currentStart('purchases'), CarbonImmutable::now(), exact: true);
+        $this->assertSame(7000, $open['purchases']);
+        $this->assertSame(50000, $closing->fresh()->total);
 
         $this->travelTo(now()->addDays(3));
         $periods->close(['purchases', 'sales'], CarbonImmutable::today());
         $this->assertSame(3, PeriodClosing::count());
         $this->assertSame(60000, PeriodClosing::where('scope', 'sales')->value('total'));
+        $this->assertSame(7000, PeriodClosing::where('scope', 'purchases')->latest('id')->value('total'));
         $this->refused(fn () => $periods->close(['sales'], CarbonImmutable::today()->subDays(5)));
-        $periods->openNew('sales', CarbonImmutable::parse('2026-10-15'));
-        $this->assertSame('2026-10-15', $periods->currentStart('sales')->toDateString());
 
         Livewire::test(AccountingPeriodsPage::class)->assertSee('الفرق بين المبيعات والمشتريات')
             ->call('showClosing', $closing->id)->assertSee('50,000');
         $this->assertSame(3, AuditLog::where('action', 'period.closed')->count());
+
+        // «تصفير» from the dashboard, and the dashboard counting since the last one.
+        $this->travelTo(now()->addHour());
+        $treasury->recordDeviceSale(DeviceType::first(), 'مقوي', 15000, 1, null, $this->cash());
+        $this->travelTo(now()->addMinute());
+        Livewire::test(PeriodStats::class, ['pageFilters' => ['period' => 'open']])->assertSee('15,000');
+        Livewire::test(Dashboard::class)->assertActionVisible('closeSales')
+            ->callAction('closeSales', data: ['ends_on' => CarbonImmutable::today()->toDateString()]);
+        $this->assertSame(15000, PeriodClosing::where('scope', 'sales')->latest('id')->value('total'));
+        Livewire::test(PeriodStats::class, ['pageFilters' => ['period' => 'open']])->assertDontSee('15,000');
+
+        $periods->openNew('sales', CarbonImmutable::parse('2026-10-15'));
+        $this->assertSame('2026-10-15', $periods->currentStart('sales')->toDateString());
 
         $this->actingAs($this->employee());
         $this->refused(fn () => app(AccountingPeriods::class)->close(['sales'], CarbonImmutable::today()), AuthorizationException::class);
