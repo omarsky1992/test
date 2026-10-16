@@ -14,7 +14,7 @@ class VoucherCard extends Model
 
     public const TYPES = ['internet' => 'كارت إنترنت', 'sports' => 'كارت قنوات رياضية'];
 
-    public const STATUSES = ['available' => 'متوفر', 'activated' => 'تم التفعيل', 'void' => 'ملغى / تالف'];
+    public const STATUSES = ['available' => 'متوفر', 'activated' => 'مصروف (مستخدم)', 'void' => 'ملغى / تالف'];
 
     protected function casts(): array
     {

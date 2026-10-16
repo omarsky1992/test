@@ -27,7 +27,7 @@ class VoucherStock
      * skipped and reported, never duplicated.
      *
      * @param  array<int, string>  $codes
-     * @return array{added: int, duplicates: array<int, string>}
+     * @return array{added: int, duplicates: array<int, string>, rejected: array<int, string>}
      */
     public function add(string $type, int $denomination, array $codes, ?string $notes = null): array
     {
@@ -42,11 +42,9 @@ class VoucherStock
         if ($codes === []) {
             throw new BusinessRuleException('اكتب رقم كارت واحد على الأقل.');
         }
-        foreach ($codes as $code) {
-            if (mb_strlen($code) > 100 || mb_strlen($code) < 4) {
-                throw new BusinessRuleException("رقم الكارت «{$code}» غير صالح.");
-            }
-        }
+        // Codes too short or too long are rejected one by one; the rest are still added.
+        $rejected = array_values(array_filter($codes, fn ($c) => mb_strlen($c) > 100 || mb_strlen($c) < 4));
+        $codes = array_values(array_diff($codes, $rejected));
         $unique = array_values(array_unique($codes));
         $existing = VoucherCard::whereIn('code', $unique)->pluck('code')->all();
         $duplicates = array_values(array_unique(array_merge($existing, array_diff_assoc($codes, array_unique($codes)))));
@@ -68,7 +66,7 @@ class VoucherStock
             }
         });
 
-        return ['added' => count($new), 'duplicates' => $duplicates];
+        return ['added' => count($new), 'duplicates' => $duplicates, 'rejected' => $rejected];
     }
 
     /** Available → activated, once: a second activation (another tab, a double click) is refused. */
@@ -87,6 +85,41 @@ class VoucherStock
 
             return $card;
         });
+    }
+
+    /**
+     * «إنشاء»: takes ONE available card of exactly this type and denomination and marks it used, in one
+     * transaction. Concurrent clicks never get the same card (row lock, SKIP LOCKED); the same click
+     * ($key) repeated returns the card it already took. Never falls back to another category.
+     */
+    public function dispense(string $type, int $denomination, ?string $key = null): VoucherCard
+    {
+        $this->authorize('stock.dispense');
+        if ($key !== null && ($taken = VoucherCard::where('dispense_key', $key)->first())) {
+            return $taken;
+        }
+
+        return DB::transaction(function () use ($type, $denomination, $key) {
+            $card = VoucherCard::where('type', $type)->where('denomination', $denomination)->where('status', 'available')
+                ->orderBy('id')->lock('for update skip locked')->first();
+            if (! $card) {
+                throw new BusinessRuleException('نفدت الكروت من هذه الفئة');
+            }
+            $card->update(['status' => 'activated', 'activated_at' => now(), 'activated_by' => Auth::id(), 'dispense_key' => $key]);
+            $this->audit->log('stock.dispensed', $card, ['status' => 'available'], ['status' => 'activated', 'type' => $type, 'denomination' => $denomination]);
+
+            return $card;
+        });
+    }
+
+    /**
+     * The categories that exist (every type and denomination the admin added), with how many are left.
+     *
+     * @return Collection<int, object{type: string, denomination: int, total: int, available: int, activated: int, voided: int}>
+     */
+    public function categories(): Collection
+    {
+        return $this->summary();
     }
 
     public function void(VoucherCard $card, string $reason): VoucherCard

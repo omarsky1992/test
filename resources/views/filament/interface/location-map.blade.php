@@ -1,5 +1,14 @@
 {{-- The map component of «موقع المشترك», defined before Alpine starts so it works with SPA navigation too. --}}
 <script>
+        // A fresh id per click (e.g. «إنشاء» a card), so a repeated request never does the work twice.
+        window.subsUuid = window.subsUuid || function () {
+            if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+            const b = crypto.getRandomValues(new Uint8Array(16));
+            b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+            const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+            return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+        };
+
         window.subscriberLocationMap = window.subscriberLocationMap || function (config) {
             return {
                 saved: config.saved, mode: config.mode, canEdit: config.canEdit,

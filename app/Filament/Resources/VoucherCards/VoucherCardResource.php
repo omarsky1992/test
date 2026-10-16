@@ -103,13 +103,14 @@ class VoucherCardResource extends Resource
 
     public static function addAction(): Action
     {
-        return Action::make('addCards')->label('إضافة كارتات')->icon(Heroicon::OutlinedPlus)
+        return Action::make('addCards')->label('إضافة أكواد')->icon(Heroicon::OutlinedPlus)
             ->visible(fn () => auth()->user()->can('stock.add'))
+            ->modalSubmitActionLabel('حفظ')
             ->schema([
                 Select::make('type')->label('النوع')->options(VoucherCard::TYPES)->required()->default('internet'),
                 TextInput::make('denomination')->label('الفئة / القيمة')->integer()->minValue(1)->suffix('د.ع')->required()
                     ->datalist(VoucherCard::query()->distinct()->orderBy('denomination')->pluck('denomination')->all()),
-                Textarea::make('codes')->label('أرقام الكارتات')->required()->rows(6)
+                Textarea::make('codes')->label('أكواد الكروت')->required()->rows(8)
                     ->helperText('رقم في كل سطر، يمكن لصق عدة أرقام مرة واحدة. الأرقام المكررة تُتجاهل ولا تُضاف مرتين.'),
                 Textarea::make('notes')->label('ملاحظات (اختياري)')->rows(2),
             ])
@@ -122,10 +123,13 @@ class VoucherCardResource extends Resource
 
                     return;
                 }
-                $notice = Notification::make()->title("أُضيف {$result['added']} كارت");
-                $result['duplicates'] === []
-                    ? $notice->success()
-                    : $notice->warning()->body('مكررة ولم تُضف: '.implode('، ', array_slice($result['duplicates'], 0, 20)));
+                $skipped = count($result['duplicates']) + count($result['rejected']);
+                $notice = Notification::make()->title("أُضيف {$result['added']} كود بنجاح".($skipped ? " · لم يُضف {$skipped}" : ''));
+                $details = array_filter([
+                    $result['duplicates'] ? 'مكررة ('.count($result['duplicates']).'): '.implode('، ', array_slice($result['duplicates'], 0, 15)) : null,
+                    $result['rejected'] ? 'مرفوضة لطولها ('.count($result['rejected']).'): '.implode('، ', array_slice($result['rejected'], 0, 15)) : null,
+                ]);
+                $details === [] ? $notice->success() : $notice->warning()->body(implode("\n", $details))->persistent();
                 $notice->send();
             });
     }
