@@ -9,6 +9,7 @@ use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\AccountingPeriodsPage;
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\EmployeeHome;
 use App\Filament\Pages\EmployeePermissions;
 use App\Filament\Pages\SubscriberLocationPage;
 use App\Filament\Resources\CardAccounts\CardAccountResource;
@@ -21,6 +22,7 @@ use App\Filament\Resources\EmployeeTransfers\Pages\ListEmployeeTransfers;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Filament\Resources\VoucherCards\Pages\ListVoucherCards;
 use App\Filament\Resources\VoucherCards\VoucherCardResource;
+use App\Filament\Widgets\CardBalances;
 use App\Filament\Widgets\PeriodStats;
 use App\Models\AuditLog;
 use App\Models\Debt;
@@ -207,6 +209,36 @@ class PermissionsTransfersStockLocationsTest extends TestCase
         $this->actingAs($this->employee());
         $this->refused(fn () => app(InternalTransfers::class)->resetCard($super, 'x'), AuthorizationException::class);
         $this->refused(fn () => app(InternalTransfers::class)->betweenCards($qi, $super, 1000), AuthorizationException::class);
+    }
+
+    public function test_the_card_balances_section_shows_the_total_and_resets_every_card(): void
+    {
+        $treasury = app(TreasuryService::class);
+        $qi = $treasury->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'كي كارد');
+        $super = $treasury->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'سوبر كي');
+        $treasury->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'ماستر');
+        $treasury->openingBalance($qi, 70000);
+        $treasury->openingBalance($super, 30000);
+        $cash = $treasury->balance($this->cash());
+
+        Livewire::test(CardBalances::class)->assertSee('رصيد البطاقات')->assertSee('100,000')
+            ->assertActionVisible('resetAll')
+            ->callAction('resetAll', data: ['reason' => 'سحب نقدي', 'idempotency_key' => $key = (string) Str::uuid()]);
+        $this->assertSame([0, 0], [$treasury->balance($qi), $treasury->balance($super)]);
+        $this->assertSame(2, MoneyAccountReset::count(), 'the empty card is not reset');
+        $this->assertSame($cash, $treasury->balance($this->cash()), 'nothing else moves');
+
+        app(InternalTransfers::class)->resetAllCards('سحب نقدي', $key);
+        $this->assertSame(2, MoneyAccountReset::count(), 'the same request twice resets once');
+        $this->refused(fn () => app(InternalTransfers::class)->resetAllCards('مرة ثانية'));
+        Livewire::test(CardBalances::class)->assertSee('0 د.ع');
+        Livewire::test(Dashboard::class)->assertSeeLivewire(CardBalances::class);
+
+        $employee = $this->employee('موظف', ['cards.view']);
+        $this->actingAs($employee);
+        Livewire::test(CardBalances::class)->assertActionHidden('resetAll');
+        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('رصيد البطاقات');
+        $this->refused(fn () => app(InternalTransfers::class)->resetAllCards('x'), AuthorizationException::class);
     }
 
     // ---- Accounting periods ----

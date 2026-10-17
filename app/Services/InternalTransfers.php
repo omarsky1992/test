@@ -9,7 +9,10 @@ use App\Models\MoneyAccount;
 use App\Models\MoneyAccountReset;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Ramsey\Uuid\Uuid;
 
 /**
  * Moving money inside the system: from one employee's custody to another's, from one card or wallet
@@ -46,6 +49,42 @@ class InternalTransfers
         $this->ensureCard($card);
 
         return $this->treasury->resetBalance($card, $reason, $idempotencyKey);
+    }
+
+    /**
+     * «تصفير رصيد البطاقات»: zeroes every card that holds a balance, all at once, each with its own
+     * documented reset. The same request ($idempotencyKey) repeated resets nothing more.
+     *
+     * @return Collection<int, MoneyAccountReset>
+     */
+    public function resetAllCards(string $reason, ?string $idempotencyKey = null): Collection
+    {
+        $this->authorize('cards.reset');
+        if (trim($reason) === '') {
+            throw new BusinessRuleException('اكتب سبب التصفير.');
+        }
+
+        return DB::transaction(function () use ($reason, $idempotencyKey) {
+            $resets = collect();
+            foreach (MoneyAccount::where('kind', MoneyAccountKind::Electronic)->orderBy('id')->get() as $card) {
+                // One key per card derived from the request, so a repeated click finds the resets it made.
+                $key = $idempotencyKey ? Uuid::uuid5($idempotencyKey, 'card-'.$card->id)->toString() : null;
+                if ($key !== null && ($done = MoneyAccountReset::where('idempotency_key', $key)->first())) {
+                    $resets->push($done);
+
+                    continue;
+                }
+                if ($this->treasury->balance($card) === 0) {
+                    continue;
+                }
+                $resets->push($this->treasury->resetBalance($card, $reason, $key));
+            }
+            if ($resets->isEmpty()) {
+                throw new BusinessRuleException('أرصدة البطاقات صفر أصلاً.');
+            }
+
+            return $resets;
+        });
     }
 
     public function void(FundTransfer $transfer, string $reason): FundTransfer

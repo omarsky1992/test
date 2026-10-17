@@ -4,6 +4,7 @@ namespace App\Filament\Resources\CardAccounts\Pages;
 
 use App\Filament\Resources\CardAccounts\CardAccountResource;
 use App\Filament\Resources\CardAccounts\CardOperationsResource;
+use App\Filament\Widgets\CardBalances;
 use Filament\Actions\Action;
 use Filament\Resources\Pages\ListRecords;
 
@@ -15,6 +16,7 @@ class ListCardAccounts extends ListRecords
     {
         return [
             CardAccountResource::transferAction(),
+            CardBalances::makeResetAllAction(),
             Action::make('operations')->label('سجل المناقلات والتصفير')->color('gray')->icon('heroicon-o-queue-list')
                 ->url(CardOperationsResource::getUrl()),
         ];
