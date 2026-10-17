@@ -2,7 +2,7 @@
 
 namespace App\Filament\Widgets;
 
-use App\Filament\Resources\Activations\ActivationResource;
+use App\Filament\Resources\DeviceSales\DeviceSaleResource;
 use App\Filament\Resources\Expenses\ExpenseResource;
 use App\Filament\Resources\Payments\PaymentResource;
 use App\Services\AccountingPeriods;
@@ -29,7 +29,7 @@ class PeriodStats extends StatsOverviewWidget
 
     protected function getColumns(): int
     {
-        return 3;
+        return 4;
     }
 
     protected function getHeading(): ?string
@@ -48,9 +48,8 @@ class PeriodStats extends StatsOverviewWidget
             $p = $periods->totals($periods->currentStart('purchases'), $now, exact: true);
             $s = $periods->totals($periods->currentStart('sales'), $now, exact: true);
             $d = array_merge($d, [
-                'sales' => $s['sales'], 'activation_sales' => $s['breakdown']['activations']['total'], 'activations_count' => $s['breakdown']['activations']['count'],
-                'device_sales' => $s['breakdown']['device_sales']['total'],
-                'purchases' => $p['purchases'], 'expenses' => $p['breakdown']['expenses']['total'], 'company_topups' => $p['breakdown']['company_topups']['total'],
+                'sales' => $s['sales'], 'device_sales' => $s['sales'], 'purchases' => $p['purchases'], 'expenses' => $p['purchases'],
+                'profit' => $s['sales'] - $p['purchases'],
             ]);
         }
 
@@ -61,13 +60,18 @@ class PeriodStats extends StatsOverviewWidget
                 ->color('success')
                 ->url(BalanceOverview::url(PaymentResource::class)),
             Stat::make('المبيعات', Money::format($d['sales']))
-                ->description("تفعيلات {$d['activations_count']} بقيمة ".Money::format($d['activation_sales'], false).' · أجهزة '.Money::format($d['device_sales'], false))
-                ->descriptionIcon('heroicon-m-bolt')
-                ->url(BalanceOverview::url(ActivationResource::class)),
+                ->description('أجهزة ومواد وكارتات (بدون تفعيلات الإنترنت)')
+                ->descriptionIcon('heroicon-m-shopping-bag')
+                ->url(BalanceOverview::url(DeviceSaleResource::class)),
             Stat::make('المشتريات', Money::format($d['purchases']))
-                ->description('مصروفات '.Money::format($d['expenses'], false).' · شحن رصيد الشركة '.Money::format($d['company_topups'], false))
+                ->description('المصروفات والمشتريات المسجلة')
                 ->descriptionIcon('heroicon-m-shopping-cart')
                 ->url(BalanceOverview::url(ExpenseResource::class)),
+            Stat::make('الربح والخسارة', ($d['profit'] > 0 ? '+' : '').Money::format($d['profit']))
+                ->description($d['profit'] < 0 ? 'خسارة: المشتريات أكثر من المبيعات' : ($d['profit'] > 0 ? 'ربح: المبيعات أكثر من المشتريات' : 'لا ربح ولا خسارة'))
+                ->descriptionIcon($d['profit'] < 0 ? 'heroicon-m-arrow-trending-down' : 'heroicon-m-arrow-trending-up')
+                ->color($d['profit'] < 0 ? 'danger' : ($d['profit'] > 0 ? 'success' : 'gray'))
+                ->extraAttributes(['data-test' => 'profit']),
         ];
     }
 }

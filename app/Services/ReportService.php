@@ -162,10 +162,13 @@ class ReportService
             'activations_count' => $activationsCount,
             'device_sales' => $deviceSales,
             'device_profit' => $deviceProfit,
-            'sales' => $activationSales + $deviceSales,
+            // Sales are devices, materials and cards only; internet activations are reported apart.
+            'sales' => $deviceSales,
             'expenses' => $expenses,
             'company_topups' => $topUps,
-            'purchases' => $expenses + $topUps,
+            // Purchases are what was bought (expenses); topping up the company balance is shown apart.
+            'purchases' => $expenses,
+            'profit' => $deviceSales - $expenses,
         ];
     }
 
@@ -196,10 +199,8 @@ class ReportService
             ->selectRaw("to_char({$column}, 'YYYY-MM-DD') as day, sum({$sum}) as total")->groupBy('day')->get();
 
         $add('collections', $byDay(Payment::where('status', DocumentStatus::Posted), 'received_at', 'amount'));
-        $add('sales', $byDay(Activation::where('status', DocumentStatus::Posted), 'created_at', 'final_price'));
         $add('sales', $byDay(DeviceSale::where('status', DocumentStatus::Posted), 'sold_at', 'total_amount'));
         $add('purchases', $byDay(Expense::where('status', DocumentStatus::Posted), 'spent_at', 'amount'));
-        $add('purchases', $byDay(FundTransfer::where('status', DocumentStatus::Posted)->whereIn('to_money_account_id', $company), 'transferred_at', 'amount'));
 
         return [
             'labels' => array_map(fn ($d) => CarbonImmutable::parse($d)->format('m/d'), array_keys($days)),

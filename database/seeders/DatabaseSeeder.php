@@ -95,7 +95,7 @@ class DatabaseSeeder extends Seeder
                 MessageTemplate::create(['icon' => $icon, 'title' => $title, 'auto_event' => $event, 'body' => $body, 'sort_order' => $i + 1]);
             }
         }
-        foreach ([['router', 'راوتر'], ['ont', 'جهاز ONT'], ['repeater', 'مقوي'], ['cable', 'كابل'], ['other', 'أخرى']] as [$key, $name]) {
+        foreach ([['router', 'راوتر'], ['ont', 'جهاز ONT'], ['repeater', 'مقوي'], ['cable', 'كابل'], ['card', 'كارت'], ['other', 'أخرى']] as [$key, $name]) {
             DeviceType::firstOrCreate(['key' => $key], ['name_ar' => $name]);
         }
 

@@ -21,8 +21,8 @@ use Illuminate\Support\Str;
 
 /**
  * Purchases and sales by accounting period (any start and end, e.g. the 15th to the 14th). The same
- * definitions as the dashboard: purchases = expenses + company balance top-ups; sales = activations
- * + device sales. Closing a period only records its totals: nothing is deleted and no balance moves.
+ * definitions as the dashboard: purchases = expenses; sales = devices, materials and cards (not
+ * internet activations); الربح والخسارة = sales − purchases. Closing a period only records its totals: nothing is deleted and no balance moves.
  */
 class AccountingPeriods
 {
@@ -73,15 +73,17 @@ class AccountingPeriods
             'activations' => $part($in(Activation::where('status', DocumentStatus::Posted), 'created_at'), 'created_at', 'final_price'),
             'device_sales' => $part($in(DeviceSale::where('status', DocumentStatus::Posted), 'sold_at'), 'sold_at', 'total_amount'),
         ];
-        $purchases = $breakdown['expenses']['total'] + $breakdown['company_topups']['total'];
-        $sales = $breakdown['activations']['total'] + $breakdown['device_sales']['total'];
+        // Purchases = expenses; sales = devices, materials and cards. Activations and company top-ups
+        // stay in the breakdown for information only.
+        $purchases = $breakdown['expenses']['total'];
+        $sales = $breakdown['device_sales']['total'];
 
         return [
             'purchases' => $purchases,
             'sales' => $sales,
             'difference' => $sales - $purchases,
-            'purchases_count' => $breakdown['expenses']['count'] + $breakdown['company_topups']['count'],
-            'sales_count' => $breakdown['activations']['count'] + $breakdown['device_sales']['count'],
+            'purchases_count' => $breakdown['expenses']['count'],
+            'sales_count' => $breakdown['device_sales']['count'],
             'breakdown' => $breakdown,
         ];
     }
@@ -94,17 +96,12 @@ class AccountingPeriods
     public function operations(CarbonImmutable $from, CarbonImmutable $to, int $limit = 300, bool $exact = false): array
     {
         $in = $this->within($from, $to, $exact);
-        $company = MoneyAccount::where('kind', MoneyAccountKind::Company)->pluck('id');
         $purchases = $in(Expense::with('category')->where('status', DocumentStatus::Posted), 'spent_at')->latest('spent_at')->limit($limit)->get()->toBase()
             ->map(fn (Expense $e) => ['at' => $e->spent_at, 'number' => $e->number, 'kind' => $e->category?->name_ar ?? 'مصروف', 'details' => $e->description, 'amount' => (int) $e->amount])
-            ->merge($in(FundTransfer::with('from')->where('status', DocumentStatus::Posted)->whereIn('to_money_account_id', $company), 'transferred_at')->latest('transferred_at')->limit($limit)->get()->toBase()
-                ->map(fn (FundTransfer $t) => ['at' => $t->transferred_at, 'number' => $t->number, 'kind' => 'شحن رصيد الشركة', 'details' => 'من '.$t->from?->name, 'amount' => (int) $t->amount]))
-            ->sortByDesc('at')->values();
-        $sales = $in(Activation::with(['subscriber:id,full_name', 'plan:id,name_ar'])->where('status', DocumentStatus::Posted), 'created_at')->latest('created_at')->limit($limit)->get()->toBase()
-            ->map(fn (Activation $a) => ['at' => $a->created_at, 'number' => $a->number, 'kind' => 'تفعيل', 'details' => trim($a->subscriber?->full_name.' – '.$a->plan?->name_ar, ' –'), 'amount' => (int) $a->final_price])
-            ->merge($in(DeviceSale::where('status', DocumentStatus::Posted), 'sold_at')->latest('sold_at')->limit($limit)->get()->toBase()
-                ->map(fn (DeviceSale $s) => ['at' => $s->sold_at, 'number' => $s->number, 'kind' => 'بيع', 'details' => $s->description, 'amount' => (int) $s->total_amount]))
-            ->sortByDesc('at')->values();
+            ->values();
+        $sales = $in(DeviceSale::with('itemType')->where('status', DocumentStatus::Posted), 'sold_at')->latest('sold_at')->limit($limit)->get()->toBase()
+            ->map(fn (DeviceSale $s) => ['at' => $s->sold_at, 'number' => $s->number, 'kind' => $s->itemType?->name_ar ?? 'بيع', 'details' => $s->description, 'amount' => (int) $s->total_amount])
+            ->values();
 
         return ['purchases' => $purchases, 'sales' => $sales];
     }
@@ -137,7 +134,7 @@ class AccountingPeriods
                     throw new BusinessRuleException('نهاية الفترة قبل بدايتها ('.PeriodClosing::SCOPES[$scope].' تبدأ '.$start->setTimezone(config('app.timezone'))->format('Y/m/d H:i').').');
                 }
                 $t = $this->totals($start, $endsAt, exact: true);
-                $keys = $scope === 'purchases' ? ['expenses', 'company_topups'] : ['activations', 'device_sales'];
+                $keys = $scope === 'purchases' ? ['expenses'] : ['device_sales'];
                 $closing = PeriodClosing::create([
                     'scope' => $scope, 'starts_at' => $start, 'ends_at' => $endsAt,
                     'starts_on' => $start->setTimezone(config('app.timezone'))->toDateString(),

@@ -21,11 +21,13 @@
             يمكن اختيار أي فترة، مثلاً من 15 إلى 14 من الشهر التالي.</p>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px">
             <div style="{{ $card }}"><div style="font-size:12.5px;color:var(--subs-muted)">إجمالي المشتريات ({{ $totals['purchases_count'] }} عملية)</div><div style="font-size:20px;font-weight:800;color:var(--subs-red)">{{ Money::format($totals['purchases']) }}</div>
-                <div style="font-size:12px;color:var(--subs-muted)">مصروفات {{ Money::format($totals['breakdown']['expenses']['total'], false) }} · شحن رصيد الشركة {{ Money::format($totals['breakdown']['company_topups']['total'], false) }}</div></div>
+                <div style="font-size:12px;color:var(--subs-muted)">المصروفات والمشتريات المسجلة</div></div>
             <div style="{{ $card }}"><div style="font-size:12.5px;color:var(--subs-muted)">إجمالي المبيعات ({{ $totals['sales_count'] }} عملية)</div><div style="font-size:20px;font-weight:800;color:var(--subs-green)">{{ Money::format($totals['sales']) }}</div>
-                <div style="font-size:12px;color:var(--subs-muted)">تفعيلات {{ Money::format($totals['breakdown']['activations']['total'], false) }} · بيع أجهزة {{ Money::format($totals['breakdown']['device_sales']['total'], false) }}</div></div>
-            <div style="{{ $card }}"><div style="font-size:12.5px;color:var(--subs-muted)">الفرق بين المبيعات والمشتريات</div><div style="font-size:20px;font-weight:800">{{ Money::format($totals['difference']) }}</div>
-                <div style="font-size:12px;color:var(--subs-muted)">ليس صافي الربح: لا يشمل باقي المصاريف والتكاليف.</div></div>
+                <div style="font-size:12px;color:var(--subs-muted)">أجهزة ومواد وكارتات (بدون تفعيلات الإنترنت)</div></div>
+            @php $pl = $totals['difference']; @endphp
+            <div style="{{ $card }};border-color:{{ $pl < 0 ? 'var(--tr-bd)' : ($pl > 0 ? 'var(--tg-bd)' : 'var(--subs-border)') }}"><div style="font-size:12.5px;color:var(--subs-muted)">الربح والخسارة</div>
+                <div data-test="profit" style="font-size:20px;font-weight:800;color:{{ $pl < 0 ? 'var(--subs-red)' : ($pl > 0 ? 'var(--subs-green)' : 'var(--subs-text)') }}" dir="ltr">{{ ($pl > 0 ? '+' : '').Money::format($pl) }}</div>
+                <div style="font-size:12px;color:var(--subs-muted)">{{ $pl < 0 ? 'خسارة' : ($pl > 0 ? 'ربح' : 'متعادل') }}: المبيعات ناقص المشتريات</div></div>
         </div>
     </x-filament::section>
 

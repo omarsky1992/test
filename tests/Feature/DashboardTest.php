@@ -66,9 +66,22 @@ class DashboardTest extends TestCase
         $d = app(ReportService::class)->dashboard(CarbonImmutable::today(), CarbonImmutable::today());
 
         $this->assertSame(10000, $d['collections']);
-        $this->assertSame(35000 + 55000, $d['sales']);
+        $this->assertSame(55000, $d['sales'], 'devices, materials and cards only; the 35,000 activation is not a sale');
         $this->assertSame(15000, $d['device_profit']);
-        $this->assertSame(40000 + 200000, $d['purchases']);
+        $this->assertSame(40000, $d['purchases'], 'expenses; the 200,000 company top-up is not a purchase');
+        $this->assertSame(55000 - 40000, $d['profit']);
+    }
+
+    public function test_profit_and_loss_goes_negative_with_purchases_and_up_with_sales(): void
+    {
+        $treasury = app(\App\Services\TreasuryService::class);
+        $treasury->openingBalance($this->cash(), 100000);
+        $treasury->recordExpense(\App\Models\ExpenseCategory::first(), 'مواد', 5000, $this->cash());
+        Livewire::test(PeriodStats::class, ['pageFilters' => ['period' => 'today']])->assertSee('الربح والخسارة')->assertSee('-5,000');
+
+        $treasury->recordDeviceSale(\App\Models\DeviceType::where('key', 'card')->firstOrFail(), 'كارت إنترنت', 7000, 1, null, $this->cash());
+        Livewire::test(PeriodStats::class, ['pageFilters' => ['period' => 'today']])->assertSee('+2,000')->assertSee('ربح');
+        $this->assertSame(2000, app(ReportService::class)->dashboard(CarbonImmutable::today(), CarbonImmutable::today())['profit']);
     }
 
     public function test_dashboard_widgets_render_with_the_period_filter(): void

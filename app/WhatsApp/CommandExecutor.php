@@ -416,14 +416,14 @@ class CommandExecutor
             'sales_today' => (function () use ($today) {
                 $d = $this->reports->dashboard($today, $today);
 
-                return '💰 مبيعات اليوم: '.Money::format($d['sales'])."\nتفعيلات: {$d['activations_count']} · أجهزة: ".Money::format($d['device_sales'], false)."\nالتحصيل: ".Money::format($d['collections'])." ({$d['receipts_count']} سند)";
+                return '💰 مبيعات اليوم (أجهزة ومواد وكارتات): '.Money::format($d['sales'])."\nالربح والخسارة: ".Money::format($d['profit'])."\nتفعيلات: {$d['activations_count']} · التحصيل: ".Money::format($d['collections'])." ({$d['receipts_count']} سند)";
             })(),
             'purchases_today' => (function () use ($today) {
                 $d = $this->reports->dashboard($today, $today);
                 $items = Expense::where('status', DocumentStatus::Posted)->whereBetween('spent_at', [$today->startOfDay(), $today->endOfDay()])->latest('spent_at')->limit(8)->get()
                     ->map(fn (Expense $e) => "• {$e->description}: ".Money::format($e->amount, false))->implode("\n");
 
-                return '🛒 مشتريات اليوم: '.Money::format($d['purchases'])."\nمصاريف: ".Money::format($d['expenses'], false).' · شحن رصيد الشركة: '.Money::format($d['company_topups'], false).($items ? "\n{$items}" : '');
+                return '🛒 مشتريات اليوم: '.Money::format($d['purchases']).($items ? "\n{$items}" : '');
             })(),
             'custody' => (function () {
                 $rows = MoneyAccount::with('user:id,name')->where('kind', MoneyAccountKind::Custody)->get()

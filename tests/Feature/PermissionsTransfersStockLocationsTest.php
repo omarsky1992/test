@@ -282,7 +282,7 @@ class PermissionsTransfersStockLocationsTest extends TestCase
         $this->assertSame(7000, PeriodClosing::where('scope', 'purchases')->latest('id')->value('total'));
         $this->refused(fn () => $periods->close(['sales'], CarbonImmutable::today()->subDays(5)));
 
-        Livewire::test(AccountingPeriodsPage::class)->assertSee('الفرق بين المبيعات والمشتريات')
+        Livewire::test(AccountingPeriodsPage::class)->assertSee('الربح والخسارة')
             ->call('showClosing', $closing->id)->assertSee('50,000');
         $this->assertSame(3, AuditLog::where('action', 'period.closed')->count());
 
