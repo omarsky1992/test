@@ -6,8 +6,12 @@ use App\Models\AccountRenewal;
 use App\Models\SyncRun;
 use App\Services\Audit;
 use App\Services\Settings;
+use App\Support\Money;
+use App\Sync\Bookmarklet;
 use App\Sync\CompanySync;
+use App\Sync\MissedRenewals;
 use BackedEnum;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -73,27 +77,29 @@ class CompanySyncPage extends Page
                 ->requiresConfirmation()
                 ->modalHeading('استرجاع التجديدات الفائتة')
                 ->modalDescription(function () {
-                    $found = app(\App\Sync\MissedRenewals::class)->find();
+                    $found = app(MissedRenewals::class)->find();
                     if ($found === []) {
                         return 'لا توجد تجديدات فائتة. كل التجديدات مسجّلة.';
                     }
-                    $short = array_filter($found, fn ($f) => ! $f['full']);
+                    $short = array_filter($found, fn ($f) => ! $f['full'] && ! $f['test']);
+                    $tests = count(array_filter($found, fn ($f) => $f['test']));
                     $amount = array_sum(array_map(fn ($f) => (int) $f['amount'], $short));
                     $noPrice = count(array_filter($short, fn ($f) => $f['amount'] === null));
-                    $full = count($found) - count($short);
+                    $full = count($found) - count($short) - $tests;
                     $names = implode('، ', array_map(fn ($f) => $f['account']->username, array_slice(array_values($short), 0, 8)));
 
                     return 'وُجد '.count($found).' تجديد طبّقته المزامنة على التواريخ ولم يُسجَّل (كان الاشتراك منتهياً وأصبح فعّالاً). '
-                        .count($short).' منها تفعيل 7 أيام أو أقل: يُنشأ لكل منها دين ثانوي بمجموع '.\App\Support\Money::format($amount)
+                        .count($short).' منها تفعيل من 4 إلى 7 أيام: يُنشأ لكل منها دين ثانوي بمجموع '.Money::format($amount)
                         .($noPrice ? " ({$noPrice} بدون فئة معروفة: بلا دين)" : '')
+                        .($tests ? ". و{$tests} تيست من المشترك (أقل من 4 أيام): بدون دين" : '')
                         .($full ? ". و{$full} تفعيل كامل (أكثر من 7 أيام): يُسجَّل تفعيلاً بدون دين" : '')
                         .($names ? ". أمثلة: {$names}" : '').'. لا يتكرر شيء إذا ضغطت مرة ثانية.';
                 })
                 ->modalSubmitActionLabel('إنشاء الديون')
                 ->action(function () {
-                    $r = app(\App\Sync\MissedRenewals::class)->record();
+                    $r = app(MissedRenewals::class)->record();
                     Notification::make()->success()->title("سُجّل {$r['renewals']} تجديد و{$r['debts']} دين ثانوي")
-                        ->body('المجموع: '.\App\Support\Money::format($r['amount']))->send();
+                        ->body('المجموع: '.Money::format($r['amount']))->send();
                 }),
             Action::make('preview')
                 ->label('معاينة بدون حفظ')
@@ -192,9 +198,9 @@ class CompanySyncPage extends Page
             'interval' => (int) $s->get('sync.interval_minutes'),
             'configured' => filled($s->get('sync.client_id')) && (filled($s->get('sync.password')) || filled($s->get('sync.refresh_token'))),
             'hasRefreshToken' => filled($s->get('sync.refresh_token')),
-            'bookmarklet' => \App\Sync\Bookmarklet::href(request()->getSchemeAndHttpHost(), (string) $s->get('sync.client_app')),
+            'bookmarklet' => Bookmarklet::href(request()->getSchemeAndHttpHost(), (string) $s->get('sync.client_app')),
             'lastBrowser' => SyncRun::where('trigger', 'browser')->where('status', 'success')->latest('started_at')->first(),
-            'refreshedAt' => filled($s->get('sync.refreshed_at')) ? \Carbon\CarbonImmutable::parse($s->get('sync.refreshed_at')) : null,
+            'refreshedAt' => filled($s->get('sync.refreshed_at')) ? CarbonImmutable::parse($s->get('sync.refreshed_at')) : null,
             'last' => SyncRun::where('status', 'success')->latest('started_at')->first(),
             'runs' => SyncRun::with('creator')->latest('started_at')->limit(20)->get(),
             'renewals' => AccountRenewal::with(['account', 'subscriber', 'debt'])->latest('detected_at')->limit(30)->get(),

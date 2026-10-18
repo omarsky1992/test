@@ -125,7 +125,7 @@ class CommandExecutor
     private function recordActivation(Account $account, int $days): array
     {
         $hours = (int) $this->settings->get('whatsapp.duplicate_hours');
-        if ($recent = AccountRenewal::where('account_id', $account->id)->where('detected_at', '>=', now()->subHours($hours))->latest('detected_at')->first()) {
+        if ($recent = AccountRenewal::where('account_id', $account->id)->where('status', '!=', 'test')->where('detected_at', '>=', now()->subHours($hours))->latest('detected_at')->first()) {
             return [$recent, true, $recent->new_ends_at ?? CarbonImmutable::now()];
         }
 
@@ -137,7 +137,7 @@ class CommandExecutor
         $newEnds = $base->addDays($days);
 
         $renewal = DB::transaction(function () use ($account, $previousDays, $days, $previousEnds, $newEnds, $now) {
-            $renewal = $this->renewals->record($account, $previousDays, $days, $previousEnds, $newEnds, at: $now);
+            $renewal = $this->renewals->record($account, $previousDays, $days, $previousEnds, $newEnds, at: $now, fromSite: false);
             $original = $account->getAttributes();
             // The next company sync sees these days as already known, so it never counts the renewal twice.
             $account->update(['external_ends_at' => $newEnds, 'company_days_left' => Account::daysLeft($newEnds, $now)]);

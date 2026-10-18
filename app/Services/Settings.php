@@ -8,6 +8,7 @@ class Settings
 {
     public const DEFAULTS = [
         'activation.partial_days' => 7,
+        'activation.min_partial_days' => 4,
         'activation.full_days' => 30,
         'pricing.discount_rounding' => 250,
         'accounts.max_per_subscriber_warning' => 2,

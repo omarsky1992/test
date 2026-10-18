@@ -17,9 +17,7 @@ use Carbon\CarbonImmutable;
  */
 class MissedRenewals
 {
-    public function __construct(private RenewalService $renewals)
-    {
-    }
+    public function __construct(private RenewalService $renewals) {}
 
     /**
      * @return array<int, array{account: Account, at: CarbonImmutable, old: CarbonImmutable, new: CarbonImmutable, days: int, amount: ?int}>
@@ -50,9 +48,10 @@ class MissedRenewals
                 continue;
             }
             $full = $this->renewals->isFullActivation($newDays);
+            $test = ! $full && $this->renewals->isSelfTest($newDays);
             $found[] = [
-                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'full' => $full,
-                'amount' => ! $full && $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
+                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'full' => $full, 'test' => $test,
+                'amount' => ! $full && ! $test && $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
             ];
         }
 

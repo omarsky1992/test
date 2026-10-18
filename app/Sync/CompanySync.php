@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\Branch;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
+use App\Services\ActivationDueService;
 use App\Services\ActivationService;
 use App\Services\Audit;
 use App\Services\RenewalService;
@@ -52,13 +53,12 @@ class CompanySync
         private RenewalService $renewals,
         private ActivationService $activations,
         private Audit $audit,
-    ) {
-    }
+    ) {}
 
     public function run(string $trigger = 'manual', ?CompanyClient $client = null): SyncRun
     {
         $run = SyncRun::create(['trigger' => $trigger, 'status' => 'running', 'started_at' => now(), 'created_by' => Auth::id()]);
-        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'activations', 'renewals_without_price', 'skipped'], 0);
+        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'activations', 'renewals_without_price', 'self_tests', 'skipped'], 0);
         $this->errors = [];
         $this->preload();
         $now = CarbonImmutable::now();
@@ -265,7 +265,7 @@ class CompanySync
             $this->audit->log('account.synced', $account, $this->auditable(array_intersect_key($original, $changed)), $this->auditable($changed), 'مزامنة من موقع الشركة', $account->subscriber_id, 'sync');
             if (array_key_exists('external_ends_at', $changed)) {
                 $this->activations->refreshAccountEnd($account);
-                app(\App\Services\ActivationDueService::class)->accountEndsChanged($account);
+                app(ActivationDueService::class)->accountEndsChanged($account);
             }
         }
 
@@ -277,6 +277,7 @@ class CompanySync
                 match (true) {
                     $renewal->debt_id !== null => $this->stats['debts_created']++,
                     $renewal->status === 'activated' => $this->stats['activations']++,
+                    $renewal->status === 'test' => $this->stats['self_tests']++,
                     default => $this->stats['renewals_without_price']++,
                 };
             }

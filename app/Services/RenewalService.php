@@ -10,20 +10,20 @@ use App\Models\AccountRenewal;
 use App\Models\Debt;
 use App\Models\ServicePlan;
 use App\Models\SyncRun;
+use App\WhatsApp\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 /**
- * A renewal seen on the company site (days left went from 0 to more than 0). It becomes one
- * secondary debt at the plan price. The debt is owed money shown beside the balance; it
+ * A renewal seen on the company site (days left went from 0 to more than 0). From
+ * activation.min_partial_days (4) up to the short activation (7) it becomes one secondary debt at
+ * the plan price; fewer days is the subscriber's own test and more is a full activation, neither a debt. The debt is owed money shown beside the balance; it
  * changes neither the primary debts nor the cash or company balances.
  */
 class RenewalService
 {
-    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit, private Settings $settings)
-    {
-    }
+    public function __construct(private Ledger $ledger, private Sequencer $sequencer, private Audit $audit, private Settings $settings) {}
 
     /**
      * Up to the short activation (7 days, from the subscriber's app) the renewal is owed as a
@@ -32,6 +32,15 @@ class RenewalService
     public function isFullActivation(int $newDays): bool
     {
         return $newDays > $this->settings->partialDays();
+    }
+
+    /**
+     * Fewer days than the shortest real activation (setting activation.min_partial_days, 4) seen on
+     * the company site is a test the subscriber gave themselves: recorded, never a debt.
+     */
+    public function isSelfTest(int $newDays): bool
+    {
+        return $newDays < (int) $this->settings->get('activation.min_partial_days');
     }
 
     public static function reference(Account $account, ?CarbonImmutable $newEndsAt, CarbonImmutable $detectedAt): string
@@ -49,6 +58,7 @@ class RenewalService
         ?string $planName = null,
         ?SyncRun $run = null,
         ?CarbonImmutable $at = null,
+        bool $fromSite = true,
     ): AccountRenewal {
         $at ??= CarbonImmutable::now();
         $reference = self::reference($account, $newEndsAt, $at);
@@ -58,10 +68,12 @@ class RenewalService
         }
 
         try {
-            return DB::transaction(function () use ($account, $previousDays, $newDays, $previousEndsAt, $newEndsAt, $planName, $run, $at, $reference) {
+            return DB::transaction(function () use ($account, $previousDays, $newDays, $previousEndsAt, $newEndsAt, $planName, $run, $at, $reference, $fromSite) {
                 $plan = $account->current_plan_id ? ServicePlan::find($account->current_plan_id) : null;
                 $full = $this->isFullActivation($newDays);
-                $amount = ! $full && $plan?->price > 0 ? (int) $plan->price : null;
+                // Only a sync sees self-tests; an employee who activates by WhatsApp states the days.
+                $test = $fromSite && ! $full && $this->isSelfTest($newDays);
+                $amount = ! $full && ! $test && $plan?->price > 0 ? (int) $plan->price : null;
 
                 $renewal = AccountRenewal::create([
                     'reference' => $reference,
@@ -76,7 +88,12 @@ class RenewalService
                     'plan_id' => $plan?->id,
                     'plan_name' => $planName !== null ? mb_substr($planName, 0, 60) : $plan?->name_ar,
                     'amount' => $amount,
-                    'status' => $full ? 'activated' : ($amount !== null ? 'debt_created' : 'no_price'),
+                    'status' => match (true) {
+                        $full => 'activated',
+                        $test => 'test',
+                        $amount !== null => 'debt_created',
+                        default => 'no_price',
+                    },
                 ]);
 
                 $debt = null;
@@ -108,6 +125,7 @@ class RenewalService
                     'debt' => $debt?->number, 'reference' => $reference,
                 ], match (true) {
                     $full => "تفعيل كامل ({$newDays} يوم): يُسجَّل تفعيلاً بدون دين",
+                    $test => "تيست من المشترك ({$newDays} يوم): لا يُسجَّل ديناً",
                     $amount === null => 'الفئة غير معروفة أو بلا سعر: لم يُنشأ دين',
                     default => null,
                 }, $account->subscriber_id, 'sync');
@@ -117,7 +135,9 @@ class RenewalService
                     ], 'تجديد تلقائي', $account->subscriber_id, 'sync');
                 }
 
-                app(\App\WhatsApp\Notifier::class)->renewal($renewal);
+                if (! $test) {
+                    app(Notifier::class)->renewal($renewal);
+                }
 
                 return $renewal;
             });
@@ -150,6 +170,37 @@ class RenewalService
                 }
                 $renewal->update(['status' => 'activated']);
                 $this->audit->log('renewal.reclassified', $renewal, ['status' => 'debt_created'], ['status' => 'activated', 'debt_voided' => $debt?->number], 'تفعيل أكثر من 7 أيام', $renewal->subscriber_id, 'system');
+                $result['fixed']++;
+            });
+        }
+
+        return $result;
+    }
+
+    /**
+     * Self-tests (fewer than activation.min_partial_days) a sync recorded as debts before the
+     * self-test rule: their debt is voided (only if nothing was paid on it) and they become tests.
+     *
+     * @return array{fixed: int, kept_paid: int}
+     */
+    public function reclassifySelfTests(): array
+    {
+        $result = ['fixed' => 0, 'kept_paid' => 0];
+        $renewals = AccountRenewal::with('debt')->where('status', 'debt_created')->whereNotNull('sync_run_id')
+            ->where('new_days', '<', (int) $this->settings->get('activation.min_partial_days'))->get();
+        foreach ($renewals as $renewal) {
+            DB::transaction(function () use ($renewal, &$result) {
+                $debt = $renewal->debt;
+                if ($debt && $debt->status !== DebtStatus::Voided) {
+                    if ($debt->paid_amount > 0) {
+                        $result['kept_paid']++;
+
+                        return;
+                    }
+                    app(DebtService::class)->reverseAndVoid($debt, "تيست من المشترك ({$renewal->new_days} يوم): لا يُسجَّل ديناً");
+                }
+                $renewal->update(['status' => 'test']);
+                $this->audit->log('renewal.reclassified', $renewal, ['status' => 'debt_created'], ['status' => 'test', 'debt_voided' => $debt?->number], 'تيست من المشترك', $renewal->subscriber_id, 'system');
                 $result['fixed']++;
             });
         }

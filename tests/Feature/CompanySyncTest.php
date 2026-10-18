@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
+use App\Filament\Pages\CompanySyncPage;
 use App\Imports\SpreadsheetReader;
 use App\Imports\SubscriberImporter;
 use App\Models\Account;
@@ -12,10 +13,19 @@ use App\Models\AuditLog;
 use App\Models\Debt;
 use App\Models\FinancialTransaction;
 use App\Models\Subscriber;
+use App\Models\SyncRun;
+use App\Models\WhatsappOutbox;
 use App\Services\Ledger;
+use App\Services\RenewalService;
+use App\Services\Settings;
 use App\Sync\CompanyClient;
 use App\Sync\CompanySync;
+use App\Sync\CompanySyncException;
+use App\Sync\MissedRenewals;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\FakeCompanyClient;
 use Tests\TestCase;
 
@@ -30,7 +40,7 @@ class CompanySyncTest extends TestCase
         $this->app->instance(CompanyClient::class, $this->site);
     }
 
-    private function sync(): \App\Models\SyncRun
+    private function sync(): SyncRun
     {
         return app(CompanySync::class)->run('manual');
     }
@@ -134,10 +144,10 @@ class CompanySyncTest extends TestCase
 
     public static function renewalDays(): array
     {
-        return ['0 → 5' => [5], '0 → 6' => [6], '0 → 7' => [7]];
+        return ['0 → 4' => [4], '0 → 5' => [5], '0 → 6' => [6], '0 → 7' => [7]];
     }
 
-    #[\PHPUnit\Framework\Attributes\DataProvider('renewalDays')]
+    #[DataProvider('renewalDays')]
     public function test_zero_to_positive_days_is_a_renewal_with_one_secondary_debt(int $days): void
     {
         $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
@@ -236,10 +246,11 @@ class CompanySyncTest extends TestCase
 
     public function test_a_failing_site_marks_the_run_failed_and_changes_nothing(): void
     {
-        $this->app->instance(CompanyClient::class, new class implements CompanyClient {
+        $this->app->instance(CompanyClient::class, new class implements CompanyClient
+        {
             public function records(array $options = []): iterable
             {
-                throw new \App\Sync\CompanySyncException('تعذّر الاتصال بموقع الشركة');
+                throw new CompanySyncException('تعذّر الاتصال بموقع الشركة');
             }
         });
 
@@ -293,13 +304,13 @@ class CompanySyncTest extends TestCase
         // Simulate the old behaviour: dates updated, nothing recorded.
         $account = Account::sole();
         $this->site->set($renewed);
-        \Illuminate\Support\Facades\DB::table('account_renewals')->delete();
+        DB::table('account_renewals')->delete();
         $this->sync();
         AccountRenewal::query()->delete();
         Debt::query()->update(['status' => 'voided', 'void_reason' => 'test']);
         $this->assertTrue(AuditLog::where('action', 'account.synced')->where('entity_id', $account->id)->exists());
 
-        $missed = app(\App\Sync\MissedRenewals::class);
+        $missed = app(MissedRenewals::class);
         $this->assertCount(1, $missed->find());
         $this->assertSame(35000, $missed->find()[0]['amount']);
 
@@ -317,7 +328,7 @@ class CompanySyncTest extends TestCase
         $this->sync();
         AccountRenewal::query()->delete();
 
-        \Livewire\Livewire::test(\App\Filament\Pages\CompanySyncPage::class)
+        Livewire::test(CompanySyncPage::class)
             ->callAction('missedRenewals')
             ->assertNotified('سُجّل 1 تجديد و1 دين ثانوي');
         $this->assertSame(1, AccountRenewal::count());
@@ -345,16 +356,76 @@ class CompanySyncTest extends TestCase
         $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z']));
         $this->sync();
         // As before the rule: a 30-day renewal recorded with a debt.
-        $this->app->make(\App\Services\Settings::class)->set('activation.partial_days', 40);
+        $this->app->make(Settings::class)->set('activation.partial_days', 40);
         $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
         $this->sync();
         $this->assertSame(1, Debt::where('status', 'open')->count());
-        $this->app->make(\App\Services\Settings::class)->set('activation.partial_days', 7);
+        $this->app->make(Settings::class)->set('activation.partial_days', 7);
 
-        $result = app(\App\Services\RenewalService::class)->reclassifyFullActivations();
+        $result = app(RenewalService::class)->reclassifyFullActivations();
 
         $this->assertSame(['fixed' => 1, 'kept_paid' => 0], $result);
         $this->assertSame('activated', AccountRenewal::sole()->status);
+        $this->assertSame('voided', Debt::sole()->status->value);
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+    }
+
+    public static function selfTestDays(): array
+    {
+        return ['0 → 1' => [1], '0 → 2' => [2], '0 → 3' => [3]];
+    }
+
+    #[DataProvider('selfTestDays')]
+    public function test_a_test_the_subscriber_gave_themselves_is_recorded_with_no_debt(int $days): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn($days)]));
+        $run = $this->sync();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame('test', $renewal->status);
+        $this->assertNull($renewal->amount);
+        $this->assertNull($renewal->debt_id);
+        $this->assertSame(0, Debt::count());
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+        $this->assertSame(1, $run->stats['self_tests']);
+        $this->assertSame(0, $run->stats['debts_created']);
+        $this->assertSame(0, WhatsappOutbox::count());
+    }
+
+    public function test_a_real_short_activation_after_the_test_ran_out_is_a_secondary_debt(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(2)]));
+        $this->sync();
+
+        // The test ends: days back to 0, then the agent activates 7 days.
+        $this->travel(3)->days();
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
+        $this->sync();
+
+        $this->assertSame(['test', 'debt_created'], AccountRenewal::orderBy('id')->pluck('status')->all());
+        $this->assertSame(35000, Debt::sole()->balance);
+    }
+
+    public function test_a_debt_a_sync_recorded_earlier_for_a_self_test_is_voided(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z']));
+        $this->sync();
+        // As before the rule: a 2-day test recorded with a debt.
+        $this->app->make(Settings::class)->set('activation.min_partial_days', 1);
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(2)]));
+        $this->sync();
+        $this->assertSame(1, Debt::where('status', 'open')->count());
+        $this->app->make(Settings::class)->set('activation.min_partial_days', 4);
+
+        $result = app(RenewalService::class)->reclassifySelfTests();
+
+        $this->assertSame(['fixed' => 1, 'kept_paid' => 0], $result);
+        $this->assertSame('test', AccountRenewal::sole()->status);
         $this->assertSame('voided', Debt::sole()->status->value);
         $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
     }

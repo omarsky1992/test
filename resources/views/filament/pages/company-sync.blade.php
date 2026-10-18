@@ -145,6 +145,8 @@
                                 <td style="{{ $td }}">
                                     @if ($r->status === 'activated')
                                         <x-filament::badge color="success">تفعيل كامل – بدون دين</x-filament::badge>
+                                    @elseif ($r->status === 'test')
+                                        <x-filament::badge color="gray">تيست من المشترك – بدون دين</x-filament::badge>
                                     @elseif ($r->debt)
                                         {{ $r->debt->number }} · {{ Money::format($r->amount) }}
                                     @else
@@ -180,7 +182,7 @@
                                 <td style="{{ $td }}">{{ $s['received'] ?? 0 }}</td>
                                 <td style="{{ $td }}">{{ ($s['subscribers_created'] ?? 0) }} مشترك · {{ ($s['accounts_created'] ?? 0) }} حساب</td>
                                 <td style="{{ $td }}">{{ $s['accounts_updated'] ?? 0 }}</td>
-                                <td style="{{ $td }}">{{ $s['renewals'] ?? 0 }} / {{ $s['debts_created'] ?? 0 }}</td>
+                                <td style="{{ $td }}">{{ $s['renewals'] ?? 0 }} / {{ $s['debts_created'] ?? 0 }}@if ($s['self_tests'] ?? 0)<div style="font-size:12px;color:var(--subs-muted)">{{ $s['self_tests'] }} تيست بدون دين</div>@endif</td>
                                 <td style="{{ $td }}">
                                     @php $errors = $s['errors'] ?? []; @endphp
                                     @if ($errors)
