@@ -48,7 +48,7 @@ class MissedRenewals
                 continue;
             }
             $full = $this->renewals->isFullActivation($newDays);
-            $test = ! $full && $this->renewals->isSelfTest($newDays);
+            $test = ! $full && $this->renewals->isSelfTest(max($newDays, RenewalService::longestDays($new, $old) ?? 0));
             $found[] = [
                 'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'full' => $full, 'test' => $test,
                 'amount' => ! $full && ! $test && $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
@@ -65,7 +65,7 @@ class MissedRenewals
     {
         $result = ['renewals' => 0, 'debts' => 0, 'amount' => 0];
         foreach ($this->find() as $item) {
-            $renewal = $this->renewals->record($item['account'], 0, $item['days'], $item['old'], $item['new'], $item['account']->external_plan, null, $item['at']);
+            $renewal = $this->renewals->record($item['account'], 0, $item['days'], $item['old'], $item['new'], $item['account']->external_plan, null, $item['at'], longestDays: RenewalService::longestDays($item['new'], $item['old']));
             if ($renewal->wasRecentlyCreated) {
                 $result['renewals']++;
                 if ($renewal->debt_id !== null) {

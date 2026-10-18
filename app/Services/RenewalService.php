@@ -43,6 +43,22 @@ class RenewalService
         return $newDays < (int) $this->settings->get('activation.min_partial_days');
     }
 
+    /**
+     * The longest the activation can be: it started no earlier than the old end date (days must reach
+     * 0 first) nor than the last sync that still saw 0. A late sync sees fewer days left than were
+     * activated; this bound keeps a short activation seen late from passing for a self-test.
+     */
+    public static function longestDays(?CarbonImmutable $newEndsAt, ?CarbonImmutable ...$notBefore): ?int
+    {
+        $starts = array_filter($notBefore);
+        if ($newEndsAt === null || $starts === []) {
+            return null;
+        }
+        $start = max(array_map(fn (CarbonImmutable $d) => $d->getTimestamp(), $starts));
+
+        return max(0, (int) round(($newEndsAt->getTimestamp() - $start) / 86400));
+    }
+
     public static function reference(Account $account, ?CarbonImmutable $newEndsAt, CarbonImmutable $detectedAt): string
     {
         // The new end date identifies the renewal: scanning it again gives the same reference.
@@ -59,6 +75,7 @@ class RenewalService
         ?SyncRun $run = null,
         ?CarbonImmutable $at = null,
         bool $fromSite = true,
+        ?int $longestDays = null,
     ): AccountRenewal {
         $at ??= CarbonImmutable::now();
         $reference = self::reference($account, $newEndsAt, $at);
@@ -68,11 +85,12 @@ class RenewalService
         }
 
         try {
-            return DB::transaction(function () use ($account, $previousDays, $newDays, $previousEndsAt, $newEndsAt, $planName, $run, $at, $reference, $fromSite) {
+            return DB::transaction(function () use ($account, $previousDays, $newDays, $previousEndsAt, $newEndsAt, $planName, $run, $at, $reference, $fromSite, $longestDays) {
                 $plan = $account->current_plan_id ? ServicePlan::find($account->current_plan_id) : null;
                 $full = $this->isFullActivation($newDays);
                 // Only a sync sees self-tests; an employee who activates by WhatsApp states the days.
-                $test = $fromSite && ! $full && $this->isSelfTest($newDays);
+                // A test only when even the longest the activation can be is under the minimum.
+                $test = $fromSite && ! $full && $this->isSelfTest(max($newDays, $longestDays ?? 0));
                 $amount = ! $full && ! $test && $plan?->price > 0 ? (int) $plan->price : null;
 
                 $renewal = AccountRenewal::create([
@@ -121,7 +139,7 @@ class RenewalService
                 }
 
                 $this->audit->log('renewal.detected', $renewal, ['days_left' => $previousDays, 'ends_at' => $previousEndsAt], [
-                    'days_left' => $newDays, 'ends_at' => $newEndsAt, 'plan' => $renewal->plan_name, 'amount' => $amount,
+                    'days_left' => $newDays, 'longest_days' => $longestDays, 'ends_at' => $newEndsAt, 'plan' => $renewal->plan_name, 'amount' => $amount,
                     'debt' => $debt?->number, 'reference' => $reference,
                 ], match (true) {
                     $full => "تفعيل كامل ({$newDays} يوم): يُسجَّل تفعيلاً بدون دين",
@@ -187,7 +205,13 @@ class RenewalService
     {
         $result = ['fixed' => 0, 'kept_paid' => 0];
         $renewals = AccountRenewal::with('debt')->where('status', 'debt_created')->whereNotNull('sync_run_id')
-            ->where('new_days', '<', (int) $this->settings->get('activation.min_partial_days'))->get();
+            ->where('new_days', '<', (int) $this->settings->get('activation.min_partial_days'))->get()
+            ->filter(function (AccountRenewal $r) {
+                // Had it been active earlier, the previous successful sync would have listed it.
+                $before = SyncRun::where('status', 'success')->where('id', '<', $r->sync_run_id)->max('started_at');
+
+                return $this->isSelfTest(max($r->new_days, self::longestDays($r->new_ends_at, $r->previous_ends_at, $before ? CarbonImmutable::parse($before) : null) ?? 0));
+            });
         foreach ($renewals as $renewal) {
             DB::transaction(function () use ($renewal, &$result) {
                 $debt = $renewal->debt;

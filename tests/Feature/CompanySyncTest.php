@@ -429,4 +429,51 @@ class CompanySyncTest extends TestCase
         $this->assertSame('voided', Debt::sole()->status->value);
         $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
     }
+
+    public function test_a_late_sync_still_turns_a_short_activation_into_a_secondary_debt(): void
+    {
+        // The last sync saw one day left; the next one comes two days later and sees 4 days.
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(1)]));
+        $this->sync();
+        $this->assertSame(1, Account::sole()->company_days_left);
+
+        $this->travel(2)->days();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(4)]));
+        $this->sync();
+
+        $this->assertSame('debt_created', AccountRenewal::sole()->status);
+        $this->assertSame(35000, Debt::sole()->balance);
+    }
+
+    public function test_a_seven_day_activation_seen_late_with_few_days_left_is_not_a_self_test(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(1)]));
+        $this->sync();
+        $oldEnd = CarbonImmutable::parse($this->endsIn(1));
+
+        // Activated 7 days right at the old end; the next sync comes 5 days later and sees 2 days left.
+        $this->travel(6)->days();
+        $this->site->set($this->siteRecord(['ends_at' => $oldEnd->addDays(7)->toIso8601String()]));
+        $this->sync();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame(2, $renewal->new_days);
+        $this->assertSame('debt_created', $renewal->status);
+        $this->assertSame(1, Debt::count());
+    }
+
+    public function test_a_self_test_seen_late_is_still_a_self_test(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(1)]));
+        $this->sync();
+        $oldEnd = CarbonImmutable::parse($this->endsIn(1));
+
+        // A 2-day test from the old end, seen a day later.
+        $this->travel(2)->days();
+        $this->site->set($this->siteRecord(['ends_at' => $oldEnd->addDays(2)->toIso8601String()]));
+        $this->sync();
+
+        $this->assertSame('test', AccountRenewal::sole()->status);
+        $this->assertSame(0, Debt::count());
+    }
 }

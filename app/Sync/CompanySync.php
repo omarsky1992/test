@@ -235,6 +235,8 @@ class CompanySync
         $endsAt = CompanyData::date($record['ends_at']);
         $status = CompanyData::status($record['status']);
         $previousEndsAt = $account->external_ends_at;
+        // The last sync saw 0 only if it came after the old end date: the activation started after it.
+        $sawZeroAt = $account->company_days_left === 0 ? $account->company_synced_at : null;
         // The last known days, aged to now: a subscription whose saved end date has passed counts as 0
         // even if no sync saw it at 0 (the Active list doesn't show expired subscriptions).
         $previousDays = $account->company_days_left;
@@ -271,7 +273,10 @@ class CompanySync
 
         $newDays = $fields['company_days_left'];
         if ($previousDays === 0 && $newDays !== null && $newDays > 0) {
-            $renewal = $this->renewals->record($account, $previousDays, $newDays, $previousEndsAt, $endsAt, $record['plan'], $run, $now);
+            $renewal = $this->renewals->record(
+                $account, $previousDays, $newDays, $previousEndsAt, $endsAt, $record['plan'], $run, $now,
+                longestDays: RenewalService::longestDays($endsAt, $previousEndsAt, $sawZeroAt),
+            );
             if ($renewal->wasRecentlyCreated) {
                 $this->stats['renewals']++;
                 match (true) {
