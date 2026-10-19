@@ -14,6 +14,7 @@ use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\AuditLog;
 use App\Models\Debt;
+use App\Models\DebtTransfer;
 use App\Models\FinancialTransaction;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
@@ -574,5 +575,44 @@ class CompanySyncTest extends TestCase
         $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('المفعّل حديثاً');
         app(RecentActivationService::class)->asCash($renewal);
         $this->assertSame('cash', $renewal->fresh()->decision);
+    }
+
+    public function test_transfer_moves_the_unpaid_secondary_debt_of_a_recent_activation_to_primary(): void
+    {
+        // A 7-day activation left a secondary debt; later a 30-day activation with nothing paid.
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
+        $this->sync();
+        $this->travel(8)->days();
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $secondary = Debt::sole();
+        $renewal = RecentActivationService::pending()->sole();
+
+        Livewire::test(RecentlyActivated::class)
+            ->assertSee('35,000')
+            ->assertTableActionVisible('transfer', $renewal)
+            ->callTableAction('transfer', $renewal)
+            ->assertHasNoTableActionErrors()
+            ->assertCountTableRecords(0);
+
+        $this->assertSame(DebtBucket::Primary, $secondary->fresh()->bucket);
+        $this->assertSame(1, Debt::count());
+        $this->assertSame(35000, $this->balanceOf(Ledger::AR_PRIMARY));
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+        $this->assertSame('transfer', $renewal->fresh()->decision);
+        $this->assertSame(1, DebtTransfer::count());
+    }
+
+    public function test_transfer_is_offered_only_with_an_unpaid_secondary_debt(): void
+    {
+        $renewal = $this->fullActivationFromSync();
+
+        Livewire::test(RecentlyActivated::class)
+            ->assertTableActionHidden('transfer', $renewal);
+        $this->expectException(BusinessRuleException::class);
+        app(RecentActivationService::class)->asTransfer($renewal);
     }
 }
