@@ -145,6 +145,7 @@
                                 <td style="{{ $td }}">
                                     @if ($r->status === 'activated')
                                         <x-filament::badge color="success">تفعيل كامل – بدون دين</x-filament::badge>
+                                        @if ($r->decision === 'debt')<div style="font-size:12px;margin-top:3px">المفعّل حديثاً: دين أولي</div>@elseif ($r->decision === 'cash')<div style="font-size:12px;margin-top:3px">المفعّل حديثاً: نقد</div>@endif
                                     @elseif ($r->status === 'test')
                                         <x-filament::badge color="gray">تيست من المشترك – بدون دين</x-filament::badge>
                                     @elseif ($r->debt)

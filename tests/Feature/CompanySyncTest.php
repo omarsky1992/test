@@ -4,7 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
+use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\CompanySyncPage;
+use App\Filament\Pages\EmployeeHome;
+use App\Filament\Widgets\RecentlyActivated;
 use App\Imports\SpreadsheetReader;
 use App\Imports\SubscriberImporter;
 use App\Models\Account;
@@ -14,15 +17,19 @@ use App\Models\Debt;
 use App\Models\FinancialTransaction;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
+use App\Models\User;
 use App\Models\WhatsappOutbox;
 use App\Services\Ledger;
+use App\Services\RecentActivationService;
 use App\Services\RenewalService;
 use App\Services\Settings;
+use App\Support\SubscriberStatus;
 use App\Sync\CompanyClient;
 use App\Sync\CompanySync;
 use App\Sync\CompanySyncException;
 use App\Sync\MissedRenewals;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -475,5 +482,97 @@ class CompanySyncTest extends TestCase
 
         $this->assertSame('test', AccountRenewal::sole()->status);
         $this->assertSame(0, Debt::count());
+    }
+
+    private function fullActivationFromSync(): AccountRenewal
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+
+        return AccountRenewal::sole();
+    }
+
+    public function test_a_thirty_day_activation_from_sync_waits_in_recently_activated_and_debt_adds_a_primary_debt(): void
+    {
+        $renewal = $this->fullActivationFromSync();
+        $this->assertSame(0, Debt::count());
+
+        Livewire::test(RecentlyActivated::class)
+            ->assertCanSeeTableRecords([$renewal])->assertSee('أحمد كريم')
+            ->callTableAction('debt', $renewal, data: ['amount' => 35000])
+            ->assertHasNoTableActionErrors()
+            ->assertCountTableRecords(0);
+
+        $debt = Debt::sole();
+        $this->assertSame(DebtBucket::Primary, $debt->bucket);
+        $this->assertSame(35000, $debt->balance);
+        $this->assertSame(35000, $this->balanceOf(Ledger::AR_PRIMARY));
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+        $renewal->refresh();
+        $this->assertSame('debt', $renewal->decision);
+        $this->assertSame($debt->id, $renewal->decision_debt_id);
+        $this->assertSame($this->admin->id, $renewal->decided_by);
+        // «فعّال وعليه دين», not «منتهي وعليه دين».
+        $ids = fn (string $f) => SubscriberStatus::apply(SubscriberStatus::base(), $f)->pluck('accounts.id')->all();
+        $this->assertSame([Account::sole()->id], $ids('active_primary'));
+        $this->assertSame([], $ids('expired_primary'));
+
+        // Decided once: a second click changes nothing.
+        $this->expectException(BusinessRuleException::class);
+        app(RecentActivationService::class)->asDebt($renewal);
+    }
+
+    public function test_cash_keeps_the_recent_activation_active_with_no_debt(): void
+    {
+        $renewal = $this->fullActivationFromSync();
+
+        Livewire::test(RecentlyActivated::class)
+            ->callTableAction('cash', $renewal)
+            ->assertCountTableRecords(0);
+
+        $this->assertSame('cash', $renewal->fresh()->decision);
+        $this->assertSame(0, Debt::count());
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_PRIMARY));
+        $ids = fn (string $f) => SubscriberStatus::apply(SubscriberStatus::base(), $f)->pluck('accounts.id')->all();
+        $this->assertSame([Account::sole()->id], $ids('active'));
+        $this->assertSame([], $ids('active_primary'));
+        $this->assertTrue(AuditLog::where('action', 'renewal.decided')->exists());
+    }
+
+    public function test_only_full_activations_from_sync_are_recently_activated_and_only_with_the_permission(): void
+    {
+        // A short activation (secondary debt) is not on the list.
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
+        $this->sync();
+        $this->assertSame(0, RecentActivationService::pending()->count());
+
+        $renewal = AccountRenewal::sole();
+        $this->expectException(BusinessRuleException::class);
+        app(RecentActivationService::class)->asCash($renewal);
+    }
+
+    public function test_an_employee_needs_the_permission_for_recently_activated(): void
+    {
+        $renewal = $this->fullActivationFromSync();
+        $employee = User::factory()->create(['branch_id' => $this->admin->branch_id]);
+        $employee->assignRole('employee');
+        $this->actingAs($employee);
+
+        $this->assertFalse(RecentlyActivated::canView());
+        try {
+            app(RecentActivationService::class)->asCash($renewal);
+            $this->fail('An employee without the permission decided a recent activation.');
+        } catch (AuthorizationException) {
+        }
+        $this->assertNull($renewal->fresh()->decision);
+
+        $employee->givePermissionTo('activations.recent');
+        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('المفعّل حديثاً');
+        app(RecentActivationService::class)->asCash($renewal);
+        $this->assertSame('cash', $renewal->fresh()->decision);
     }
 }

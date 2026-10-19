@@ -12,6 +12,7 @@ use App\Filament\Resources\SubscriberCards\SubscriberCardResource;
 use App\Filament\Widgets\BlacklistedSubscribers;
 use App\Filament\Widgets\CardBalances;
 use App\Filament\Widgets\PendingFollowUps;
+use App\Filament\Widgets\RecentlyActivated;
 use App\Filament\Widgets\SubscribersWithNotes;
 use App\Models\ActivationDue;
 use App\Models\CustodyHandoverRequest;
@@ -75,6 +76,7 @@ class EmployeeHome extends Page
     {
         // The subscribers with notes, the blacklist, and the 7-day follow-up list with its pay and مناقلة buttons, as on the admin dashboard.
         return array_values(array_filter([
+            auth()->user()->can('activations.recent') ? RecentlyActivated::class : null,
             auth()->user()->can('cards.view') ? CardBalances::class : null,
             auth()->user()->can('notes.view') ? SubscribersWithNotes::class : null,
             auth()->user()->can('blacklist.view') ? BlacklistedSubscribers::class : null,

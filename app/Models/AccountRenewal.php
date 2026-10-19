@@ -18,6 +18,7 @@ class AccountRenewal extends Model
             'previous_ends_at' => 'immutable_datetime',
             'new_ends_at' => 'immutable_datetime',
             'amount' => 'integer',
+            'decided_at' => 'immutable_datetime',
         ];
     }
 
@@ -39,5 +40,15 @@ class AccountRenewal extends Model
     public function debt(): BelongsTo
     {
         return $this->belongsTo(Debt::class);
+    }
+
+    public function decisionDebt(): BelongsTo
+    {
+        return $this->belongsTo(Debt::class, 'decision_debt_id');
+    }
+
+    public function decider(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'decided_by');
     }
 }
