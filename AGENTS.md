@@ -67,7 +67,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Keys only in env: `WAHA_*`, `WHATSAPP_*`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`. Tests use `tests/Support/FakeWhatsApp` and `FakeClaude`; never call the real services from tests.
 
 **Employees** (`App\Services\EmployeeFinance`)
-- Custody (عهدة) is a money account of kind `custody` per employee; cash they collect lands there. Handover moves it to a company box. Advances (سلف) are a separate receivable with repayments; an advance is never deleted. Custody and advances never mix.
+- Custody (عهدة) is a money account of kind `custody` per employee; cash they collect lands there. Handover moves it to a company box. Advances (سلف) are a separate receivable with repayments; an advance is never deleted. Custody and advances never mix. A purchase paid from a custody lowers it and is counted in the purchases like any expense; the employee's summary (`purchases`), statement («مشتريات من العهدة») and the employee reports show it, and the expense form pays from the user's custody by default when they collect to custody.
 
 **Employee interface** (`EmployeeHome`, `SubscriberCardResource`, `App\Support\SubscriberStatus`)
 - Employees always get the employee interface (home, cards, «حسابي», bottom bar on phones); the admin switches with «واجهة المدير ⇄ واجهة الموظف» (`users.ui_mode`). Each user picks their own colour (`users.theme_color`, applied by `ApplyUserTheme`).

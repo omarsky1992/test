@@ -32,6 +32,7 @@
         @foreach ([
             ['إجمالي التحصيلات', $summary['collections'], null],
             ['المسلَّم للصندوق', $summary['handed_over'], null],
+            ['المشتريات من العهدة', $summary['purchases'], null],
             ['عهدة التحصيل الحالية', $summary['custody'], 'var(--subs-amber)'],
             ['إجمالي السلف', $summary['advances'], null],
             ['تسديد السلف', $summary['repaid'], null],

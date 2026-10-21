@@ -9,6 +9,7 @@ use App\Filament\Resources\MoneyAccounts\MoneyAccountResource;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\MoneyAccount;
+use App\Services\EmployeeFinance;
 use App\Services\TreasuryService;
 use App\Support\Money;
 use BackedEnum;
@@ -82,7 +83,10 @@ class ExpenseResource extends Resource
     {
         return Action::make('newExpense')->label('تسجيل مصروف')->icon(Heroicon::OutlinedPlus)
             ->authorize('expenses.create')
-            ->fillForm(fn () => ['money_account_id' => MoneyAccount::where('kind', MoneyAccountKind::Cash)->value('id')])
+            // An employee who collects into their custody pays from it by default, so the custody goes down.
+            ->fillForm(fn () => ['money_account_id' => auth()->user()->collects_to_custody
+                ? app(EmployeeFinance::class)->custodyAccount(auth()->user())->id
+                : MoneyAccount::where('kind', MoneyAccountKind::Cash)->value('id')])
             ->schema([
                 Select::make('category_id')->label('الفئة')->options(fn () => ExpenseCategory::where('is_active', true)->pluck('name_ar', 'id'))->required(),
                 TextInput::make('description')->label('الوصف')->required()->placeholder('مثال: شراء راوتر TP-Link'),

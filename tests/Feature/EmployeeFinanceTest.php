@@ -5,18 +5,23 @@ namespace Tests\Feature;
 use App\Enums\AdvanceStatus;
 use App\Enums\MoneyAccountKind;
 use App\Enums\PaymentType;
+use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\EmployeeReports;
 use App\Filament\Pages\EmployeeStatement;
 use App\Filament\Resources\EmployeeAdvances\Pages\ListEmployeeAdvances;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
+use App\Filament\Resources\Expenses\Pages\ListExpenses;
 use App\Models\AuditLog;
 use App\Models\EmployeeAdvance;
+use App\Models\ExpenseCategory;
 use App\Models\PaymentMethodType;
 use App\Models\User;
 use App\Services\EmployeeFinance;
 use App\Services\Ledger;
 use App\Services\PaymentService;
+use App\Services\ReportService;
 use App\Services\TreasuryService;
+use Carbon\CarbonImmutable;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -86,7 +91,7 @@ class EmployeeFinanceTest extends TestCase
     {
         $this->ahmedCollects(100000);
 
-        $this->expectException(\App\Exceptions\BusinessRuleException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->finance()->handOver($this->ahmed, 150000, $this->cash());
     }
 
@@ -120,7 +125,7 @@ class EmployeeFinanceTest extends TestCase
         app(TreasuryService::class)->openingBalance($this->cash(), 1000000);
         $advance = $this->finance()->giveAdvance($this->ahmed, 100000, 'سلفة', $this->cash());
 
-        $this->expectException(\App\Exceptions\BusinessRuleException::class);
+        $this->expectException(BusinessRuleException::class);
         $this->finance()->repay($advance, 150000, $this->cash());
     }
 
@@ -183,5 +188,34 @@ class EmployeeFinanceTest extends TestCase
 
         $this->assertTrue($a->is($b));
         $this->assertSame(MoneyAccountKind::Custody, $a->kind);
+    }
+
+    public function test_a_purchase_paid_from_the_custody_is_counted_everywhere(): void
+    {
+        $this->ahmed->update(['collects_to_custody' => true]);
+        $this->ahmedCollects(50000);
+        $box = $this->finance()->custodyAccount($this->ahmed);
+
+        // Ahmed records it himself: the form pays from his custody by default.
+        $this->actingAs($this->ahmed);
+        Livewire::test(ListExpenses::class)
+            ->mountAction('newExpense')->assertActionDataSet(['money_account_id' => $box->id])
+            ->setActionData(['category_id' => ExpenseCategory::first()->id, 'description' => 'كابل', 'amount' => 10000])
+            ->callMountedAction()->assertNotified('تم الحفظ');
+        $this->actingAs($this->admin);
+
+        $this->assertSame(40000, $this->finance()->custodyBalance($this->ahmed));
+        $summary = $this->finance()->summary($this->ahmed);
+        $this->assertSame([50000, 0, 10000, 40000], [$summary['collections'], $summary['handed_over'], $summary['purchases'], $summary['custody']]);
+        $row = $this->finance()->statement($this->ahmed)->first();
+        $this->assertSame(['purchase', 'مشتريات من العهدة', -10000, 40000], [$row['kind'], $row['label'], $row['custody'], $row['custody_balance']]);
+        $this->assertStringContainsString('كابل', $row['details']);
+
+        $today = CarbonImmutable::today();
+        $this->assertSame(10000, app(ReportService::class)->dashboard($today, $today)['purchases']);
+        $report = $this->finance()->report($today, $today);
+        $this->assertSame([10000, 'أحمد'], [$report['purchases'][0]['amount'], $report['purchases'][0]['name']]);
+        $this->get(EmployeeStatement::getUrl(['user' => $this->ahmed->id]))->assertOk()->assertSee('المشتريات من العهدة')->assertSee('كابل');
+        $this->get(EmployeeReports::getUrl())->assertOk()->assertSee('المشتريات من عهد الموظفين');
     }
 }

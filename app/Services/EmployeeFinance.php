@@ -9,6 +9,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Models\CustodyHandoverRequest;
 use App\Models\EmployeeAdvance;
 use App\Models\EmployeeAdvanceRepayment;
+use App\Models\Expense;
 use App\Models\FundTransfer;
 use App\Models\LedgerEntry;
 use App\Models\MoneyAccount;
@@ -33,8 +34,7 @@ class EmployeeFinance
         private Sequencer $sequencer,
         private Audit $audit,
         private TreasuryService $treasury,
-    ) {
-    }
+    ) {}
 
     public function custodyAccount(User $user): MoneyAccount
     {
@@ -241,12 +241,15 @@ class EmployeeFinance
             ->where('payment_lines.money_account_id', $box->id)
             ->where('payments.status', DocumentStatus::Posted), 'payments.received_at')->sum('payment_lines.amount') : 0;
         $handedOver = $box ? (int) $range(FundTransfer::where('from_money_account_id', $box->id)->where('status', DocumentStatus::Posted), 'transferred_at')->sum('amount') : 0;
+        // Purchases paid from the custody lower it like a handover does.
+        $purchases = $box ? (int) $range(Expense::where('money_account_id', $box->id)->where('status', DocumentStatus::Posted), 'spent_at')->sum('amount') : 0;
         $advances = (int) $range(EmployeeAdvance::where('user_id', $employee->id), 'advanced_at')->sum('amount');
         $repaid = (int) $range(EmployeeAdvanceRepayment::where('user_id', $employee->id), 'paid_at')->sum('amount');
 
         return [
             'collections' => $collections,
             'handed_over' => $handedOver,
+            'purchases' => $purchases,
             'custody' => $box ? $this->treasury->balance($box) : 0,
             'advances' => $advances,
             'repaid' => $repaid,
@@ -276,26 +279,33 @@ class EmployeeFinance
                 ->orderByDesc('ledger_entries.occurred_at')->orderByDesc('ledger_entries.id')->limit(2000)->get();
 
             $payments = Payment::with('subscriber:id,full_name')->whereIn('id', $entries->where('source_type', (new Payment)->getMorphClass())->pluck('source_id'))->get()->keyBy('id');
+            $expenses = Expense::whereIn('id', $entries->where('source_type', (new Expense)->getMorphClass())->pluck('source_id'))->get()->keyBy('id');
 
             foreach ($entries as $e) {
                 $amount = (int) $e->debit - (int) $e->credit;
                 [$kind, $label] = match (true) {
                     $e->txn_type === 'payment' => ['collection', 'تحصيل من مشترك'],
+                    $e->txn_type === 'expense' => ['purchase', 'مشتريات من العهدة'],
                     $e->txn_type === 'fund_transfer' && $amount < 0 => ['handover', 'تسديد عهدة للصندوق'],
                     $e->txn_type === 'fund_transfer' => ['custody_in', 'تحويل إلى العهدة'],
                     $e->txn_type === 'reversal' => ['reversal', 'إلغاء عملية'],
                     default => ['custody_other', $e->memo ?? $e->txn_type],
                 };
                 $payment = $e->txn_type === 'payment' ? $payments->get($e->source_id) : null;
+                $expense = $e->txn_type === 'expense' ? $expenses->get($e->source_id) : null;
                 $rows->push([
                     'at' => CarbonImmutable::parse($e->occurred_at),
                     'kind' => $kind,
                     'label' => $label,
-                    'details' => $payment ? "سند {$payment->receipt_number} – {$payment->subscriber?->full_name}" : (string) $e->memo,
+                    'details' => match (true) {
+                        $payment !== null => "سند {$payment->receipt_number} – {$payment->subscriber?->full_name}",
+                        $expense !== null => "{$expense->number} – {$expense->description}".($expense->paid_to ? " ({$expense->paid_to})" : ''),
+                        default => (string) $e->memo,
+                    },
                     'custody' => $amount,
                     'advance' => 0,
                     'by' => $e->by_name,
-                    'reference' => $payment?->receipt_number,
+                    'reference' => $payment?->receipt_number ?? $expense?->number,
                 ]);
             }
         }
@@ -372,6 +382,12 @@ class EmployeeFinance
             ->map(fn (FundTransfer $t) => ['at' => $t->transferred_at, 'number' => $t->number, 'name' => $t->from?->user?->name, 'amount' => (int) $t->amount, 'into' => $t->to?->name, 'by' => $t->creator?->name])
             ->all();
 
+        $purchases = Expense::with(['moneyAccount.user', 'category', 'creator'])->whereIn('money_account_id', $custodyBoxes)
+            ->where('status', DocumentStatus::Posted)->whereBetween('spent_at', $range)->orderByDesc('spent_at')->get()
+            ->map(fn (Expense $e) => ['at' => $e->spent_at, 'number' => $e->number, 'name' => $e->moneyAccount?->user?->name ?? $e->moneyAccount?->name,
+                'details' => trim(($e->category?->name_ar ? "{$e->category->name_ar}: " : '').$e->description), 'amount' => (int) $e->amount, 'by' => $e->creator?->name])
+            ->all();
+
         $advances = EmployeeAdvance::with(['user', 'creator'])->whereBetween('advanced_at', $range)->orderByDesc('advanced_at')->get();
         $repayments = EmployeeAdvanceRepayment::with(['user', 'advance', 'creator', 'moneyAccount'])->whereBetween('paid_at', $range)->orderByDesc('paid_at')->get();
 
@@ -380,6 +396,7 @@ class EmployeeFinance
             'custody' => $custody,
             'custody_total' => array_sum(array_column($custody, 'balance')),
             'handovers' => $handovers,
+            'purchases' => $purchases,
             'advances' => $advances,
             'repayments' => $repayments,
             'advances_outstanding' => (int) EmployeeAdvance::sum('balance'),

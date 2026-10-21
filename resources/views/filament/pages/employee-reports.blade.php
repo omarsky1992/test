@@ -65,6 +65,18 @@
         @endif
     </x-filament::section>
 
+    <x-filament::section heading="المشتريات من عهد الموظفين">
+        @if (! $report['purchases']) {!! $empty !!} @else
+            <div style="overflow-x:auto"><table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:620px">
+                <thead><tr><th style="{{ $th }}">الوقت</th><th style="{{ $th }}">الرقم</th><th style="{{ $th }}">الموظف</th><th style="{{ $th }}">المبلغ</th><th style="{{ $th }}">التفاصيل</th><th style="{{ $th }}">سجّلها</th></tr></thead>
+                <tbody>@foreach ($report['purchases'] as $r)
+                    <tr><td style="{{ $td }}" dir="ltr">{{ $r['at']->format('Y/m/d H:i') }}</td><td style="{{ $td }}">{{ $r['number'] }}</td><td style="{{ $td }}">{{ $r['name'] }}</td>
+                        <td style="{{ $td }};font-weight:600">{{ Money::format($r['amount']) }}</td><td style="{{ $td }}">{{ $r['details'] }}</td><td style="{{ $td }}">{{ $r['by'] }}</td></tr>
+                @endforeach</tbody>
+            </table></div>
+        @endif
+    </x-filament::section>
+
     <x-filament::section heading="السلف">
         @if ($report['advances']->isEmpty()) {!! $empty !!} @else
             <div style="overflow-x:auto"><table style="width:100%;font-size:13.5px;border-collapse:collapse;min-width:720px">
