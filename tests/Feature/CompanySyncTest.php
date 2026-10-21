@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Pages\CompanySyncPage;
 use App\Filament\Pages\EmployeeHome;
@@ -21,6 +23,7 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Models\WhatsappOutbox;
 use App\Services\Ledger;
+use App\Services\PaymentService;
 use App\Services\RecentActivationService;
 use App\Services\RenewalService;
 use App\Services\Settings;
@@ -614,5 +617,37 @@ class CompanySyncTest extends TestCase
             ->assertTableActionHidden('transfer', $renewal);
         $this->expectException(BusinessRuleException::class);
         app(RecentActivationService::class)->asTransfer($renewal);
+    }
+
+    public function test_money_already_taken_from_a_recent_activation_is_shown_beside_it(): void
+    {
+        // Another subscriber activated too, with nothing received.
+        $this->site->set($this->siteRecord(['customer_id' => '9', 'subscription_id' => '9', 'username' => 'OTHER1', 'name' => 'حسن علي', 'ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['customer_id' => '9', 'subscription_id' => '9', 'username' => 'OTHER1', 'name' => 'حسن علي', 'ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $this->travel(1)->hours();
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $renewal = RecentActivationService::pending()->where('account_id', '!=', AccountRenewal::orderBy('id')->first()->account_id)->sole();
+
+        // An employee took the money in cash.
+        $employee = User::factory()->create(['name' => 'كرار', 'branch_id' => $this->admin->branch_id]);
+        $employee->assignRole('employee');
+        $this->actingAs($employee);
+        app(PaymentService::class)->record(Account::find($renewal->account_id), 35000, PaymentMethod::Cash, type: PaymentType::Advance);
+        $this->actingAs($this->admin);
+
+        Livewire::test(RecentlyActivated::class)
+            ->assertCountTableRecords(2)
+            ->assertSeeInOrder(['أحمد كريم', '35,000', 'كرار', 'حسن علي'])
+            ->callTableAction('cash', $renewal)
+            ->assertCountTableRecords(1);
+        $this->assertSame('cash', $renewal->fresh()->decision);
+
+        // Money from long before the activation is not counted.
+        $this->assertSame(1, RecentActivationService::receipts($renewal)->count());
     }
 }

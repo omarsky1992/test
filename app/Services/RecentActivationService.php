@@ -5,12 +5,15 @@ namespace App\Services;
 use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
+use App\Enums\DocumentStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Debt;
+use App\Models\Payment;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -49,6 +52,30 @@ class RecentActivationService
 
             return $renewal;
         });
+    }
+
+    /**
+     * The window in which money taken from the subscriber belongs to this activation: from 3 days before
+     * the old end date (or the detection) up to now, never more than 10 days before the detection.
+     */
+    public const RECEIPTS_FROM = "greatest(account_renewals.detected_at - interval '10 days', least(coalesce(account_renewals.previous_ends_at, account_renewals.detected_at), account_renewals.detected_at) - interval '3 days')";
+
+    /** Posted receipts of the renewal's account in that window: someone already took money for it. */
+    public static function receiptsQuery(): Builder
+    {
+        return Payment::query()->where('payments.status', DocumentStatus::Posted)
+            ->whereColumn('payments.account_id', 'account_renewals.account_id')
+            ->whereRaw('payments.received_at >= '.self::RECEIPTS_FROM);
+    }
+
+    /** @return Collection<int, Payment> */
+    public static function receipts(AccountRenewal $renewal)
+    {
+        return Payment::query()->with('creator:id,name')->where('status', DocumentStatus::Posted)->where('account_id', $renewal->account_id)
+            ->where('received_at', '>=', max(
+                $renewal->detected_at->subDays(10),
+                min($renewal->previous_ends_at ?? $renewal->detected_at, $renewal->detected_at)->subDays(3),
+            ))->orderBy('received_at')->get();
     }
 
     /** The account's unpaid secondary debts, oldest first. */

@@ -37,10 +37,22 @@ class RecentlyActivated extends TableWidget
         return auth()->user()->can('activations.recent');
     }
 
+    /** Who took the money and when: «أحمد 35,000 د.ع (10/20)». */
+    public static function receivers(AccountRenewal $renewal): string
+    {
+        return RecentActivationService::receipts($renewal)
+            ->map(fn ($p) => ($p->creator?->name ?? '—').' '.Money::format((int) $p->amount).' ('.$p->received_at->setTimezone(config('app.timezone'))->format('m/d').')')
+            ->implode(' · ');
+    }
+
     public function table(Table $table): Table
     {
         return $table
-            ->query(fn () => RecentActivationService::pending()->with(['subscriber', 'account.currentPlan'])->latest('detected_at')
+            // Those someone already took money from come first, so «نقد» is one look away.
+            ->query(fn () => RecentActivationService::pending()->with(['subscriber', 'account.currentPlan'])
+                ->addSelect(['received' => RecentActivationService::receiptsQuery()->selectRaw('sum(payments.amount)')])
+                ->orderByRaw('not exists ('.($taken = RecentActivationService::receiptsQuery()->selectRaw('1')->toBase())->toSql().')', $taken->getBindings())
+                ->latest('detected_at')
                 ->addSelect(['secondary_balance' => Debt::query()->selectRaw('sum(balance)')->whereColumn('debts.account_id', 'account_renewals.account_id')
                     ->where('bucket', DebtBucket::Secondary)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])]))
             ->recordClasses(fn (AccountRenewal $record) => SubscriberFlags::rowClass($record->subscriber_id))
@@ -57,6 +69,9 @@ class RecentlyActivated extends TableWidget
                 TextColumn::make('new_days')->label('الأيام')->formatStateUsing(fn ($state) => "{$state} يوم"),
                 TextColumn::make('new_ends_at')->label('ينتهي')->dateTime('Y/m/d')->placeholder('—'),
                 TextColumn::make('detected_at')->label('اكتُشف')->dateTime('Y/m/d H:i'),
+                TextColumn::make('received')->label('مستلم منه')->placeholder('—')->color('success')->weight('bold')->wrap()
+                    ->formatStateUsing(fn ($state) => (int) $state > 0 ? '💵 '.Money::format((int) $state) : null)
+                    ->description(fn (AccountRenewal $r) => (int) $r->received > 0 ? self::receivers($r) : null),
                 TextColumn::make('secondary_balance')->label('دين ثانوي')->placeholder('—')->color('warning')
                     ->formatStateUsing(fn ($state) => (int) $state > 0 ? Money::format((int) $state) : null),
             ])
@@ -86,7 +101,7 @@ class RecentlyActivated extends TableWidget
                 Action::make('cash')->label('نقد')->icon(Heroicon::OutlinedBanknotes)->color('success')->button()
                     ->requiresConfirmation()
                     ->modalHeading(fn (AccountRenewal $r) => 'تسجيل تفعيل '.$r->subscriber?->full_name.' نقداً')
-                    ->modalDescription('يبقى المشترك فعّالاً بدون دين.')
+                    ->modalDescription(fn (AccountRenewal $r) => 'يبقى المشترك فعّالاً بدون دين.'.((int) $r->received > 0 ? ' مستلم منه: '.self::receivers($r) : ''))
                     ->modalSubmitActionLabel('نقد')
                     ->action(function (AccountRenewal $record) {
                         app(RecentActivationService::class)->asCash($record);
