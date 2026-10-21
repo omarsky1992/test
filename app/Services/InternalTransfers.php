@@ -52,6 +52,18 @@ class InternalTransfers
     }
 
     /**
+     * «تصفير جزء من رصيد البطاقة»: money spent from a card comes off its balance as a documented,
+     * reversible reset of just that amount.
+     */
+    public function resetCardPart(MoneyAccount $card, int $amount, string $reason, ?string $idempotencyKey = null): MoneyAccountReset
+    {
+        $this->authorize('cards.reset');
+        $this->ensureCard($card);
+
+        return $this->treasury->resetBalance($card, $reason, $idempotencyKey, $amount);
+    }
+
+    /**
      * «تصفير رصيد البطاقات»: zeroes every card that holds a balance, all at once, each with its own
      * documented reset. The same request ($idempotencyKey) repeated resets nothing more.
      *

@@ -229,7 +229,7 @@ class TreasuryService
      * «تصفير رصيد البطاقة»: one documented adjustment that brings the balance to zero (the card was
      * emptied outside the system). Old movements are untouched; the adjustment can be reversed.
      */
-    public function resetBalance(MoneyAccount $box, string $reason, ?string $idempotencyKey = null): MoneyAccountReset
+    public function resetBalance(MoneyAccount $box, string $reason, ?string $idempotencyKey = null, ?int $amount = null): MoneyAccountReset
     {
         if ($idempotencyKey !== null && ($existing = MoneyAccountReset::where('idempotency_key', $idempotencyKey)->first())) {
             return $existing;
@@ -238,12 +238,21 @@ class TreasuryService
             throw new BusinessRuleException('اكتب سبب التصفير.');
         }
 
-        return DB::transaction(function () use ($box, $reason, $idempotencyKey) {
+        if ($amount !== null && $amount <= 0) {
+            throw new BusinessRuleException('المبلغ يجب أن يكون أكبر من صفر.');
+        }
+
+        return DB::transaction(function () use ($box, $reason, $idempotencyKey, $amount) {
             $box = MoneyAccount::whereKey($box->id)->lockForUpdate()->firstOrFail();
-            $balance = $this->balance($box);
-            if ($balance === 0) {
+            $current = $this->balance($box);
+            if ($current === 0) {
                 throw new BusinessRuleException('رصيد البطاقة صفر أصلاً.');
             }
+            // A partial reset takes part of a positive balance off the card (money spent from it), never more than is on it.
+            if ($amount !== null && $amount > $current) {
+                throw new BusinessRuleException('المبلغ أكبر من رصيد البطاقة ('.number_format(max(0, $current)).').');
+            }
+            $balance = $amount ?? $current;
             $now = CarbonImmutable::now();
             $reset = MoneyAccountReset::create([
                 'number' => $this->sequencer->next('card_reset', $now),
@@ -263,7 +272,7 @@ class TreasuryService
                 ['account' => Ledger::CARD_ADJUSTMENTS, 'credit' => $abs],
             ], $reset, "تصفير {$box->name}: {$reason}", $box->branch_id);
             $reset->update(['txn_id' => $txn->id]);
-            $this->audit->log('money_account.reset', $box, ['balance' => $balance], ['balance' => 0, 'reset' => $reset->number], $reason);
+            $this->audit->log('money_account.reset', $box, ['balance' => $current], ['balance' => $current - $balance, 'reset' => $reset->number, 'partial' => $amount !== null], $reason);
 
             return $reset;
         });

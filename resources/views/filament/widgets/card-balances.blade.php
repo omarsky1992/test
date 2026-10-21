@@ -9,6 +9,7 @@
             </div>
             <div style="display:flex;flex-wrap:wrap;gap:8px">
                 {{ $this->resetAllAction }}
+                {{ $this->resetPartAction }}
                 @if ($detailsUrl)
                     <x-filament::button tag="a" :href="$detailsUrl" color="gray" icon="heroicon-o-credit-card">التفاصيل والحركات</x-filament::button>
                 @endif

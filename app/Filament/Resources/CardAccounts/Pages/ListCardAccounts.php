@@ -17,6 +17,7 @@ class ListCardAccounts extends ListRecords
         return [
             CardAccountResource::transferAction(),
             CardBalances::makeResetAllAction(),
+            CardBalances::makeResetPartAction(),
             Action::make('operations')->label('سجل المناقلات والتصفير')->color('gray')->icon('heroicon-o-queue-list')
                 ->url(CardOperationsResource::getUrl()),
         ];

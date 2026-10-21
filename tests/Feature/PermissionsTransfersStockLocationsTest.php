@@ -241,6 +241,35 @@ class PermissionsTransfersStockLocationsTest extends TestCase
         $this->refused(fn () => app(InternalTransfers::class)->resetAllCards('x'), AuthorizationException::class);
     }
 
+    public function test_part_of_a_card_balance_comes_off_when_money_is_spent_from_it(): void
+    {
+        $treasury = app(TreasuryService::class);
+        $qi = $treasury->createMoneyAccount($this->admin->branch_id, MoneyAccountKind::Electronic, 'كي كارد');
+        $treasury->openingBalance($qi, 70000);
+        $cash = $treasury->balance($this->cash());
+
+        Livewire::test(CardBalances::class)->assertActionVisible('resetPart')
+            ->callAction('resetPart', data: ['card' => $qi->id, 'amount' => 25000, 'reason' => 'شحن رصيد الشركة', 'idempotency_key' => $key = (string) Str::uuid()])
+            ->assertNotified('نزل 25,000 د.ع من كي كارد');
+        $this->assertSame(45000, $treasury->balance($qi));
+        $this->assertSame($cash, $treasury->balance($this->cash()), 'nothing else moves');
+        $reset = MoneyAccountReset::sole();
+        $this->assertSame(25000, $reset->amount);
+
+        app(InternalTransfers::class)->resetCardPart($qi, 25000, 'شحن رصيد الشركة', $key);
+        $this->assertSame(45000, $treasury->balance($qi), 'the same request twice takes the amount once');
+        $this->refused(fn () => app(InternalTransfers::class)->resetCardPart($qi, 50000, 'أكثر من الرصيد'));
+        $this->refused(fn () => app(InternalTransfers::class)->resetCardPart($qi, 0, 'صفر'));
+        $this->refused(fn () => app(InternalTransfers::class)->resetCardPart($this->cash(), 1000, 'ليست بطاقة'));
+
+        app(InternalTransfers::class)->voidReset($reset, 'خطأ');
+        $this->assertSame(70000, $treasury->balance($qi));
+
+        $this->actingAs($this->employee('موظف', ['cards.view']));
+        Livewire::test(CardBalances::class)->assertActionHidden('resetPart');
+        $this->refused(fn () => app(InternalTransfers::class)->resetCardPart($qi, 1000, 'x'), AuthorizationException::class);
+    }
+
     // ---- Accounting periods ----
 
     public function test_purchases_and_sales_periods_close_separately_and_nothing_moves(): void
