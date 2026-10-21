@@ -17,7 +17,7 @@ class ListSubscriberCards extends ListRecords
     public function getTabs(): array
     {
         $counts = SubscriberStatus::counts();
-        $colors = ['must_activate' => 'primary', 'expiring' => 'warning', 'expired' => 'danger', 'active_primary' => 'danger', 'expired_primary' => 'danger'];
+        $colors = ['must_activate' => 'primary', 'expiring' => 'warning', 'expired' => 'danger', 'active_primary' => 'danger', 'expired_primary' => 'danger', 'secondary' => 'warning', 'active_secondary' => 'warning', 'expired_secondary' => 'warning'];
 
         return collect(SubscriberStatus::FILTERS)->map(fn (string $label, string $key) => Tab::make($label)
             ->badge($counts[$key])

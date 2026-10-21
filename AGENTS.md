@@ -71,7 +71,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 
 **Employee interface** (`EmployeeHome`, `SubscriberCardResource`, `App\Support\SubscriberStatus`)
 - Employees always get the employee interface (home, cards, «حسابي», bottom bar on phones); the admin switches with «واجهة المدير ⇄ واجهة الموظف» (`users.ui_mode`). Each user picks their own colour (`users.theme_color`, applied by `ApplyUserTheme`).
-- Subscriber groups: a subscription ends at GREATEST(external_ends_at, service_ends_at); «ينتهي قريباً» uses the setting `subscribers.expiring_days`. «فعّال/منتهي وعليه دين» count primary debts only. Queries use the application clock, never SQL `now()`.
+- Subscriber groups: a subscription ends at GREATEST(external_ends_at, service_ends_at); «ينتهي قريباً» uses the setting `subscribers.expiring_days`. «فعّال/منتهي وعليه دين» count primary debts only. The secondary debts open the same cards (tabs `secondary`, `active_secondary`, `expired_secondary`, with pay and مناقلة on each card) from the employee home and, in the employee interface, from the menu. Queries use the application clock, never SQL `now()`.
 - «يجب التفعيل» (`activation_dues`, `ActivationDueService`): a secondary debt paid in full opens one (from `PaymentService::applyToDebt`); voiding the payment cancels it; it closes when the company end date moves more than 2 days past where it was (sync or WhatsApp activation) or when an employee confirms «تم التفعيل».
 - Custody handover requests: the employee asks, nothing moves until someone with `custody.settle` approves (then `EmployeeFinance::handOver`).
 - WhatsApp reminders open `wa.me` links from the admin's fixed `message_templates`; nothing is sent automatically.

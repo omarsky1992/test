@@ -65,11 +65,24 @@
 
     @if ($canDebts)
         <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start">
-            <a href="{{ $secondaryUrl }}" style="{{ $tile }};border-color:var(--to-bd)">
-                <div style="{{ $label }}">الديون الثانوية</div>
-                <div style="{{ $value }};color:var(--subs-amber)">{{ number_format($debts['secondary']) }}</div>
+            {{-- The same subscriber cards as the primary debts, each with its pay and مناقلة buttons. --}}
+            <div style="{{ $tile }};border-color:var(--to-bd)">
+                <a href="{{ $cardsUrl('secondary') }}" style="display:flex;justify-content:space-between;align-items:baseline;text-decoration:none;color:inherit">
+                    <span style="{{ $label }}">الديون الثانوية</span>
+                    <span style="font-size:20px;font-weight:800;color:var(--subs-amber)">{{ number_format($debts['secondary']) }}</span>
+                </a>
                 <div style="{{ $small }}">{{ $debts['secondary_accounts'] }} حساب</div>
-            </a>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
+                    <a href="{{ $cardsUrl('active_secondary') }}" style="border:1px solid var(--subs-border);border-radius:10px;padding:5px 8px;text-decoration:none;color:inherit">
+                        <div style="font-size:11.5px;color:var(--subs-muted)">فعّال وعليه دين</div>
+                        <div style="font-size:17px;font-weight:800">{{ $counts['active_secondary'] ?? 0 }}</div>
+                    </a>
+                    <a href="{{ $cardsUrl('expired_secondary') }}" style="border:1px solid var(--subs-border);border-radius:10px;padding:5px 8px;text-decoration:none;color:inherit">
+                        <div style="font-size:11.5px;color:var(--subs-muted)">منتهي وعليه دين</div>
+                        <div style="font-size:17px;font-weight:800">{{ $counts['expired_secondary'] ?? 0 }}</div>
+                    </a>
+                </div>
+            </div>
             <div style="{{ $tile }};border-color:var(--tr-bd)">
                 <a href="{{ $cardsUrl('primary') }}" style="display:flex;justify-content:space-between;align-items:baseline;text-decoration:none;color:inherit">
                     <span style="{{ $label }}">الديون الأولية</span>

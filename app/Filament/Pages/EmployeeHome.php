@@ -7,7 +7,6 @@ use App\Enums\DebtStatus;
 use App\Enums\DocumentStatus;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Actions\Operations;
-use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Resources\SubscriberCards\SubscriberCardResource;
 use App\Filament\Widgets\BlacklistedSubscribers;
 use App\Filament\Widgets\CardBalances;
@@ -146,8 +145,6 @@ class EmployeeHome extends Page
             'canMarkDone' => $user->can('activations.mark_done'),
             'handoverRequests' => $user->can('custody.settle') ? CustodyHandoverRequest::where('status', 'pending')->count() : 0,
             'cardsUrl' => fn (string $tab) => SubscriberCardResource::getUrl('index', ['tab' => $tab]),
-            // The secondary debts list itself, where each debt has its pay and مناقلة buttons.
-            'secondaryUrl' => DebtResource::getUrl('index', ['tab' => 'secondary']),
         ];
     }
 }

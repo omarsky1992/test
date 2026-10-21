@@ -4,6 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Auth\Login;
 use App\Filament\Resources\Debts\DebtResource;
+use App\Filament\Resources\SubscriberCards\SubscriberCardResource;
 use App\Filament\Support\InitialsAvatarProvider;
 use App\Http\Middleware\ApplyUserTheme;
 use Filament\Http\Middleware\Authenticate;
@@ -60,8 +61,11 @@ class AdminPanelProvider extends PanelProvider
                     ->group('المالية')
                     ->sort(2)
                     ->icon('heroicon-o-clock')
-                    ->url(fn (): string => DebtResource::getUrl('index', ['tab' => 'secondary']))
-                    ->isActiveWhen(fn (): bool => request()->routeIs('filament.admin.resources.debts.index') && request()->query('tab') === 'secondary')
+                    // In the employee interface: the same subscriber cards as the primary debts (better on a phone).
+                    ->url(fn (): string => auth()->user()?->usesEmployeeUi() && auth()->user()->can('accounts.view')
+                        ? SubscriberCardResource::getUrl('index', ['tab' => 'secondary'])
+                        : DebtResource::getUrl('index', ['tab' => 'secondary']))
+                    ->isActiveWhen(fn (): bool => request()->routeIs('filament.admin.resources.debts.index', 'filament.admin.resources.cards.index') && request()->query('tab') === 'secondary')
                     ->visible(fn (): bool => auth()->user()?->can('debts.view') ?? false),
             ])
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\Filament\Resources')

@@ -165,8 +165,9 @@ class EmployeeUiTest extends TestCase
         $other = $this->account('علي حسين');
         Livewire::test(ListSubscriberCards::class)->assertTableActionHidden('transfer', $other);
 
-        // The home's secondary-debts tile opens the debts list, which has مناقلة on each debt.
-        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('debts?tab=secondary', escape: false)->assertSee('متابعة الـ7 أيام');
+        // The home's secondary-debts tile opens the same subscriber cards as the primary debts, with مناقلة on each card.
+        $this->get(EmployeeHome::getUrl())->assertOk()->assertSee('cards?tab=secondary', escape: false)
+            ->assertSee('cards?tab=active_secondary', escape: false)->assertSee('متابعة الـ7 أيام');
     }
 
     public function test_a_sync_never_deletes_or_moves_a_secondary_debt(): void
@@ -275,6 +276,14 @@ class EmployeeUiTest extends TestCase
 
         $counts = SubscriberStatus::counts();
         $this->assertSame([3, 1, 1, 1, 1], [$counts['active'], $counts['expiring'], $counts['expired'], $counts['active_primary'], $counts['expired_primary']]);
+
+        // Secondary debts are split the same way.
+        app(DebtService::class)->create($gone, 3000, DebtBucket::Secondary);
+        app(DebtService::class)->create($soon, 3000, DebtBucket::Secondary);
+        $this->account('ثانوي منتهي')->update(['external_ends_at' => now()->subDays(3)]);
+        app(DebtService::class)->create(Account::latest('id')->first(), 3000, DebtBucket::Secondary);
+        $counts = SubscriberStatus::counts();
+        $this->assertSame([3, 1, 2], [$counts['secondary'], $counts['active_secondary'], $counts['expired_secondary']]);
 
         app(Settings::class)->set('subscribers.expiring_days', 10);
         $this->assertSame(2, SubscriberStatus::counts()['expiring']);

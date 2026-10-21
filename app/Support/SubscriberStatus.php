@@ -28,6 +28,8 @@ class SubscriberStatus
         'active_primary' => 'فعّال وعليه دين',
         'expired_primary' => 'منتهي وعليه دين',
         'secondary' => 'عليه دين ثانوي',
+        'active_secondary' => 'فعّال وعليه دين ثانوي',
+        'expired_secondary' => 'منتهي وعليه دين ثانوي',
         'primary' => 'عليه دين أولي',
     ];
 
@@ -53,6 +55,8 @@ class SubscriberStatus
             'active_primary' => self::withDebt($query->whereRaw("{$ends} > ?", [$now]), DebtBucket::Primary),
             'expired_primary' => self::withDebt($query->whereRaw("({$ends} <= ? or {$ends} is null)", [$now]), DebtBucket::Primary),
             'secondary' => self::withDebt($query, DebtBucket::Secondary),
+            'active_secondary' => self::withDebt($query->whereRaw("{$ends} > ?", [$now]), DebtBucket::Secondary),
+            'expired_secondary' => self::withDebt($query->whereRaw("({$ends} <= ? or {$ends} is null)", [$now]), DebtBucket::Secondary),
             'primary' => self::withDebt($query, DebtBucket::Primary),
             default => $query,
         };
