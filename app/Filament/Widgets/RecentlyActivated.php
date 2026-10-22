@@ -66,6 +66,9 @@ class RecentlyActivated extends TableWidget
                     ->description(fn (AccountRenewal $r) => $r->subscriber?->phone),
                 TextColumn::make('plan_name')->label('الفئة')->placeholder('—')
                     ->description(fn (AccountRenewal $r) => $r->account?->currentPlan?->price ? Money::format((int) $r->account->currentPlan->price) : null),
+                TextColumn::make('payment_source')->label('الدفع بالموقع')->badge()->placeholder('—')
+                    ->color(fn (?string $state) => $state === 'wallet' ? 'info' : 'warning')
+                    ->formatStateUsing(fn (?string $state) => AccountRenewal::PAYMENT_SOURCES[$state] ?? $state),
                 TextColumn::make('new_days')->label('الأيام')->formatStateUsing(fn ($state) => "{$state} يوم"),
                 TextColumn::make('new_ends_at')->label('ينتهي')->dateTime('Y/m/d')->placeholder('—'),
                 TextColumn::make('detected_at')->label('اكتُشف')->dateTime('Y/m/d H:i'),

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Attributes\Unguarded;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Unguarded]
 class Debt extends Model
@@ -53,5 +54,11 @@ class Debt extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /** The company renewal this debt came from (sync), with how the site says it was paid. */
+    public function renewal(): HasOne
+    {
+        return $this->hasOne(AccountRenewal::class, 'debt_id');
     }
 }

@@ -2,14 +2,19 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Debts\DebtResource;
+use App\Filament\Widgets\RecentlyActivated;
 use App\Models\Account;
 use App\Models\AccountRenewal;
+use App\Models\AuditLog;
 use App\Models\Debt;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Sync\BrowserScripts;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /**
@@ -121,5 +126,70 @@ class BrowserSyncTest extends TestCase
         $this->assertStringContainsString('const SUBS_APP = "'.request()->getSchemeAndHttpHost().'"', $script);
         $this->assertStringContainsString('subs-sync', $script);
         $this->assertStringNotContainsString("method: 'POST'", $script);
+    }
+
+    /** Lines of the company wallet log (admin.ftth.iq/wallet/transactions), as its page shows them. */
+    private function walletLine(string $payment, string $ends, string $type = 'BASE_PLAN', array $extra = []): array
+    {
+        return [
+            'id' => 108376600 + random_int(1, 999), 'transactionType' => ['displayValue' => 'تجديد الاشتراك'], 'amount' => -35000,
+            'subscription' => ['id' => '13525583', 'displayValue' => 'Basic'], 'deviceUsername' => 'FBG876F33P08',
+            'details' => ['planName' => 'Basic', 'planType' => $type, 'paymentType' => $payment, 'startDate' => '2026-09-21T10:00:00Z', 'endDate' => $ends],
+            ...$extra,
+        ];
+    }
+
+    public function test_the_wallet_log_tells_whether_each_renewal_was_paid_by_card_or_wallet(): void
+    {
+        $this->postJson('/sync/browser/run', $this->lists('2026-09-01T10:00:00Z', 'Expired'))->assertOk();
+        $ends = CarbonImmutable::now()->addDays(30)->addHour()->toIso8601String();
+        $wallet = ['path' => '/api/wallet/transactions', 'items' => [
+            // A value-added service on the same day, and a date change: neither is the renewal.
+            $this->walletLine('Wallet', $ends, 'VAS', ['subscription' => ['id' => '13525583', 'displayValue' => 'IPTV']]),
+            ['id' => 1, 'transactionType' => ['displayValue' => 'تغيير التاريخ'], 'subscription' => ['id' => '13525583']],
+            $this->walletLine('Card', $ends),
+            // Another subscription this system does not know.
+            [...$this->walletLine('Wallet', $ends), 'subscription' => ['id' => '999'], 'deviceUsername' => 'OTHER'],
+        ]];
+
+        $response = $this->postJson('/sync/browser/run', [...$this->lists($ends), 'wallet' => $wallet])->assertOk();
+
+        $this->assertStringContainsString('1 تجديد عُرف نوع دفعه (Card 1، Wallet 0)', $response->json('summary'));
+        $renewal = AccountRenewal::sole();
+        $this->assertSame(['card', 35000], [$renewal->payment_source, $renewal->company_amount]);
+        // Only a label: no debt, no money.
+        $this->assertSame(0, Debt::count());
+        Livewire::test(RecentlyActivated::class)->assertSee('💳 Card');
+
+        // Read again on the next sync: nothing changes, nothing doubles.
+        $this->postJson('/sync/browser/run', [...$this->lists($ends), 'wallet' => $wallet])->assertOk();
+        $this->assertSame('card', $renewal->fresh()->payment_source);
+        $this->assertSame(1, AuditLog::where('action', 'renewal.payment_source')->count());
+    }
+
+    public function test_a_wallet_payment_seen_on_a_later_sync_labels_the_secondary_debt(): void
+    {
+        $this->postJson('/sync/browser/run', $this->lists('2026-09-01T10:00:00Z', 'Expired'))->assertOk();
+        $ends = CarbonImmutable::now()->addDays(7)->addHour();
+        // The renewal is seen first without the wallet log.
+        $first = $this->postJson('/sync/browser/run', $this->lists($ends->toIso8601String()))->assertOk();
+        $this->assertStringContainsString('لم تُقرأ حركات المحفظة', $first->json('summary'));
+        $this->assertNull(AccountRenewal::sole()->payment_source);
+
+        // The log shows the date as the page does (day/month/year).
+        $line = $this->walletLine('Wallet', $ends->setTimezone(config('app.timezone'))->format('d/m/Y'));
+        $this->postJson('/sync/browser/run', [...$this->lists($ends->toIso8601String()), 'wallet' => ['items' => [$line]]])->assertOk();
+
+        $this->assertSame('wallet', AccountRenewal::sole()->payment_source);
+        $this->assertSame(1, Debt::count());
+        $this->get(DebtResource::getUrl('index', ['tab' => 'secondary']))->assertOk()->assertSee('👛 Wallet');
+    }
+
+    public function test_the_extension_reads_the_wallet_log_with_get_only(): void
+    {
+        $js = BrowserScripts::contentScript('https://subs.example', 'app');
+        $this->assertStringContainsString("localStorage.setItem('subs_wallet_api'", $js);
+        $this->assertStringContainsString('/api/wallet/transactions', $js);
+        $this->assertDoesNotMatchRegularExpression("/method:\\s*'(POST|PUT|PATCH|DELETE)'/i", $js);
     }
 }

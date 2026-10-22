@@ -140,7 +140,7 @@
                                 <td style="{{ $td }}" dir="ltr">{{ $r->detected_at->format('Y/m/d H:i') }}</td>
                                 <td style="{{ $td }}"><a href="{{ \App\Filament\Resources\Subscribers\SubscriberResource::getUrl('view', ['record' => $r->subscriber_id]) }}" style="color:rgb(15 118 110);font-weight:600">{{ $r->subscriber?->full_name }}</a></td>
                                 <td style="{{ $td }}" dir="ltr">{{ $r->account?->username }}</td>
-                                <td style="{{ $td }}">{{ $r->previous_days }} ← {{ $r->new_days }}</td>
+                                <td style="{{ $td }}">{{ $r->previous_days }} ← {{ $r->new_days }}@if ($r->payment_source)<div style="font-size:12px;font-weight:700;color:{{ $r->payment_source === 'wallet' ? 'rgb(37 99 235)' : 'rgb(217 119 6)' }}">{{ \App\Models\AccountRenewal::PAYMENT_SOURCES[$r->payment_source] }}</div>@endif</td>
                                 <td style="{{ $td }}">{{ $r->plan_name ?? '—' }}</td>
                                 <td style="{{ $td }}">
                                     @if ($r->status === 'activated')

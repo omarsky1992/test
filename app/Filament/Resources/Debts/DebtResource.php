@@ -9,6 +9,7 @@ use App\Exceptions\BusinessRuleException;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Debts\Pages\ListDebts;
 use App\Models\Account;
+use App\Models\AccountRenewal;
 use App\Models\Debt;
 use App\Services\DebtService;
 use App\Support\Money;
@@ -68,14 +69,16 @@ class DebtResource extends Resource
         return $table
             // A subscriber with an active note is shaded wherever it appears, until the note is closed.
             ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->subscriber_id))
-            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'activation']))
+            ->modifyQueryUsing(fn (Builder $query) => $query->with(['subscriber', 'account', 'activation', 'renewal']))
             ->defaultSort('debt_date', 'desc')
             ->columns([
                 TextColumn::make('number')->label('الرقم')->searchable(),
                 SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')->visible($showSubscriber)
                     ->url(fn (Debt $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (Debt $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('اليوزر')->searchable()->extraAttributes(['dir' => 'ltr']),
-                TextColumn::make('source')->label('المصدر')->badge(),
+                TextColumn::make('source')->label('المصدر')->badge()
+                    // A renewal from the company site: Card or Wallet, as its wallet log says.
+                    ->description(fn ($record) => AccountRenewal::PAYMENT_SOURCES[$record->renewal?->payment_source] ?? null),
                 TextColumn::make('bucket')->label('النوع')->badge(),
                 TextColumn::make('original_amount')->label('الأصل')->formatStateUsing(fn ($state) => Money::format($state, false)),
                 TextColumn::make('paid_amount')->label('المسدد')->formatStateUsing(fn ($state) => Money::format($state, false)),

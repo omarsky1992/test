@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.0.0',
+            'version' => '1.1.0',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -49,6 +49,7 @@ class BrowserScripts
     /** Reads the lists, asks the system which details it needs, reads those, and sends everything. */
     private const CORE = <<<'JS'
 const SUBS_APP = __APP__, SUBS_PANEL_HOST = __PANEL_HOST__, SUBS_CLIENT_APP = __CLIENT_APP__;
+const SUBS_WALLET_API = /\/api\/[^?#]*transaction/i;
 const subsBox = () => {
   let box = document.getElementById('subs-sync-box');
   if (!box) {
@@ -137,8 +138,36 @@ async function subsSync(target, ready) {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
 
+  // The wallet log (admin.ftth.iq/wallet/transactions) says whether each renewal was paid by Card or Wallet.
+  // Its address is the one the wallet page itself used (remembered when that page was opened), else a known guess.
+  let wallet = null;
+  try {
+    const clean = (u) => { const x = new URL(u, location.origin); x.searchParams.delete('pageSize'); x.searchParams.delete('pageNumber'); return x.pathname + x.search; };
+    const paths = [];
+    const seenWallet = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => SUBS_WALLET_API.test(n)).pop();
+    if (seenWallet) paths.push(clean(seenWallet));
+    try { const learned = localStorage.getItem('subs_wallet_api'); if (learned) paths.push(learned); } catch (e) {}
+    paths.push('/api/wallet/transactions', '/api/wallets/transactions', '/api/transactions', '/api/wallet/transaction', '/api/partners/wallet/transactions');
+    for (const p of [...new Set(paths)]) {
+      try {
+        let items = [];
+        for (let page = 1; page <= 3; page++) {
+          const body = await get(p + (p.includes('?') ? '&' : '?') + 'pageSize=100&pageNumber=' + page);
+          const got = Array.isArray(body.items) ? body.items : (Array.isArray(body) ? body : null);
+          if (got === null) throw new Error('not a list');
+          items = items.concat(got);
+          say('جلب حركات المحفظة ' + items.length);
+          if (got.length < 100) break;
+        }
+        wallet = { path: p, items };
+        try { localStorage.setItem('subs_wallet_api', p); } catch (e) {}
+        break;
+      } catch (e) { /* try the next address */ }
+    }
+  } catch (e) { wallet = null; }
+
   say('حفظ في النظام…');
-  const result = await send({ type: 'run', customers, subscriptions, details });
+  const result = await send({ type: 'run', customers, subscriptions, details, wallet });
   box.textContent = 'مزامنة المشتركين: تمت ✓ ' + result.summary;
   box.style.background = '#15803d';
   return result;
@@ -172,6 +201,17 @@ JS;
   if (location.hash.includes('subs-sync')) {
     sessionStorage.setItem(KEY, String(Date.now()));
     history.replaceState(null, '', location.pathname + location.search);
+  }
+  // On the wallet page: remember the address it reads its log from, so the sync reads the same one.
+  if (location.pathname.startsWith('/wallet')) {
+    const learn = setInterval(() => {
+      const seen = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => SUBS_WALLET_API.test(n)).pop();
+      if (!seen) return;
+      const u = new URL(seen); u.searchParams.delete('pageSize'); u.searchParams.delete('pageNumber');
+      try { localStorage.setItem('subs_wallet_api', u.pathname + u.search); } catch (e) {}
+      clearInterval(learn);
+    }, 1500);
+    setTimeout(() => clearInterval(learn), 60000);
   }
   const since = Number(sessionStorage.getItem(KEY) || 0);
   if (!since || Date.now() - since > 15 * 60 * 1000) { sessionStorage.removeItem(KEY); return; }

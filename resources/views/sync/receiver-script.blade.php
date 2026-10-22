@@ -15,7 +15,7 @@ window.subsReceiver = function ({ onStatus, onDone, onHello }) {
                 method: 'POST',
                 credentials: 'same-origin',
                 headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-TOKEN': csrf },
-                body: JSON.stringify({ customers: data.customers, subscriptions: data.subscriptions, details: data.details || {} }),
+                body: JSON.stringify({ customers: data.customers, subscriptions: data.subscriptions, details: data.details || {}, wallet: data.wallet || null }),
             });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.summary || body.message || `رمز ${response.status}`);

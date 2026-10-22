@@ -19,6 +19,7 @@ class AccountRenewal extends Model
             'new_ends_at' => 'immutable_datetime',
             'amount' => 'integer',
             'decided_at' => 'immutable_datetime',
+            'company_amount' => 'integer',
         ];
     }
 
@@ -41,6 +42,8 @@ class AccountRenewal extends Model
     {
         return $this->belongsTo(Debt::class);
     }
+
+    public const PAYMENT_SOURCES = ['card' => '💳 Card', 'wallet' => '👛 Wallet'];
 
     public function decisionDebt(): BelongsTo
     {
