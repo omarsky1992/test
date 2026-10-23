@@ -9,7 +9,7 @@
     @forelse ($active as $note)
         <div style="border:1px solid var(--subs-border);border-inline-start:4px solid var(--subs-amber);border-radius:10px;padding:8px 10px">
             <div style="white-space:pre-line;font-size:14px">{{ $note->body }}</div>
-            <div style="font-size:12px;color:var(--subs-muted);margin-top:4px">{{ $note->creator?->name ?? '—' }} · {{ $note->created_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i') }} · <b style="color:var(--subs-amber)">نشطة</b></div>
+            <div style="font-size:12px;color:var(--subs-muted);margin-top:4px">{{ $note->creator?->name ?? '—' }} · {{ $note->created_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i') }} · <b style="color:var(--subs-amber)">نشطة</b>@if ($note->remind_at) · ⏰ {{ $note->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i') }}{{ $note->reminded_at ? ' (أُرسل)' : '' }}@endif</div>
         </div>
     @empty
         <div style="font-size:13.5px;color:var(--subs-muted)">لا توجد ملاحظات نشطة.</div>

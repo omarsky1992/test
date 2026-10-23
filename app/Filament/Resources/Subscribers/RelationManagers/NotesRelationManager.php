@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Subscribers\RelationManagers;
 
+use App\Filament\Actions\NoteActions;
 use App\Models\SubscriberNote;
 use App\Services\SubscriberNoteService;
 use App\Support\SubscriberFlags;
@@ -55,7 +56,9 @@ class NotesRelationManager extends RelationManager
             ->emptyStateHeading('لا توجد ملاحظات')
             ->columns([
                 TextColumn::make('created_at')->label('الوقت')->dateTime('Y/m/d H:i')->sortable(),
-                TextColumn::make('body')->label('الملاحظة')->wrap(),
+                TextColumn::make('body')->label('الملاحظة')->wrap()
+                    ->description(fn (SubscriberNote $r) => $r->remind_at ? '⏰ '.$r->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i')
+                        .' → '.($r->remindNumber ? ($r->remindNumber->label ?: $r->remindNumber->phone) : 'كل الأرقام').($r->reminded_at ? ' · أُرسل' : '') : null),
                 TextColumn::make('creator.name')->label('كتبها')->placeholder('—'),
                 TextColumn::make('status')->label('الحالة')->badge()
                     ->formatStateUsing(fn (string $state) => SubscriberNote::STATUSES[$state] ?? $state)
@@ -71,11 +74,8 @@ class NotesRelationManager extends RelationManager
                 Action::make('addNote')->label('إضافة ملاحظة')->icon(Heroicon::OutlinedPlus)
                     ->visible(fn () => auth()->user()->can('notes.create'))
                     ->schema([Textarea::make('body')->label('الملاحظة')->required()->rows(3)->maxLength(2000)
-                        ->placeholder('مثال: تم الاتصال به ولم يرد')])
-                    ->action(function (array $data) {
-                        app(SubscriberNoteService::class)->add($this->getOwnerRecord(), $data['body']);
-                        Notification::make()->success()->title('حُفظت الملاحظة')->send();
-                    }),
+                        ->placeholder('مثال: تم الاتصال به ولم يرد'), ...NoteActions::reminderFields()])
+                    ->action(fn (array $data) => NoteActions::save($this->getOwnerRecord(), $data)),
             ])
             ->recordActions([
                 Action::make('closeNote')->label('إنهاء')->icon(Heroicon::OutlinedCheckCircle)->color('success')

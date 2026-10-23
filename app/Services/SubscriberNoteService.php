@@ -5,7 +5,9 @@ namespace App\Services;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Subscriber;
 use App\Models\SubscriberNote;
+use App\Models\WhatsappNumber;
 use App\Support\SubscriberFlags;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,19 +20,33 @@ class SubscriberNoteService
 {
     public function __construct(private Audit $audit) {}
 
-    public function add(Subscriber $subscriber, string $body): SubscriberNote
+    /**
+     * $remindAt: a WhatsApp reminder at that time (in the future) to the authorized numbers, or only to
+     * $remindNumberId. It is sent once, and not at all if the note was closed or deleted before.
+     */
+    public function add(Subscriber $subscriber, string $body, ?\DateTimeInterface $remindAt = null, ?int $remindNumberId = null): SubscriberNote
     {
         $this->authorize('notes.create');
+        $remindAt = $remindAt ? CarbonImmutable::instance($remindAt) : null;
         $body = trim($body);
         if ($body === '') {
             throw new BusinessRuleException('اكتب نص الملاحظة.');
         }
+        if ($remindAt !== null && $remindAt->lessThanOrEqualTo(CarbonImmutable::now())) {
+            throw new BusinessRuleException('اختر موعد تذكير بعد الوقت الحالي.');
+        }
+        if ($remindAt !== null && $remindNumberId !== null && ! WhatsappNumber::whereKey($remindNumberId)->where('is_active', true)->exists()) {
+            throw new BusinessRuleException('الرقم المختار للتذكير غير مفعّل.');
+        }
 
-        return DB::transaction(function () use ($subscriber, $body) {
+        return DB::transaction(function () use ($subscriber, $body, $remindAt, $remindNumberId) {
             $note = SubscriberNote::create([
                 'subscriber_id' => $subscriber->id, 'body' => mb_substr($body, 0, 2000), 'status' => 'active', 'created_by' => Auth::id(),
+                'remind_at' => $remindAt, 'remind_number_id' => $remindAt ? $remindNumberId : null,
             ]);
-            $this->audit->log('note.created', $note, null, ['body' => $note->body], subscriberId: $subscriber->id);
+            $this->audit->log('note.created', $note, null, array_filter([
+                'body' => $note->body, 'remind_at' => $remindAt?->toIso8601String(), 'remind_number_id' => $note->remind_number_id,
+            ], fn ($v) => $v !== null), subscriberId: $subscriber->id);
             SubscriberFlags::forget();
 
             return $note;

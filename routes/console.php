@@ -66,7 +66,9 @@ Artisan::command('whatsapp:scan', function (Notifier $notifier, Inbox $inbox) {
     $this->info("Queued {$alerts} staff alerts and {$messages} subscriber messages.");
 })->purpose('Queue the WhatsApp alerts for staff and the automatic messages for subscribers');
 
-Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway, Settings $settings) {
+Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway, Settings $settings, Notifier $notifier) {
+    // Note reminders are queued here, every minute, so they go out at the time chosen.
+    $notifier->noteReminders();
     $separate = $outbox->separateLines();
     // With the QR connection, nothing is tried while the phone is not linked: the queue waits.
     if ($settings->get('whatsapp.driver') === 'meta' || ($gateway instanceof WahaGateway && $gateway->isConnected())) {

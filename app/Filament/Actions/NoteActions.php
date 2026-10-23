@@ -2,14 +2,21 @@
 
 namespace App\Filament\Actions;
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\Subscriber;
 use App\Models\SubscriberNote;
+use App\Models\WhatsappNumber;
 use App\Services\SubscriberNoteService;
 use App\Support\SubscriberFlags;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
+use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\Get;
+use Filament\Support\Exceptions\Halt;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
 
@@ -38,6 +45,7 @@ class NoteActions
             ->schema(fn () => auth()->user()->can('notes.create') ? [
                 Textarea::make('body')->label('ملاحظة جديدة')->rows(3)->maxLength(2000)
                     ->placeholder('مثال: تم الاتصال بالمشترك، وعد بتسديد الدين خلال 7 أيام'),
+                ...self::reminderFields(),
             ] : [])
             ->modalSubmitActionLabel('حفظ الملاحظة')
             ->modalSubmitAction(fn (Action $action) => auth()->user()->can('notes.create') ? $action : false)
@@ -46,9 +54,47 @@ class NoteActions
                 if (blank($data['body'] ?? null)) {
                     return;
                 }
-                app(SubscriberNoteService::class)->add($resolve($record), $data['body']);
-                Notification::make()->success()->title('حُفظت الملاحظة')->send();
+                self::save($resolve($record), $data);
             });
+    }
+
+    /** «ذكّرني»: an optional WhatsApp reminder for the note, to all the authorized numbers or one. */
+    public static function reminderFields(): array
+    {
+        return [
+            Select::make('remind_preset')->label('ذكّرني بواتساب (اختياري)')->placeholder('بدون تذكير')->live()
+                ->options(['1h' => 'بعد ساعة', '1d' => 'بعد يوم', '2d' => 'بعد يومين', '3d' => 'بعد 3 أيام', '5d' => 'بعد 5 أيام', '7d' => 'بعد أسبوع', 'custom' => 'موعد أختاره'])
+                ->visible(fn () => WhatsappNumber::where('is_active', true)->exists()),
+            DateTimePicker::make('remind_at')->label('موعد التذكير')->seconds(false)->native(false)
+                ->minDate(fn () => now()->startOfDay())->required(fn (Get $get) => $get('remind_preset') === 'custom')
+                ->visible(fn (Get $get) => $get('remind_preset') === 'custom'),
+            Select::make('remind_to')->label('يصل التذكير إلى')->default('all')->selectablePlaceholder(false)
+                ->options(fn () => ['all' => 'كل الأرقام المخولة'] + WhatsappNumber::with('user')->where('is_active', true)->get()
+                    ->mapWithKeys(fn (WhatsappNumber $n) => [$n->id => trim(($n->label ?: $n->user?->name ?: 'رقم').' – '.$n->phone)])->all())
+                ->visible(fn (Get $get) => filled($get('remind_preset'))),
+        ];
+    }
+
+    /** Saves a note from the form, with its reminder when one was chosen. */
+    public static function save(Subscriber $subscriber, array $data): void
+    {
+        $preset = $data['remind_preset'] ?? null;
+        $remindAt = match ($preset) {
+            null, '' => null,
+            'custom' => filled($data['remind_at'] ?? null) ? CarbonImmutable::parse($data['remind_at'], config('app.timezone')) : null,
+            '1h' => CarbonImmutable::now()->addHour(),
+            default => CarbonImmutable::now()->addDays((int) $preset),
+        };
+        $to = $data['remind_to'] ?? 'all';
+        try {
+            $note = app(SubscriberNoteService::class)->add($subscriber, $data['body'], $remindAt, $remindAt && $to !== 'all' ? (int) $to : null);
+        } catch (BusinessRuleException $e) {
+            Notification::make()->danger()->title($e->getMessage())->send();
+
+            throw new Halt;
+        }
+        Notification::make()->success()->title('حُفظت الملاحظة')
+            ->body($note->remind_at ? '⏰ التذكير بواتساب: '.$note->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i') : null)->send();
     }
 
     public static function subscriberOf(?Model $record): ?Subscriber

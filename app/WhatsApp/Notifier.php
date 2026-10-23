@@ -12,6 +12,7 @@ use App\Models\Activation;
 use App\Models\ActivationDue;
 use App\Models\MessageTemplate;
 use App\Models\Payment;
+use App\Models\SubscriberNote;
 use App\Models\WhatsappNumber;
 use App\Services\Settings;
 use App\Support\Money;
@@ -19,6 +20,7 @@ use App\Support\SubscriberStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 /**
  * What the system tells by WhatsApp, on its own:
@@ -42,6 +44,37 @@ class Notifier
         foreach ($this->alertNumbers() as $number) {
             $this->outbox->queue($number->phone, $text, 'alert_must_activate', "alert:due:{$due->id}:{$due->paid_at->getTimestamp()}:{$number->id}", $due->account_id);
         }
+    }
+
+    /**
+     * Note reminders whose time has come: one message per number (the chosen one, or every active
+     * authorized number), once. Closed or deleted notes are never reminded.
+     */
+    public function noteReminders(?CarbonImmutable $now = null): int
+    {
+        $now ??= CarbonImmutable::now();
+        $queued = 0;
+        $due = SubscriberNote::with(['subscriber', 'creator', 'remindNumber'])->where('status', 'active')
+            ->whereNotNull('remind_at')->whereNull('reminded_at')->where('remind_at', '<=', $now)->orderBy('remind_at')->limit(100)->get();
+        foreach ($due as $note) {
+            DB::transaction(function () use ($note, $now, &$queued) {
+                // Marked first, under a lock: two runs never send it twice.
+                if (SubscriberNote::whereKey($note->id)->whereNull('reminded_at')->update(['reminded_at' => $now]) === 0) {
+                    return;
+                }
+                $numbers = $note->remind_number_id !== null
+                    ? collect([$note->remindNumber])->filter(fn ($n) => $n?->is_active)
+                    : WhatsappNumber::with('user')->where('is_active', true)->get()->filter(fn ($n) => $n->user?->is_active ?? true);
+                $account = Account::where('subscriber_id', $note->subscriber_id)->orderBy('id')->first();
+                $text = "⏰ تذكير: {$note->subscriber?->full_name}".($account?->username ? " ({$account->username})" : '')
+                    ."\n{$note->body}\n— ".($note->creator?->name ?? '—').' · '.$note->created_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i');
+                foreach ($numbers as $number) {
+                    $queued += $this->outbox->queue($number->phone, $text, 'alert_note', "note:remind:{$note->id}:{$number->id}", $account?->id) ? 1 : 0;
+                }
+            });
+        }
+
+        return $queued;
     }
 
     /**

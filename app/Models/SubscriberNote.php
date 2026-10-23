@@ -28,6 +28,8 @@ class SubscriberNote extends Model
             'created_at' => 'immutable_datetime',
             'closed_at' => 'immutable_datetime',
             'deleted_at' => 'immutable_datetime',
+            'remind_at' => 'immutable_datetime',
+            'reminded_at' => 'immutable_datetime',
         ];
     }
 
@@ -55,5 +57,11 @@ class SubscriberNote extends Model
     public function closer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'closed_by');
+    }
+
+    /** The one authorized number the reminder goes to; none means all of them. */
+    public function remindNumber(): BelongsTo
+    {
+        return $this->belongsTo(WhatsappNumber::class, 'remind_number_id');
     }
 }
