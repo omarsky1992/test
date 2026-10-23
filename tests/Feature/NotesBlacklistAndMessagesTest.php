@@ -431,7 +431,7 @@ class NotesBlacklistAndMessagesTest extends TestCase
 
         // From the subscriber's notes window: «بعد يوم», to everyone.
         Livewire::test(ListSubscriberCards::class)
-            ->callTableAction('subscriberNotes', $account, data: ['body' => 'وعد يسدد', 'remind_preset' => '1d', 'remind_to' => 'all'])
+            ->callTableAction('subscriberNotes', $account, data: ['body' => 'وعد يسدد', 'remind_preset' => '1d', 'remind_to' => []])
             ->assertNotified();
         $note = SubscriberNote::sole();
         $this->assertTrue($note->remind_at->equalTo(now()->addDay()));
@@ -456,7 +456,7 @@ class NotesBlacklistAndMessagesTest extends TestCase
         $subscriber = $this->account('حسن جبار')->subscriber;
         $notes = app(SubscriberNoteService::class);
 
-        $mine = $notes->add($subscriber, 'ينتهي بكرة', now()->addHours(5), $ali->id);
+        $mine = $notes->add($subscriber, 'ينتهي بكرة', now()->addHours(5), [$ali->id]);
         $closed = $notes->add($subscriber, 'يسدد خلال 5 أيام', now()->addDays(5));
         $notes->close($closed, 'سدد');
         $this->refusedNote(fn () => $notes->add($subscriber, 'قديم', now()->subMinute()));
@@ -471,17 +471,24 @@ class NotesBlacklistAndMessagesTest extends TestCase
     public function test_a_reminder_at_a_chosen_time_from_the_notes_tab(): void
     {
         $ali = WhatsappNumber::create(['phone' => '9647701111111', 'label' => 'علي', 'user_id' => $this->admin->id, 'is_active' => true]);
+        $omar = WhatsappNumber::create(['phone' => '9647702222222', 'label' => 'عمر', 'user_id' => $this->admin->id, 'is_active' => true]);
+        WhatsappNumber::create(['phone' => '9647703333333', 'label' => 'حسين', 'user_id' => $this->admin->id, 'is_active' => true]);
         $subscriber = $this->account('زيد علي')->subscriber;
 
         Livewire::test(NotesRelationManager::class, [
             'ownerRecord' => $subscriber, 'pageClass' => ViewSubscriber::class,
-        ])->callTableAction('addNote', data: ['body' => 'التسديد خلال 5 أيام', 'remind_preset' => 'custom', 'remind_at' => '2026-09-26 10:30', 'remind_to' => (string) $ali->id])
+        ])->callTableAction('addNote', data: ['body' => 'التسديد خلال 5 أيام', 'remind_preset' => 'custom', 'remind_at' => '2026-09-26 10:30', 'remind_to' => [(string) $ali->id, (string) $omar->id]])
             ->assertHasNoTableActionErrors()
-            ->assertSee('2026/09/26 10:30');
+            ->assertSee('2026/09/26 10:30')->assertSee('علي، عمر');
 
         $note = SubscriberNote::sole();
         $this->assertSame('2026-09-26 10:30', $note->remind_at->setTimezone(config('app.timezone'))->format('Y-m-d H:i'));
-        $this->assertSame($ali->id, $note->remind_number_id);
+        $this->assertSame([$ali->id, $omar->id], $note->remind_number_ids);
+
+        // At its time it reaches the two chosen employees only.
+        $this->travelTo(CarbonImmutable::parse('2026-09-26 10:31', config('app.timezone')));
+        $this->assertSame(2, app(Notifier::class)->noteReminders());
+        $this->assertSame([$ali->phone, $omar->phone], WhatsappOutbox::orderBy('id')->pluck('to_phone')->all());
     }
 
     private function refusedNote(\Closure $fn): void

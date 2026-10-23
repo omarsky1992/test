@@ -58,7 +58,7 @@ class NotesRelationManager extends RelationManager
                 TextColumn::make('created_at')->label('الوقت')->dateTime('Y/m/d H:i')->sortable(),
                 TextColumn::make('body')->label('الملاحظة')->wrap()
                     ->description(fn (SubscriberNote $r) => $r->remind_at ? '⏰ '.$r->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i')
-                        .' → '.($r->remindNumber ? ($r->remindNumber->label ?: $r->remindNumber->phone) : 'كل الأرقام').($r->reminded_at ? ' · أُرسل' : '') : null),
+                        .' → '.$r->remindLabel().($r->reminded_at ? ' · أُرسل' : '') : null),
                 TextColumn::make('creator.name')->label('كتبها')->placeholder('—'),
                 TextColumn::make('status')->label('الحالة')->badge()
                     ->formatStateUsing(fn (string $state) => SubscriberNote::STATUSES[$state] ?? $state)

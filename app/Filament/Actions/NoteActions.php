@@ -68,8 +68,10 @@ class NoteActions
             DateTimePicker::make('remind_at')->label('موعد التذكير')->seconds(false)->native(false)
                 ->minDate(fn () => now()->startOfDay())->required(fn (Get $get) => $get('remind_preset') === 'custom')
                 ->visible(fn (Get $get) => $get('remind_preset') === 'custom'),
-            Select::make('remind_to')->label('يصل التذكير إلى')->default('all')->selectablePlaceholder(false)
-                ->options(fn () => ['all' => 'كل الأرقام المخولة'] + WhatsappNumber::with('user')->where('is_active', true)->get()
+            // Several numbers can be chosen; none chosen means all the authorized numbers.
+            Select::make('remind_to')->label('يصل التذكير إلى')->multiple()->placeholder('كل الأرقام المخولة')
+                ->helperText('اختر موظفاً أو أكثر، أو اتركه فارغاً ليصل لكل الأرقام المخولة.')
+                ->options(fn () => WhatsappNumber::with('user')->where('is_active', true)->get()
                     ->mapWithKeys(fn (WhatsappNumber $n) => [$n->id => trim(($n->label ?: $n->user?->name ?: 'رقم').' – '.$n->phone)])->all())
                 ->visible(fn (Get $get) => filled($get('remind_preset'))),
         ];
@@ -85,16 +87,16 @@ class NoteActions
             '1h' => CarbonImmutable::now()->addHour(),
             default => CarbonImmutable::now()->addDays((int) $preset),
         };
-        $to = $data['remind_to'] ?? 'all';
+        $to = array_values(array_filter((array) ($data['remind_to'] ?? []), fn ($v) => $v !== 'all' && $v !== ''));
         try {
-            $note = app(SubscriberNoteService::class)->add($subscriber, $data['body'], $remindAt, $remindAt && $to !== 'all' ? (int) $to : null);
+            $note = app(SubscriberNoteService::class)->add($subscriber, $data['body'], $remindAt, $remindAt && $to ? array_map('intval', $to) : null);
         } catch (BusinessRuleException $e) {
             Notification::make()->danger()->title($e->getMessage())->send();
 
             throw new Halt;
         }
         Notification::make()->success()->title('حُفظت الملاحظة')
-            ->body($note->remind_at ? '⏰ التذكير بواتساب: '.$note->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i') : null)->send();
+            ->body($note->remind_at ? '⏰ التذكير بواتساب: '.$note->remind_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i').' ← '.$note->remindLabel() : null)->send();
     }
 
     public static function subscriberOf(?Model $record): ?Subscriber
