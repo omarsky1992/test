@@ -13,6 +13,7 @@ use App\Models\ActivationDue;
 use App\Models\ActivationReminder;
 use App\Models\MessageTemplate;
 use App\Models\Payment;
+use App\Models\Subscriber;
 use App\Models\SubscriberNote;
 use App\Models\WhatsappNumber;
 use App\Services\Settings;
@@ -65,7 +66,7 @@ class Notifier
                 }
                 $numbers = $note->remindNumbers();
                 $account = Account::where('subscriber_id', $note->subscriber_id)->orderBy('id')->first();
-                $text = "⏰ تذكير: {$note->subscriber?->full_name}".($account?->username ? " ({$account->username})" : '')
+                $text = "⏰ تذكير: {$note->subscriber?->full_name}".($account?->username ? " ({$account->username})" : '').self::programLine($note->subscriber)
                     ."\n{$note->body}\n— ".($note->creator?->name ?? '—').' · '.$note->created_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i');
                 foreach ($numbers as $number) {
                     $queued += $this->outbox->queue($number->phone, $text, 'alert_note', "note:remind:{$note->id}:{$number->id}", $account?->id) ? 1 : 0;
@@ -74,6 +75,15 @@ class Notifier
         }
 
         return $queued;
+    }
+
+    /** «رقم البرنامج»: what is written in the subscriber's «ملاحظات» field (the program's serial number). */
+    private static function programLine(?Subscriber $subscriber): string
+    {
+        // The «notes» column, not the notes() relation of the same name.
+        $value = trim((string) ($subscriber?->getAttributes()['notes'] ?? ''));
+
+        return $value !== '' ? "\nرقم البرنامج: ".mb_substr(preg_replace('/\s+/u', ' ', $value), 0, 80) : '';
     }
 
     /**
@@ -96,7 +106,7 @@ class Notifier
                     return;
                 }
                 $name = $reminder->subscriber?->full_name;
-                $text = "⏰ تذكير: {$name}".($account->username ? " ({$account->username})" : '')
+                $text = "⏰ تذكير: {$name}".($account->username ? " ({$account->username})" : '').self::programLine($reminder->subscriber)
                     ."\nفعّل {$name} {$reminder->days} أيام\nانتهى اشتراكه — ".($reminder->creator?->name ?? '—');
                 foreach ($reminder->numbers() as $number) {
                     $queued += $this->outbox->queue($number->phone, $text, 'alert_activation', "act:remind:{$reminder->id}:{$number->id}", $account->id) ? 1 : 0;

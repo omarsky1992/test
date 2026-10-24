@@ -29,6 +29,7 @@ class ActivationReminderTest extends TestCase
         [$ali, $omar] = $this->numbers();
         $account = $this->account('مرتضى سليم', 'FBG876F31P12FO');
         $account->update(['external_ends_at' => now()->addDays(3)]);
+        $account->subscriber->update(['notes' => '41']);
 
         Livewire::test(ViewSubscriber::class, ['record' => $account->subscriber_id])
             ->callAction('activationReminder', data: ['numbers' => [(string) $ali->id, (string) $omar->id]])
@@ -47,6 +48,7 @@ class ActivationReminderTest extends TestCase
         $this->assertSame('alert_activation', $sent->first()->kind);
         $this->assertStringContainsString('⏰ تذكير: مرتضى سليم (FBG876F31P12FO)', $sent->first()->body);
         $this->assertStringContainsString('فعّل مرتضى سليم 7 أيام', $sent->first()->body);
+        $this->assertStringContainsString('رقم البرنامج: 41', $sent->first()->body);
     }
 
     public function test_a_renewal_moves_it_to_the_new_end_and_a_cancelled_one_never_goes(): void
@@ -86,6 +88,7 @@ class ActivationReminderTest extends TestCase
         $this->assertSame(1, ActivationReminder::whereNull('cancelled_at')->count());
         $this->assertSame(1, app(Notifier::class)->activationReminders());
         $this->assertSame([$ali->phone], WhatsappOutbox::pluck('to_phone')->all());
+        $this->assertStringNotContainsString('رقم البرنامج', WhatsappOutbox::sole()->body, 'no line when the field is empty');
     }
 
     public function test_it_needs_its_permission(): void
