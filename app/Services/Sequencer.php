@@ -23,6 +23,7 @@ class Sequencer
         'advance' => 'L',
         'advance_repayment' => 'LR',
         'card_reset' => 'Z',
+        'secondary_sale' => 'SS',
     ];
 
     public function next(string $docType, DateTimeInterface $at): string

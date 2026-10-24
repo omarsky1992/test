@@ -26,6 +26,7 @@ class Settings
         'subscribers.expiring_days' => 7,
         'periods.start_day' => 1,
         'periods.purchases_start' => null,
+        'secondary_sales.reset_at' => null,
         'periods.sales_start' => null,
         'whatsapp.enabled' => false,
         'whatsapp.voice_enabled' => true,

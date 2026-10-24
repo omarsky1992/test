@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Actions\Operations;
+use App\Filament\Resources\SecondarySales\SecondarySaleResource;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -69,9 +70,9 @@ class Dashboard extends BaseDashboard
         return [
             Operations::pay('newPayment')->label('قبض'),
             Operations::activate('newActivation')->label('تفعيل جديد'),
-            ActionGroup::make(AccountingPeriodsPage::closeActions())
+            ActionGroup::make([...AccountingPeriodsPage::closeActions(), SecondarySaleResource::resetAction()])
                 ->label('تصفير المبيعات والمشتريات')->icon('heroicon-o-arrow-path')->color('gray')->button()
-                ->visible(fn () => auth()->user()->can('periods.close')),
+                ->visible(fn () => auth()->user()->can('periods.close') || auth()->user()->can('secondary_sales.reset')),
         ];
     }
 }
