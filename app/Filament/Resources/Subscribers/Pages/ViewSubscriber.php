@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Subscribers\Pages;
 
+use App\Filament\Actions\ActivationReminderActions;
 use App\Filament\Actions\NoteActions;
 use App\Filament\Actions\Operations;
 use App\Filament\Resources\Blacklist\BlacklistResource;
@@ -28,6 +29,8 @@ class ViewSubscriber extends ViewRecord
         return [
             NoteActions::open('subscriberNotes', $this->getRecord()),
             Operations::activate(),
+            ActivationReminderActions::set($this->getRecord()),
+            ActivationReminderActions::cancel($this->getRecord()),
             Operations::pay(),
             DebtResource::manualDebtAction($this->getRecord()->accounts()->count() === 1 ? $this->getRecord()->accounts()->first() : null),
             Action::make('call')->label('اتصال')->icon(Heroicon::OutlinedPhone)->color('gray')

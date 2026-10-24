@@ -10,6 +10,7 @@ use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Activation;
 use App\Models\ActivationDue;
+use App\Models\ActivationReminder;
 use App\Models\MessageTemplate;
 use App\Models\Payment;
 use App\Models\SubscriberNote;
@@ -68,6 +69,37 @@ class Notifier
                     ."\n{$note->body}\n— ".($note->creator?->name ?? '—').' · '.$note->created_at->setTimezone(config('app.timezone'))->format('Y/m/d H:i');
                 foreach ($numbers as $number) {
                     $queued += $this->outbox->queue($number->phone, $text, 'alert_note', "note:remind:{$note->id}:{$number->id}", $account?->id) ? 1 : 0;
+                }
+            });
+        }
+
+        return $queued;
+    }
+
+    /**
+     * «تذكير تفعيل 7 أيام» whose subscription has ended (by its end date now): «فعّل فلان 7 أيام» with the
+     * device name, once per chosen number.
+     */
+    public function activationReminders(?CarbonImmutable $now = null): int
+    {
+        $now ??= CarbonImmutable::now();
+        $queued = 0;
+        $pending = ActivationReminder::with(['account', 'subscriber', 'creator'])->whereNull('sent_at')->whereNull('cancelled_at')->orderBy('id')->limit(200)->get();
+        foreach ($pending as $reminder) {
+            $account = $reminder->account;
+            $ends = $account ? SubscriberStatus::endsAt($account) : null;
+            if ($account === null || ($ends !== null && $ends->getTimestamp() > $now->getTimestamp())) {
+                continue;
+            }
+            DB::transaction(function () use ($reminder, $account, $now, &$queued) {
+                if (ActivationReminder::whereKey($reminder->id)->whereNull('sent_at')->whereNull('cancelled_at')->update(['sent_at' => $now]) === 0) {
+                    return;
+                }
+                $name = $reminder->subscriber?->full_name;
+                $text = "⏰ تذكير: {$name}".($account->username ? " ({$account->username})" : '')
+                    ."\nفعّل {$name} {$reminder->days} أيام\nانتهى اشتراكه — ".($reminder->creator?->name ?? '—');
+                foreach ($reminder->numbers() as $number) {
+                    $queued += $this->outbox->queue($number->phone, $text, 'alert_activation', "act:remind:{$reminder->id}:{$number->id}", $account->id) ? 1 : 0;
                 }
             });
         }

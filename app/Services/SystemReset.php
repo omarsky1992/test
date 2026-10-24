@@ -25,7 +25,7 @@ class SystemReset
         'employee_advances', 'money_account_resets', 'period_closings', 'voucher_cards', 'secondary_sales', 'financial_transactions', 'sync_runs', 'import_runs', 'whatsapp_messages', 'whatsapp_outbox', 'document_sequences',
     ];
 
-    public const SUBSCRIBER_TABLES = ['subscriber_notes', 'blacklist_entries', 'subscriber_locations', 'accounts', 'subscribers'];
+    public const SUBSCRIBER_TABLES = ['activation_reminders', 'subscriber_notes', 'blacklist_entries', 'subscriber_locations', 'accounts', 'subscribers'];
 
     public function __construct(private Audit $audit) {}
 
