@@ -34,24 +34,24 @@ class PeriodStats extends StatsOverviewWidget
 
     protected function getHeading(): ?string
     {
-        return 'حركة الفترة: '.ReportService::periodRange($this->pageFilters)[2];
+        return 'المقبوضات: '.ReportService::periodRange($this->pageFilters)[2].' · المبيعات والمشتريات والربح: الكلي منذ آخر تصفير';
     }
 
     protected function getStats(): array
     {
         [$from, $to] = ReportService::periodRange($this->pageFilters);
         $d = app(ReportService::class)->dashboard($from, $to);
-        if (($this->pageFilters['period'] ?? null) === 'open') {
-            // Since the last «تصفير» of each: sales and purchases from their own exact moment.
-            $periods = app(AccountingPeriods::class);
-            $now = CarbonImmutable::now();
-            $p = $periods->totals($periods->currentStart('purchases'), $now, exact: true);
-            $s = $periods->totals($periods->currentStart('sales'), $now, exact: true);
-            $d = array_merge($d, [
-                'sales' => $s['sales'], 'device_sales' => $s['sales'], 'purchases' => $p['purchases'], 'expenses' => $p['purchases'],
-                'profit' => $s['sales'] - $p['purchases'],
-            ]);
-        }
+        // Sales, purchases and «الربح والخسارة» are running totals since the last «تصفير» of each
+        // (whatever the period filter): they only go back to zero when someone presses «تصفير».
+        $periods = app(AccountingPeriods::class);
+        // The end is excluded: up to the next second, so what was recorded just now is counted.
+        $now = CarbonImmutable::now()->addSecond();
+        $p = $periods->totals($periods->lastReset('purchases'), $now, exact: true);
+        $s = $periods->totals($periods->lastReset('sales'), $now, exact: true);
+        $d = array_merge($d, [
+            'sales' => $s['sales'], 'device_sales' => $s['sales'], 'purchases' => $p['purchases'], 'expenses' => $p['purchases'],
+            'profit' => $s['sales'] - $p['purchases'],
+        ]);
 
         return [
             Stat::make('المقبوضات', Money::format($d['collections']))
@@ -60,15 +60,15 @@ class PeriodStats extends StatsOverviewWidget
                 ->color('success')
                 ->url(BalanceOverview::url(PaymentResource::class)),
             Stat::make('المبيعات', Money::format($d['sales']))
-                ->description('أجهزة ومواد وكارتات (بدون تفعيلات الإنترنت)')
+                ->description('الكلي منذ آخر تصفير · أجهزة ومواد وكارتات (بدون تفعيلات الإنترنت)')
                 ->descriptionIcon('heroicon-m-shopping-bag')
                 ->url(BalanceOverview::url(DeviceSaleResource::class)),
             Stat::make('المشتريات', Money::format($d['purchases']))
-                ->description('المصروفات والمشتريات المسجلة')
+                ->description('الكلي منذ آخر تصفير · المشتريات والمصروفات من كل الصناديق والعهد')
                 ->descriptionIcon('heroicon-m-shopping-cart')
                 ->url(BalanceOverview::url(ExpenseResource::class)),
             Stat::make('الربح والخسارة', ($d['profit'] > 0 ? '+' : '').Money::format($d['profit']))
-                ->description($d['profit'] < 0 ? 'خسارة: المشتريات أكثر من المبيعات' : ($d['profit'] > 0 ? 'ربح: المبيعات أكثر من المشتريات' : 'لا ربح ولا خسارة'))
+                ->description('منذ آخر تصفير · '.($d['profit'] < 0 ? 'خسارة: المشتريات أكثر من المبيعات' : ($d['profit'] > 0 ? 'ربح: المبيعات أكثر من المشتريات' : 'لا ربح ولا خسارة')))
                 ->descriptionIcon($d['profit'] < 0 ? 'heroicon-m-arrow-trending-down' : 'heroicon-m-arrow-trending-up')
                 ->color($d['profit'] < 0 ? 'danger' : ($d['profit'] > 0 ? 'success' : 'gray'))
                 ->extraAttributes(['data-test' => 'profit']),

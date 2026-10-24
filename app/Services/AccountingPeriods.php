@@ -29,6 +29,22 @@ class AccountingPeriods
     public function __construct(private Settings $settings, private Audit $audit) {}
 
     /** The exact moment the open period of purchases or sales starts (the last «تصفير», or the chosen day). */
+    /**
+     * Where the dashboard's running totals start: the last «تصفير» of this scope (or the start date
+     * the admin chose); never reset yet, from the very first record.
+     */
+    public function lastReset(string $scope): CarbonImmutable
+    {
+        $last = PeriodClosing::where('scope', $scope)->max('ends_at');
+        $chosen = $this->settings->get("periods.{$scope}_start");
+        $candidates = array_filter([
+            $last ? CarbonImmutable::parse($last) : null,
+            filled($chosen) ? CarbonImmutable::parse($chosen)->startOfDay() : null,
+        ]);
+
+        return $candidates !== [] ? collect($candidates)->max() : CarbonImmutable::create(2000, 1, 1);
+    }
+
     public function currentStart(string $scope): CarbonImmutable
     {
         $last = PeriodClosing::where('scope', $scope)->max('ends_at');

@@ -395,7 +395,9 @@ class TreasuryService
 
         return DB::transaction(function () use ($category, $description, $amount, $from, $paidTo, $notes, $allowNegative) {
             $now = CarbonImmutable::now();
-            if (! $allowNegative) {
+            // A purchase from an employee's custody is always recorded: if the custody is short, the
+            // employee paid the rest and the custody goes below zero (the company owes it to them).
+            if (! $allowNegative && $from->kind !== MoneyAccountKind::Custody) {
                 $this->ensureCovers($from, $amount);
             }
             $expense = Expense::create([
