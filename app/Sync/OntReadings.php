@@ -14,17 +14,14 @@ use Illuminate\Support\Facades\DB;
  */
 class OntReadings
 {
-    /** The running accounts whose reading is oldest (never read first), up to $limit device names. */
-    public static function needs(int $limit): array
+    /** Every running account (oldest reading first, never read first); $limit > 0 caps the list, 0 means all. */
+    public static function needs(int $limit = 0): array
     {
-        if ($limit <= 0) {
-            return [];
-        }
-
         return SubscriberStatus::apply(SubscriberStatus::base(), 'active')
             ->whereNotNull('accounts.username')->where('accounts.username', '<>', '')
             ->orderByRaw('accounts.rx_read_at asc nulls first')->orderBy('accounts.id')
-            ->limit($limit)->pluck('accounts.username')->all();
+            ->when($limit > 0, fn ($q) => $q->limit($limit))
+            ->pluck('accounts.username')->all();
     }
 
     /**

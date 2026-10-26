@@ -271,4 +271,17 @@ class BrowserSyncTest extends TestCase
         $this->postJson('/sync/browser/ont-plan')->assertForbidden();
         $this->postJson('/sync/browser/ont', ['ont' => []])->assertForbidden();
     }
+
+    public function test_the_readings_run_covers_every_running_account(): void
+    {
+        foreach (range(1, 520) as $i) {
+            $a = $this->account('م'.$i, sprintf('DEV%04d', $i));
+            $a->update(['external_ends_at' => CarbonImmutable::now()->addDays(10)]);
+        }
+        $this->account('منتهي', 'OLD0001')->update(['external_ends_at' => CarbonImmutable::now()->subDay()]);
+
+        $names = $this->postJson('/sync/browser/ont-plan')->assertOk()->json('ont');
+        $this->assertCount(520, $names, 'all running accounts, more than 500, the expired one left out');
+        $this->assertNotContains('OLD0001', $names);
+    }
 }

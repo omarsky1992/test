@@ -105,7 +105,7 @@ class BrowserSyncController extends Controller
     {
         abort_unless($request->user()->can('sync.run'), 403);
         $ont = $request->input('ont');
-        $count = is_array($ont) ? $readings->apply(array_slice($ont, 0, 2000, true)) : 0;
+        $count = is_array($ont) ? $readings->apply(array_slice($ont, 0, 20000, true)) : 0;
 
         return response()->json(['status' => 'success', 'summary' => "قُرئت القدرة المستلمة لـ {$count} جهاز", 'count' => $count]);
     }
