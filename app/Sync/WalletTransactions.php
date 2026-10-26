@@ -115,6 +115,12 @@ class WalletTransactions
         if ($source === null || $ends === null || (in_array('vas', $types, true) && ! array_intersect($types, ['base_plan', 'baseplan', 'base']))) {
             return null;
         }
+        // When the line names its subscription (subscription.id, deviceUsername, as admin.ftth.iq's
+        // /api/transactions does), only those find the account: the customer's or partner's ID never does.
+        $own = array_filter([$flat['subscription.id'] ?? null, $flat['deviceusername'] ?? null], fn ($v) => $v !== null && trim((string) $v) !== '');
+        if ($own !== []) {
+            $values = array_map(fn ($v) => trim((string) $v), $own);
+        }
         $id = $flat['id'] ?? $flat['transactionid'] ?? null;
         $amount = null;
         foreach ($flat as $key => $value) {

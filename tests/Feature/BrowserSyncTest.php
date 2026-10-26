@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Support\OpticalSignal;
 use App\Sync\BrowserScripts;
 use App\Sync\OntReadings;
+use App\Sync\WalletTransactions;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
@@ -133,28 +134,46 @@ class BrowserSyncTest extends TestCase
         $this->assertStringNotContainsString("method: 'POST'", $script);
     }
 
-    /** Lines of the company wallet log (admin.ftth.iq/wallet/transactions), as its page shows them. */
+    /** Lines of the company wallet log, as admin.ftth.iq/api/transactions returns them (made-up values). */
     private function walletLine(string $payment, string $ends, string $type = 'BASE_PLAN', array $extra = []): array
     {
+        $method = ['id' => $payment === 'Card' ? 1 : 0, 'entityType' => 'TransactionPaymentMethod', 'displayValue' => $payment, 'description' => null];
+
         return [
-            'id' => 108376600 + random_int(1, 999), 'transactionType' => ['displayValue' => 'تجديد الاشتراك'], 'amount' => -35000,
-            'subscription' => ['id' => '13525583', 'displayValue' => 'Basic'], 'deviceUsername' => 'FBG876F33P08',
-            'details' => ['planName' => 'Basic', 'planType' => $type, 'paymentType' => $payment, 'startDate' => '2026-09-21T10:00:00Z', 'endDate' => $ends],
+            'walletTransferDetails' => null, 'salesType' => ['id' => 0, 'entityType' => 'SalesType', 'displayValue' => 'Upfront', 'description' => null],
+            'changeType' => null, 'walletType' => ['id' => 0, 'entityType' => 'WalletType', 'displayValue' => 'Main', 'description' => null],
+            'createdBy' => 'agent', 'planPrice' => 35000, 'id' => 108376600 + random_int(1, 999), 'type' => 'PLAN_RENEW',
+            'occuredAt' => '2026-09-21T10:00:00Z', 'discountAmount' => 0, 'discountType' => '', 'serialNumber' => '', 'zoneId' => 'FBG0876-2',
+            'customer' => ['id' => '2825350', 'displayValue' => 'أحمد كريم'], 'partner' => ['id' => '2342999', 'displayValue' => 'وكيل تجريبي'],
+            'deviceUsername' => 'FBG876F33P08', 'paymentMode' => $payment, 'paymentMethod' => $method,
+            'transactionAmount' => ['value' => -35000, 'currency' => 'IQD'], 'remainingBalance' => ['value' => 100000, 'currency' => 'IQD'],
+            'subscription' => ['id' => '13525583', 'displayValue' => 'Basic', 'type' => $type, 'startsAt' => '2026-09-21T10:00:00Z', 'endsAt' => $ends],
             ...$extra,
         ];
+    }
+
+    public function test_a_wallet_line_finds_its_account_by_its_subscription_only(): void
+    {
+        $line = WalletTransactions::parse($this->walletLine('Card', '2026-10-21T10:00:00Z'));
+        $this->assertSame(['card', ['13525583', 'FBG876F33P08'], 35000], [$line['source'], $line['values'], $line['amount']]);
+        $this->assertSame('2026-10-21', $line['ends']->toDateString());
+
+        // A date change has no payment type; a value-added service is not the renewal.
+        $this->assertNull(WalletTransactions::parse(['id' => 1, 'type' => 'CHANGE_DATE', 'paymentMode' => null, 'subscription' => ['id' => '13525583', 'endsAt' => '2026-10-21T10:00:00Z']]));
+        $this->assertNull(WalletTransactions::parse($this->walletLine('Wallet', '2026-10-21T10:00:00Z', 'VAS')));
     }
 
     public function test_the_wallet_log_tells_whether_each_renewal_was_paid_by_card_or_wallet(): void
     {
         $this->postJson('/sync/browser/run', $this->lists('2026-09-01T10:00:00Z', 'Expired'))->assertOk();
         $ends = CarbonImmutable::now()->addDays(30)->addHour()->toIso8601String();
-        $wallet = ['path' => '/api/wallet/transactions', 'items' => [
+        $wallet = ['path' => '/api/transactions', 'items' => [
             // A value-added service on the same day, and a date change: neither is the renewal.
-            $this->walletLine('Wallet', $ends, 'VAS', ['subscription' => ['id' => '13525583', 'displayValue' => 'IPTV']]),
-            ['id' => 1, 'transactionType' => ['displayValue' => 'تغيير التاريخ'], 'subscription' => ['id' => '13525583']],
+            $this->walletLine('Wallet', $ends, 'VAS', ['subscription' => ['id' => '13525583', 'displayValue' => 'IPTV', 'type' => 'VAS', 'endsAt' => $ends]]),
+            ['id' => 1, 'type' => 'CHANGE_DATE', 'paymentMode' => null, 'subscription' => ['id' => '13525583']],
+            // Another subscription this system does not know, whose customer's ID happens to be our subscription's.
+            [...$this->walletLine('Wallet', $ends), 'customer' => ['id' => '13525583'], 'subscription' => ['id' => '999', 'type' => 'BASE_PLAN', 'endsAt' => $ends], 'deviceUsername' => 'OTHER'],
             $this->walletLine('Card', $ends),
-            // Another subscription this system does not know.
-            [...$this->walletLine('Wallet', $ends), 'subscription' => ['id' => '999'], 'deviceUsername' => 'OTHER'],
         ]];
 
         $response = $this->postJson('/sync/browser/run', [...$this->lists($ends), 'wallet' => $wallet])->assertOk();
@@ -194,7 +213,13 @@ class BrowserSyncTest extends TestCase
     {
         $js = BrowserScripts::contentScript('https://subs.example', 'app');
         $this->assertStringContainsString("localStorage.setItem('subs_wallet_api'", $js);
-        $this->assertStringContainsString('/api/wallet/transactions', $js);
+        // The panel's own addresses (seen in its network log) come first.
+        $this->assertStringContainsString("const SUBS_WALLET_LOG = '/api/transactions?sortCriteria.property=occuredAt&sortCriteria.direction=desc'", $js);
+        $this->assertStringContainsString("const SUBS_ONT_PATH = '/api/subscriptions/device/ont'", $js);
+        $this->assertStringContainsString('[base, SUBS_ONT_PATH,', $js);
+        $this->assertStringContainsString('const paths = [SUBS_WALLET_LOG]', $js);
+        // The subscriber pages' /api/transactions/payment-methods is not the log.
+        $this->assertStringContainsString('const SUBS_WALLET_API = /\/api\/transactions(?:\?|$)/i', $js);
         $this->assertDoesNotMatchRegularExpression("/method:\\s*'(POST|PUT|PATCH|DELETE)'/i", $js);
     }
 
