@@ -56,8 +56,6 @@ class BrowserSyncController extends Controller
 
         return response()->json([
             'needs' => $sync->customersNeedingDetails($client, max(0, (int) $settings->get('sync.detail_limit'))),
-            // Device names whose «القدرة المستلمة» to read (running accounts, oldest reading first).
-            'ont' => OntReadings::needs(max(0, (int) $settings->get('sync.rx_limit'))),
             'subscriptions' => count($subscriptions),
         ]);
     }
@@ -65,7 +63,7 @@ class BrowserSyncController extends Controller
     /**
      * Step 2: lists and details arrive; run the sync.
      */
-    public function run(Request $request, CompanySync $sync, WalletTransactions $walletLog, OntReadings $ontReadings): JsonResponse
+    public function run(Request $request, CompanySync $sync, WalletTransactions $walletLog): JsonResponse
     {
         abort_unless($request->user()->can('sync.run'), 403);
         @set_time_limit(600);
@@ -75,10 +73,6 @@ class BrowserSyncController extends Controller
         $run = $sync->run('browser', new BrowserPayloadClient($customers, $subscriptions, $details));
         CompanySync::markDetailsChecked(array_map('strval', array_keys($details)));
 
-        // «القدرة المستلمة» read from each running account's ONT.
-        $ont = $request->input('ont');
-        $signals = $run->status === 'success' && is_array($ont) ? $ontReadings->apply(array_slice($ont, 0, 2000, true)) : 0;
-
         // The wallet log, when the extension could read it: Card or Wallet on each renewal.
         $wallet = $request->input('wallet');
         $paid = $run->status === 'success' && is_array($wallet) && is_array($wallet['items'] ?? null)
@@ -87,13 +81,33 @@ class BrowserSyncController extends Controller
         $s = $run->stats ?? [];
         $summary = $run->status === 'success'
             ? "{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
-                .($signals ? " · القدرة المستلمة: {$signals} جهاز" : '')
                 .($paid !== null
                     ? " · حركات المحفظة: {$paid['matched']} تجديد عُرف نوع دفعه (Card {$paid['card']}، Wallet {$paid['wallet']})"
                     : ' · لم تُقرأ حركات المحفظة: افتح صفحة المحفظة بموقع الشركة مرة وحدة والإضافة منصّبة، ثم أعد المزامنة')
             : (string) $run->error;
 
         return response()->json(['status' => $run->status, 'summary' => $summary, 'run_id' => $run->id], $run->status === 'success' ? 200 : 422);
+    }
+
+    /**
+     * «القدرة المستلمة», its own run (never part of the activations sync): which devices to read,
+     * the running accounts whose reading is oldest.
+     */
+    public function ontPlan(Request $request, Settings $settings): JsonResponse
+    {
+        abort_unless($request->user()->can('sync.run'), 403);
+
+        return response()->json(['ont' => OntReadings::needs(max(0, (int) $settings->get('sync.rx_limit')))]);
+    }
+
+    /** The readings arrive: the last one is kept on each account. */
+    public function ont(Request $request, OntReadings $readings): JsonResponse
+    {
+        abort_unless($request->user()->can('sync.run'), 403);
+        $ont = $request->input('ont');
+        $count = is_array($ont) ? $readings->apply(array_slice($ont, 0, 2000, true)) : 0;
+
+        return response()->json(['status' => 'success', 'summary' => "قُرئت القدرة المستلمة لـ {$count} جهاز", 'count' => $count]);
     }
 
     /**

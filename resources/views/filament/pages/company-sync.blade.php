@@ -16,6 +16,10 @@
                     style="display:inline-flex;align-items:center;gap:8px;padding:11px 22px;border-radius:10px;border:0;background:#0f766e;color:#fff;font:inherit;font-weight:700;font-size:15px;cursor:pointer">
                 ⟳ مزامنة الآن
             </button>
+            <button type="button" id="subs-ont-start"
+                    style="display:inline-flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;border:1px solid #0f766e;background:transparent;color:#0f766e;font:inherit;font-weight:700;font-size:15px;cursor:pointer">
+                📶 قراءة القدرة المستلمة
+            </button>
             <span id="subs-sync-status" style="font-size:14px;font-weight:600"></span>
         </div>
         <p style="font-size:13px;color:var(--subs-muted);margin:0">
@@ -63,9 +67,12 @@
             onDone: () => setTimeout(() => location.reload(), 4000),
         });
         document.addEventListener('click', (e) => {
-            if (!e.target.closest || !e.target.closest('#subs-sync-start')) return;
+            const button = e.target.closest && e.target.closest('#subs-sync-start, #subs-ont-start');
+            if (!button) return;
             heard = false;
-            const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#subs-sync', 'ftth_sync');
+            // The readings have their own button and run, so they never slow the activations sync.
+            const mode = button.id === 'subs-ont-start' ? 'subs-ont' : 'subs-sync';
+            const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#' + mode, 'ftth_sync');
             if (!tab) { set('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.', 'bad'); return; }
             set('جارٍ فتح موقع الشركة…', '');
             clearTimeout(watchdog);

@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.2.1',
+            'version' => '1.3.0',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -77,9 +77,10 @@ const subsToken = () => {
     return exp && exp * 1000 > Date.now() + 30000 ? t : null;
   } catch (e) { return null; }
 };
-async function subsSync(target, ready) {
+// What both runs share: the progress box, messages to the system window, and GET requests with the panel's current token.
+const subsConnect = (target, title) => {
   const box = subsBox();
-  const say = (t) => { box.textContent = 'مزامنة المشتركين: ' + t; try { target.postMessage({ type: 'progress', text: t }, SUBS_APP); } catch (e) {} };
+  const say = (t) => { box.textContent = title + ': ' + t; try { target.postMessage({ type: 'progress', text: t }, SUBS_APP); } catch (e) {} };
   const send = (data) => new Promise((resolve, reject) => {
     const f = (e) => {
       if (e.origin !== SUBS_APP || !e.data) return;
@@ -91,14 +92,18 @@ async function subsSync(target, ready) {
   });
   const token = subsToken();
   if (!token) throw new Error('سجّل الدخول لموقع الشركة أولاً.');
-  const headers = { Authorization: 'Bearer ' + token, 'X-Client-App': SUBS_CLIENT_APP, 'X-User-Role': '0', Accept: 'application/json' };
+  const headers = { 'X-Client-App': SUBS_CLIENT_APP, 'X-User-Role': '0', Accept: 'application/json' };
   const get = async (path) => {
-    // The panel renews its sign-in token while it is open; a long sync must use the current one.
+    // The panel renews its sign-in token while it is open; a long run must use the current one.
     const r = await fetch(path, { headers: { ...headers, Authorization: 'Bearer ' + (subsToken() || token) }, credentials: 'include' });
     if (r.status === 401) throw new Error('انتهت جلسة موقع الشركة. حدّث الصفحة وسجّل الدخول ثم أعد المحاولة.');
     if (!r.ok) throw new Error(path + ' (' + r.status + ')');
     return r.json();
   };
+  return { box, say, send, get };
+};
+async function subsSync(target, ready) {
+  const { box, say, send, get } = subsConnect(target, 'مزامنة المشتركين');
   const all = async (path, label) => {
     let items = [], page = 1, total = 0;
     do {
@@ -176,33 +181,41 @@ async function subsSync(target, ready) {
     }
   } catch (e) { wallet = null; }
 
-  // «القدرة المستلمة»: each running account's ONT reading, from the address the panel's own device window uses.
-  const ontNames = plan.ont || [], ont = {};
-  if (ontNames.length) {
-    let base = subsLearnOnt();
-    try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
-    const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
-    let working = null;
-    for (const b of bases) {
-      try { ont[ontNames[0]] = await get(b + '?username=' + encodeURIComponent(ontNames[0])); working = b; break; } catch (e) { /* next guess */ }
-    }
-    if (working) {
-      try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
-      let nextOnt = 1, doneOnt = 1;
-      const ontWorker = async () => {
-        while (nextOnt < ontNames.length) {
-          const name = ontNames[nextOnt++];
-          try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* the next sync reads it */ }
-          if (++doneOnt % 10 === 0 || doneOnt === ontNames.length) say('قراءة القدرة المستلمة ' + doneOnt + ' من ' + ontNames.length);
-        }
-      };
-      await Promise.all([ontWorker(), ontWorker(), ontWorker(), ontWorker()]);
-    }
-  }
-
   say('حفظ في النظام…');
-  const result = await send({ type: 'run', customers, subscriptions, details, wallet, ont });
+  const result = await send({ type: 'run', customers, subscriptions, details, wallet });
   box.textContent = 'مزامنة المشتركين: تمت ✓ ' + result.summary;
+  box.style.background = '#15803d';
+  return result;
+}
+// «القدرة المستلمة» on its own (a separate button, so it never slows the activations sync): the system says
+// which devices to read (oldest reading first), each ONT is read through the panel's own address, then saved.
+async function subsOntSync(target, ready) {
+  const { box, say, send, get } = subsConnect(target, 'القدرة المستلمة');
+  await ready;
+  const plan = await send({ type: 'ont_plan' });
+  const names = plan.ont || [], ont = {};
+  if (!names.length) throw new Error('لا توجد أجهزة فعّالة لقراءتها.');
+  let base = subsLearnOnt();
+  try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
+  const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
+  let working = null;
+  for (const b of bases) {
+    try { ont[names[0]] = await get(b + '?username=' + encodeURIComponent(names[0])); working = b; break; } catch (e) { /* next guess */ }
+  }
+  if (!working) throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.');
+  try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
+  let next = 1, done = 1;
+  const worker = async () => {
+    while (next < names.length) {
+      const name = names[next++];
+      try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* read on the next run */ }
+      if (++done % 10 === 0 || done === names.length) say('قراءة ' + done + ' من ' + names.length);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  say('حفظ في النظام…');
+  const result = await send({ type: 'ont_run', ont });
+  box.textContent = 'القدرة المستلمة: تمت ✓ ' + result.summary;
   box.style.background = '#15803d';
   return result;
 }
@@ -232,10 +245,12 @@ JS;
     private const EXTENSION = <<<'JS'
 (() => {
   const KEY = 'subs_sync_pending';
-  if (location.hash.includes('subs-sync')) {
+  if (location.hash.includes('subs-sync') || location.hash.includes('subs-ont')) {
     sessionStorage.setItem(KEY, String(Date.now()));
+    sessionStorage.setItem(KEY + '_mode', location.hash.includes('subs-ont') ? 'ont' : 'sync');
     history.replaceState(null, '', location.pathname + location.search);
   }
+  const run = sessionStorage.getItem(KEY + '_mode') === 'ont' ? subsOntSync : subsSync;
   // On any panel page: when a device window («معلومات تقنية») is opened, remember the ONT address.
   const learnOnt = setInterval(() => { if (subsLearnOnt()) clearInterval(learnOnt); }, 2000);
   setTimeout(() => clearInterval(learnOnt), 10 * 60 * 1000);
@@ -263,7 +278,7 @@ JS;
   const start = () => {
     sessionStorage.removeItem(KEY);
     if (opener && !opener.closed) {
-      subsSync(opener, Promise.resolve()).catch(fail);
+      run(opener, Promise.resolve()).catch(fail);
       return;
     }
     box.innerHTML = '';
@@ -274,7 +289,7 @@ JS;
     button.onclick = () => {
       const win = window.open(SUBS_APP + '/sync/browser', 'subs_sync', 'width=520,height=600');
       if (!win) { alert('اسمح بالنوافذ المنبثقة لهذا الموقع ثم اضغط مرة ثانية.'); return; }
-      subsSync(win, subsWaitReady(win)).catch(fail);
+      run(win, subsWaitReady(win)).catch(fail);
     };
     box.append(button);
   };

@@ -50,6 +50,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/sync/extension.zip', [BrowserSyncController::class, 'extension'])->name('sync.extension');
     Route::post('/sync/browser/plan', [BrowserSyncController::class, 'plan'])->name('sync.browser.plan');
     Route::post('/sync/browser/run', [BrowserSyncController::class, 'run'])->name('sync.browser.run');
+    Route::post('/sync/browser/ont-plan', [BrowserSyncController::class, 'ontPlan'])->name('sync.browser.ont-plan');
+    Route::post('/sync/browser/ont', [BrowserSyncController::class, 'ont'])->name('sync.browser.ont');
     Route::get('/backup/download', function (BackupService $backups) {
         abort_unless(auth()->user()->can('settings.manage'), 403);
         @set_time_limit(900);

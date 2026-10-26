@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\CompanySyncPage;
 use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Resources\SubscriberCards\Pages\ListSubscriberCards;
 use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
@@ -202,13 +203,14 @@ class BrowserSyncTest extends TestCase
         $ends = CarbonImmutable::now()->addDays(20)->toIso8601String();
         $this->postJson('/sync/browser/run', $this->lists($ends))->assertOk();
 
-        // The plan asks for the running devices' readings (never read yet first).
-        $this->postJson('/sync/browser/plan', $this->lists($ends))->assertOk()->assertJson(['ont' => ['FBG876F33P08']]);
+        // The activations sync no longer reads devices: that is its own run, so it never slows the sync.
+        $this->assertArrayNotHasKey('ont', $this->postJson('/sync/browser/plan', $this->lists($ends))->assertOk()->json());
+        // The readings run asks which devices to read (running ones, never read yet first).
+        $this->postJson('/sync/browser/ont-plan')->assertOk()->assertJson(['ont' => ['FBG876F33P08']]);
 
         // What admin.ftth.iq/…/ont?username=… returned.
         $ont = ['FBG876F33P08' => ['model' => ['status' => ['id' => 0, 'entityType' => 'OntStatus', 'displayValue' => 'Up'], 'rxPower' => -29.4]]];
-        $response = $this->postJson('/sync/browser/run', [...$this->lists($ends), 'ont' => $ont])->assertOk();
-        $this->assertStringContainsString('القدرة المستلمة: 1 جهاز', $response->json('summary'));
+        $this->postJson('/sync/browser/ont', ['ont' => $ont])->assertOk()->assertJson(['summary' => 'قُرئت القدرة المستلمة لـ 1 جهاز']);
 
         $account = Account::sole();
         $this->assertSame(['-29.40', 'Up'], [(string) $account->rx_power, $account->ont_status]);
@@ -229,5 +231,19 @@ class BrowserSyncTest extends TestCase
         ]);
         $this->assertSame(['rx' => -23.47, 'status' => 'Up'], OntReadings::parse(['model' => ['status' => ['displayValue' => 'Up'], 'rxPower' => -23.47]]));
         $this->assertNull(OntReadings::parse(['model' => []]));
+    }
+
+    public function test_the_readings_run_is_for_users_allowed_to_sync_and_the_page_has_its_button(): void
+    {
+        $this->get(CompanySyncPage::getUrl())->assertOk()->assertSee('قراءة القدرة المستلمة')->assertSee('subs-ont-start', escape: false);
+        $js = BrowserScripts::contentScript('https://subs.example', 'app');
+        $this->assertStringContainsString("type: 'ont_plan'", $js);
+        $this->assertStringContainsString("send({ type: 'run', customers, subscriptions, details, wallet })", $js, 'the activations sync sends no device readings');
+
+        $user = User::factory()->create(['branch_id' => $this->admin->branch_id]);
+        $user->assignRole('employee');
+        $this->actingAs($user);
+        $this->postJson('/sync/browser/ont-plan')->assertForbidden();
+        $this->postJson('/sync/browser/ont', ['ont' => []])->assertForbidden();
     }
 }
