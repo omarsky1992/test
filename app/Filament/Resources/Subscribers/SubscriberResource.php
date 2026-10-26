@@ -9,6 +9,7 @@ use App\Filament\Resources\Subscribers\Pages\CreateSubscriber;
 use App\Filament\Resources\Subscribers\Pages\EditSubscriber;
 use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
+use App\Models\Account;
 use App\Models\Subscriber;
 use App\Services\PaymentService;
 use App\Support\Arabic;
@@ -148,6 +149,7 @@ class SubscriberResource extends Resource
             // A subscriber with an active note is shaded wherever it appears, until the note is closed.
             ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->id))
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount('accounts')
+                ->with(['accounts' => fn ($a) => $a->select('id', 'subscriber_id', 'username', 'fat_code', 'port_number', 'zone_code')->orderBy('id')])
                 ->withSum(['debts as open_debt' => fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])], 'balance')
                 ->withMax('accounts as service_ends_at', 'service_ends_at'))
             ->columns([
@@ -157,6 +159,13 @@ class SubscriberResource extends Resource
                     ->url(fn (Subscriber $r) => SubscriberFlags::subscriberUrl($r->id)), fn (Subscriber $r) => $r->id),
                 TextColumn::make('phone')->label('الهاتف')->extraAttributes(['dir' => 'ltr']),
                 TextColumn::make('accounts_count')->label('الحسابات')->alignCenter(),
+                // Where each subscription is plugged in: its FAT and port (several accounts, one line each).
+                TextColumn::make('fat_port')->label('الفات / البورت')->listWithLineBreaks()->placeholder('—')
+                    ->state(fn (Subscriber $r) => $r->accounts->filter(fn ($a) => $a->fat_code || $a->port_number)
+                        ->map(fn ($a) => trim(($a->fat_code ?? '—').' · بورت '.($a->port_number ?? '—')))->values()->all())
+                    ->sortable(query: fn (Builder $query, string $direction) => $query->orderBy(
+                        Account::query()->selectRaw("min(coalesce(fat_code, '') || lpad(coalesce(nullif(regexp_replace(port_number, '\\D', '', 'g'), ''), '0'), 4, '0'))")
+                            ->whereColumn('accounts.subscriber_id', 'subscribers.id'), $direction)),
                 TextColumn::make('open_debt')->label('الدين')->formatStateUsing(fn ($state) => Money::format((int) $state))
                     ->color(fn ($state) => $state > 0 ? 'danger' : 'gray')->sortable(),
                 TextColumn::make('service_ends_at')->label('أقرب/آخر انتهاء')->dateTime('Y/m/d H:i')->sortable()
@@ -167,6 +176,15 @@ class SubscriberResource extends Resource
             ->searchPlaceholder('الاسم، الهاتف، اليوزر، السيريال، رقم السند…')
             ->filters([
                 SelectFilter::make('status')->label('الحالة')->options(SubscriberStatus::class),
+                // «من على هذا الفات»: the subscribers on one or more FATs, each with their port.
+                SelectFilter::make('fat')->label('الفات')->multiple()->searchable()
+                    ->options(fn () => Account::query()->whereNotNull('fat_code')->where('fat_code', '<>', '')->distinct()->orderBy('fat_code')->pluck('fat_code', 'fat_code')->all())
+                    ->query(fn (Builder $query, array $data) => filled($data['values'] ?? null)
+                        ? $query->whereHas('accounts', fn (Builder $a) => $a->whereIn('fat_code', $data['values'])) : $query),
+                SelectFilter::make('zone')->label('المنطقة')->multiple()->searchable()
+                    ->options(fn () => Account::query()->whereNotNull('zone_code')->where('zone_code', '<>', '')->distinct()->orderBy('zone_code')->pluck('zone_code', 'zone_code')->all())
+                    ->query(fn (Builder $query, array $data) => filled($data['values'] ?? null)
+                        ? $query->whereHas('accounts', fn (Builder $a) => $a->whereIn('zone_code', $data['values'])) : $query),
                 Filter::make('has_notes')->label('لديه ملاحظات نشطة')
                     ->query(fn (Builder $query) => $query->whereHas('notes', fn (Builder $n) => $n->where('status', 'active'))),
                 Filter::make('blacklisted')->label('في القائمة السوداء')

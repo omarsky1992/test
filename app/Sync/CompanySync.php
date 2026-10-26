@@ -272,7 +272,9 @@ class CompanySync
         }
 
         $newDays = $fields['company_days_left'];
-        if ($previousDays === 0 && $newDays !== null && $newDays > 0) {
+        // A renewal: from 0 to more than 0, or a full activation added before reaching 0.
+        $early = $previousDays !== null && $newDays !== null && $this->renewals->isEarlyFullActivation($previousDays, $previousEndsAt, $endsAt);
+        if (($previousDays === 0 && $newDays !== null && $newDays > 0) || $early) {
             $renewal = $this->renewals->record(
                 $account, $previousDays, $newDays, $previousEndsAt, $endsAt, $record['plan'], $run, $now,
                 longestDays: RenewalService::longestDays($endsAt, $previousEndsAt, $sawZeroAt),

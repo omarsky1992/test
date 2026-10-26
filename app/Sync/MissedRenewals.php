@@ -6,6 +6,7 @@ use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\AuditLog;
 use App\Models\ServicePlan;
+use App\Models\SyncRun;
 use App\Services\RenewalService;
 use Carbon\CarbonImmutable;
 
@@ -41,7 +42,9 @@ class MissedRenewals
                 continue;
             }
             $newDays = Account::daysLeft($new, $at);
-            if (Account::daysLeft($old, $at) !== 0 || $newDays <= 0) {
+            $oldDays = Account::daysLeft($old, $at);
+            $early = $this->renewals->isEarlyFullActivation($oldDays, $old, $new);
+            if (! $early && ($oldDays !== 0 || $newDays <= 0)) {
                 continue;
             }
             if (AccountRenewal::where('reference', RenewalService::reference($account, $new, $at))->exists()) {
@@ -50,7 +53,7 @@ class MissedRenewals
             $full = $this->renewals->isFullActivation($newDays);
             $test = ! $full && $this->renewals->isSelfTest(max($newDays, RenewalService::longestDays($new, $old) ?? 0));
             $found[] = [
-                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'full' => $full, 'test' => $test,
+                'account' => $account, 'at' => $at, 'old' => $old, 'new' => $new, 'days' => $newDays, 'old_days' => $oldDays, 'full' => $full, 'test' => $test,
                 'amount' => ! $full && ! $test && $account->current_plan_id ? (int) ($prices[$account->current_plan_id] ?? 0) ?: null : null,
             ];
         }
@@ -65,7 +68,9 @@ class MissedRenewals
     {
         $result = ['renewals' => 0, 'debts' => 0, 'amount' => 0];
         foreach ($this->find() as $item) {
-            $renewal = $this->renewals->record($item['account'], 0, $item['days'], $item['old'], $item['new'], $item['account']->external_plan, null, $item['at'], longestDays: RenewalService::longestDays($item['new'], $item['old']));
+            // Tied to the sync run that applied it, so a full activation also waits in «المفعّل حديثاً».
+            $run = SyncRun::where('started_at', '<=', $item['at'])->latest('started_at')->first();
+            $renewal = $this->renewals->record($item['account'], $item['old_days'], $item['days'], $item['old'], $item['new'], $item['account']->external_plan, $run, $item['at'], longestDays: RenewalService::longestDays($item['new'], $item['old']));
             if ($renewal->wasRecentlyCreated) {
                 $result['renewals']++;
                 if ($renewal->debt_id !== null) {

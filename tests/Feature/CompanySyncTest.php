@@ -294,14 +294,54 @@ class CompanySyncTest extends TestCase
         $this->assertSame(1, Debt::count());
     }
 
-    public function test_a_renewal_before_the_end_is_still_not_counted(): void
+    public function test_a_full_activation_before_the_end_waits_in_recently_activated_with_no_debt(): void
     {
+        // 3 days left, then a full activation added on top: 33 days.
         $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(3)]));
         $this->sync();
         $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(33)]));
+        $run = $this->sync();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame(['activated', 3, 33], [$renewal->status, $renewal->previous_days, $renewal->new_days]);
+        $this->assertSame(0, Debt::count());
+        $this->assertSame(1, $run->stats['activations']);
+        $this->assertSame([$renewal->id], RecentActivationService::pending()->pluck('id')->all());
+
+        // Seen again: nothing doubles.
+        $this->sync();
+        $this->assertSame(1, AccountRenewal::count());
+    }
+
+    public function test_a_small_date_change_before_the_end_is_not_a_renewal(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(3)]));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(6)]));
         $this->sync();
 
         $this->assertSame(0, AccountRenewal::count());
+    }
+
+    public function test_a_missed_full_activation_before_the_end_is_recovered_into_recently_activated(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(3)]));
+        $this->sync();
+        // Applied by a sync before the early rule: only the audit log knows.
+        $this->app->make(Settings::class)->set('activation.partial_days', 40);
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(33)]));
+        $this->sync();
+        $this->app->make(Settings::class)->set('activation.partial_days', 7);
+        $this->assertSame(0, AccountRenewal::count());
+
+        $this->assertSame(1, count(app(MissedRenewals::class)->find()));
+        app(MissedRenewals::class)->record();
+
+        $renewal = AccountRenewal::sole();
+        $this->assertSame('activated', $renewal->status);
+        $this->assertNotNull($renewal->sync_run_id);
+        $this->assertSame(1, RecentActivationService::pending()->count());
+        $this->assertSame(0, Debt::count());
     }
 
     public function test_renewals_a_sync_applied_without_recording_are_recovered_once_from_the_audit_log(): void

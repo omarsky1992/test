@@ -35,6 +35,17 @@ class RenewalService
     }
 
     /**
+     * A full activation done before the subscription reached 0 (the company adds it to the days left):
+     * the end date moved forward by more than the short activation. A 7-day activation can only be
+     * done at 0, and small date corrections stay well under this.
+     */
+    public function isEarlyFullActivation(int $previousDays, ?\DateTimeInterface $previousEndsAt, ?\DateTimeInterface $newEndsAt): bool
+    {
+        return $previousDays > 0 && $previousEndsAt !== null && $newEndsAt !== null
+            && $newEndsAt->getTimestamp() - $previousEndsAt->getTimestamp() > ($this->settings->partialDays() + 1) * 86400;
+    }
+
+    /**
      * Fewer days than the shortest real activation (setting activation.min_partial_days, 4) seen on
      * the company site is a test the subscriber gave themselves: recorded, never a debt.
      */
