@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.2.1',
+            'version' => '1.2.2',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -49,7 +49,18 @@ class BrowserScripts
     /** Reads the lists, asks the system which details it needs, reads those, and sends everything. */
     private const CORE = <<<'JS'
 const SUBS_APP = __APP__, SUBS_PANEL_HOST = __PANEL_HOST__, SUBS_CLIENT_APP = __CLIENT_APP__;
-const SUBS_WALLET_API = /\/api\/[^?#]*transaction/i;
+// The wallet log is /api/transactions itself (not /api/transactions/payment-methods, which the subscriber pages call).
+const SUBS_WALLET_API = /\/api\/transactions(?:\?|$)/i;
+const SUBS_WALLET_LOG = '/api/transactions?sortCriteria.property=occuredAt&sortCriteria.direction=desc';
+// Newest lines first, without the page's own page size and number.
+const subsWalletPath = (u) => {
+  const x = new URL(u, location.origin);
+  x.searchParams.delete('pageSize'); x.searchParams.delete('pageNumber');
+  x.searchParams.set('sortCriteria.property', 'occuredAt'); x.searchParams.set('sortCriteria.direction', 'desc');
+  return x.pathname + x.search;
+};
+// What admin.ftth.iq's device window («معلومات تقنية») calls: /api/subscriptions/device/ont?username=…
+const SUBS_ONT_PATH = '/api/subscriptions/device/ont';
 const SUBS_ONT_API = /\/ont\?username=/i;
 // Remembers the address a panel page itself used to read a device's ONT («القدرة المستلمة»).
 const subsLearnOnt = () => {
@@ -152,12 +163,12 @@ async function subsSync(target, ready) {
   // Its address is the one the wallet page itself used (remembered when that page was opened), else a known guess.
   let wallet = null;
   try {
-    const clean = (u) => { const x = new URL(u, location.origin); x.searchParams.delete('pageSize'); x.searchParams.delete('pageNumber'); return x.pathname + x.search; };
-    const paths = [];
+    const paths = [SUBS_WALLET_LOG];
     const seenWallet = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => SUBS_WALLET_API.test(n)).pop();
-    if (seenWallet) paths.push(clean(seenWallet));
-    try { const learned = localStorage.getItem('subs_wallet_api'); if (learned) paths.push(learned); } catch (e) {}
-    paths.push('/api/wallet/transactions', '/api/wallets/transactions', '/api/transactions', '/api/wallet/transaction', '/api/partners/wallet/transactions');
+    if (seenWallet) paths.push(subsWalletPath(seenWallet));
+    // An address remembered by an older version may be another list (payment-methods): only the log is kept.
+    try { const learned = localStorage.getItem('subs_wallet_api'); if (learned && SUBS_WALLET_API.test(learned)) paths.push(subsWalletPath(learned)); } catch (e) {}
+    paths.push('/api/wallet/transactions', '/api/wallets/transactions');
     for (const p of [...new Set(paths)]) {
       try {
         let items = [];
@@ -181,7 +192,7 @@ async function subsSync(target, ready) {
   if (ontNames.length) {
     let base = subsLearnOnt();
     try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
-    const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
+    const bases = [...new Set([base, SUBS_ONT_PATH, '/api/subscriptions/ont', '/api/ont'].filter(Boolean))];
     let working = null;
     for (const b of bases) {
       try { ont[ontNames[0]] = await get(b + '?username=' + encodeURIComponent(ontNames[0])); working = b; break; } catch (e) { /* next guess */ }
@@ -244,8 +255,7 @@ JS;
     const learn = setInterval(() => {
       const seen = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => SUBS_WALLET_API.test(n)).pop();
       if (!seen) return;
-      const u = new URL(seen); u.searchParams.delete('pageSize'); u.searchParams.delete('pageNumber');
-      try { localStorage.setItem('subs_wallet_api', u.pathname + u.search); } catch (e) {}
+      try { localStorage.setItem('subs_wallet_api', subsWalletPath(seen)); } catch (e) {}
       clearInterval(learn);
     }, 1500);
     setTimeout(() => clearInterval(learn), 60000);
