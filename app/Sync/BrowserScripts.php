@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.2.0',
+            'version' => '1.2.1',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -93,7 +93,8 @@ async function subsSync(target, ready) {
   if (!token) throw new Error('سجّل الدخول لموقع الشركة أولاً.');
   const headers = { Authorization: 'Bearer ' + token, 'X-Client-App': SUBS_CLIENT_APP, 'X-User-Role': '0', Accept: 'application/json' };
   const get = async (path) => {
-    const r = await fetch(path, { headers, credentials: 'include' });
+    // The panel renews its sign-in token while it is open; a long sync must use the current one.
+    const r = await fetch(path, { headers: { ...headers, Authorization: 'Bearer ' + (subsToken() || token) }, credentials: 'include' });
     if (r.status === 401) throw new Error('انتهت جلسة موقع الشركة. حدّث الصفحة وسجّل الدخول ثم أعد المحاولة.');
     if (!r.ok) throw new Error(path + ' (' + r.status + ')');
     return r.json();
@@ -147,30 +148,6 @@ async function subsSync(target, ready) {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
 
-  // «القدرة المستلمة»: each running account's ONT reading, from the address the panel's own device window uses.
-  const ontNames = plan.ont || [], ont = {};
-  if (ontNames.length) {
-    let base = subsLearnOnt();
-    try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
-    const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
-    let working = null;
-    for (const b of bases) {
-      try { ont[ontNames[0]] = await get(b + '?username=' + encodeURIComponent(ontNames[0])); working = b; break; } catch (e) { /* next guess */ }
-    }
-    if (working) {
-      try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
-      let nextOnt = 1, doneOnt = 1;
-      const ontWorker = async () => {
-        while (nextOnt < ontNames.length) {
-          const name = ontNames[nextOnt++];
-          try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* the next sync reads it */ }
-          if (++doneOnt % 10 === 0 || doneOnt === ontNames.length) say('قراءة القدرة المستلمة ' + doneOnt + ' من ' + ontNames.length);
-        }
-      };
-      await Promise.all([ontWorker(), ontWorker(), ontWorker(), ontWorker()]);
-    }
-  }
-
   // The wallet log (admin.ftth.iq/wallet/transactions) says whether each renewal was paid by Card or Wallet.
   // Its address is the one the wallet page itself used (remembered when that page was opened), else a known guess.
   let wallet = null;
@@ -198,6 +175,30 @@ async function subsSync(target, ready) {
       } catch (e) { /* try the next address */ }
     }
   } catch (e) { wallet = null; }
+
+  // «القدرة المستلمة»: each running account's ONT reading, from the address the panel's own device window uses.
+  const ontNames = plan.ont || [], ont = {};
+  if (ontNames.length) {
+    let base = subsLearnOnt();
+    try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
+    const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
+    let working = null;
+    for (const b of bases) {
+      try { ont[ontNames[0]] = await get(b + '?username=' + encodeURIComponent(ontNames[0])); working = b; break; } catch (e) { /* next guess */ }
+    }
+    if (working) {
+      try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
+      let nextOnt = 1, doneOnt = 1;
+      const ontWorker = async () => {
+        while (nextOnt < ontNames.length) {
+          const name = ontNames[nextOnt++];
+          try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* the next sync reads it */ }
+          if (++doneOnt % 10 === 0 || doneOnt === ontNames.length) say('قراءة القدرة المستلمة ' + doneOnt + ' من ' + ontNames.length);
+        }
+      };
+      await Promise.all([ontWorker(), ontWorker(), ontWorker(), ontWorker()]);
+    }
+  }
 
   say('حفظ في النظام…');
   const result = await send({ type: 'run', customers, subscriptions, details, wallet, ont });
