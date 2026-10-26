@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.1.0',
+            'version' => '1.2.0',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -50,6 +50,15 @@ class BrowserScripts
     private const CORE = <<<'JS'
 const SUBS_APP = __APP__, SUBS_PANEL_HOST = __PANEL_HOST__, SUBS_CLIENT_APP = __CLIENT_APP__;
 const SUBS_WALLET_API = /\/api\/[^?#]*transaction/i;
+const SUBS_ONT_API = /\/ont\?username=/i;
+// Remembers the address a panel page itself used to read a device's ONT («القدرة المستلمة»).
+const subsLearnOnt = () => {
+  const seen = performance.getEntriesByType('resource').map((e) => e.name).filter((n) => SUBS_ONT_API.test(n)).pop();
+  if (!seen) return null;
+  const path = new URL(seen).pathname;
+  try { localStorage.setItem('subs_ont_api', path); } catch (e) {}
+  return path;
+};
 const subsBox = () => {
   let box = document.getElementById('subs-sync-box');
   if (!box) {
@@ -138,6 +147,30 @@ async function subsSync(target, ready) {
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
 
+  // «القدرة المستلمة»: each running account's ONT reading, from the address the panel's own device window uses.
+  const ontNames = plan.ont || [], ont = {};
+  if (ontNames.length) {
+    let base = subsLearnOnt();
+    try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
+    const bases = [...new Set([base, '/api/ont', '/api/subscriptions/ont', '/api/devices/ont', '/api/network/ont', '/api/customers/ont'].filter(Boolean))];
+    let working = null;
+    for (const b of bases) {
+      try { ont[ontNames[0]] = await get(b + '?username=' + encodeURIComponent(ontNames[0])); working = b; break; } catch (e) { /* next guess */ }
+    }
+    if (working) {
+      try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
+      let nextOnt = 1, doneOnt = 1;
+      const ontWorker = async () => {
+        while (nextOnt < ontNames.length) {
+          const name = ontNames[nextOnt++];
+          try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* the next sync reads it */ }
+          if (++doneOnt % 10 === 0 || doneOnt === ontNames.length) say('قراءة القدرة المستلمة ' + doneOnt + ' من ' + ontNames.length);
+        }
+      };
+      await Promise.all([ontWorker(), ontWorker(), ontWorker(), ontWorker()]);
+    }
+  }
+
   // The wallet log (admin.ftth.iq/wallet/transactions) says whether each renewal was paid by Card or Wallet.
   // Its address is the one the wallet page itself used (remembered when that page was opened), else a known guess.
   let wallet = null;
@@ -167,7 +200,7 @@ async function subsSync(target, ready) {
   } catch (e) { wallet = null; }
 
   say('حفظ في النظام…');
-  const result = await send({ type: 'run', customers, subscriptions, details, wallet });
+  const result = await send({ type: 'run', customers, subscriptions, details, wallet, ont });
   box.textContent = 'مزامنة المشتركين: تمت ✓ ' + result.summary;
   box.style.background = '#15803d';
   return result;
@@ -202,6 +235,9 @@ JS;
     sessionStorage.setItem(KEY, String(Date.now()));
     history.replaceState(null, '', location.pathname + location.search);
   }
+  // On any panel page: when a device window («معلومات تقنية») is opened, remember the ONT address.
+  const learnOnt = setInterval(() => { if (subsLearnOnt()) clearInterval(learnOnt); }, 2000);
+  setTimeout(() => clearInterval(learnOnt), 10 * 60 * 1000);
   // On the wallet page: remember the address it reads its log from, so the sync reads the same one.
   if (location.pathname.startsWith('/wallet')) {
     const learn = setInterval(() => {

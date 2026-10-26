@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Filament\Resources\Debts\DebtResource;
+use App\Filament\Resources\SubscriberCards\Pages\ListSubscriberCards;
+use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
 use App\Filament\Widgets\RecentlyActivated;
 use App\Models\Account;
 use App\Models\AccountRenewal;
@@ -11,7 +13,9 @@ use App\Models\Debt;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Support\OpticalSignal;
 use App\Sync\BrowserScripts;
+use App\Sync\OntReadings;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
 use Livewire\Livewire;
@@ -191,5 +195,39 @@ class BrowserSyncTest extends TestCase
         $this->assertStringContainsString("localStorage.setItem('subs_wallet_api'", $js);
         $this->assertStringContainsString('/api/wallet/transactions', $js);
         $this->assertDoesNotMatchRegularExpression("/method:\\s*'(POST|PUT|PATCH|DELETE)'/i", $js);
+    }
+
+    public function test_the_received_power_of_each_running_device_is_read_and_coloured(): void
+    {
+        $ends = CarbonImmutable::now()->addDays(20)->toIso8601String();
+        $this->postJson('/sync/browser/run', $this->lists($ends))->assertOk();
+
+        // The plan asks for the running devices' readings (never read yet first).
+        $this->postJson('/sync/browser/plan', $this->lists($ends))->assertOk()->assertJson(['ont' => ['FBG876F33P08']]);
+
+        // What admin.ftth.iq/…/ont?username=… returned.
+        $ont = ['FBG876F33P08' => ['model' => ['status' => ['id' => 0, 'entityType' => 'OntStatus', 'displayValue' => 'Up'], 'rxPower' => -29.4]]];
+        $response = $this->postJson('/sync/browser/run', [...$this->lists($ends), 'ont' => $ont])->assertOk();
+        $this->assertStringContainsString('القدرة المستلمة: 1 جهاز', $response->json('summary'));
+
+        $account = Account::sole();
+        $this->assertSame(['-29.40', 'Up'], [(string) $account->rx_power, $account->ont_status]);
+        $this->assertSame('bad', OpticalSignal::ofAccount($account));
+
+        Livewire::test(ListSubscribers::class)
+            ->assertSee('-29.40 · مشكلة بالكيبل')
+            ->filterTable('signal', 'bad')->assertCanSeeTableRecords([Subscriber::sole()])
+            ->filterTable('signal', 'good')->assertCountTableRecords(0);
+        Livewire::test(ListSubscriberCards::class)->assertSee('مشكلة بالكيبل');
+    }
+
+    public function test_signal_levels(): void
+    {
+        $level = fn (?float $rx, ?string $status = 'Up') => OpticalSignal::level($rx, $status);
+        $this->assertSame(['good', 'good', 'weak', 'bad', 'off', 'off', null], [
+            $level(-17.0), $level(-25.0), $level(-27.5), $level(-29.0), $level(-40.0), $level(-20.0, 'Down'), $level(null, null),
+        ]);
+        $this->assertSame(['rx' => -23.47, 'status' => 'Up'], OntReadings::parse(['model' => ['status' => ['displayValue' => 'Up'], 'rxPower' => -23.47]]));
+        $this->assertNull(OntReadings::parse(['model' => []]));
     }
 }

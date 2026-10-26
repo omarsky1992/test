@@ -23,6 +23,7 @@ class Settings
         'sync.client_app' => '53d57a7f-3f89-4e9d-873b-3d071bc6dd9f',
         'sync.hierarchy_level' => '',
         'sync.detail_limit' => 200,
+        'sync.rx_limit' => 300,
         'subscribers.expiring_days' => 7,
         'periods.start_day' => 1,
         'periods.purchases_start' => null,

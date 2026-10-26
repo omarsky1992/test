@@ -6,6 +6,7 @@ use App\Services\Settings;
 use App\Sync\BrowserPayloadClient;
 use App\Sync\BrowserScripts;
 use App\Sync\CompanySync;
+use App\Sync\OntReadings;
 use App\Sync\WalletTransactions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -55,6 +56,8 @@ class BrowserSyncController extends Controller
 
         return response()->json([
             'needs' => $sync->customersNeedingDetails($client, max(0, (int) $settings->get('sync.detail_limit'))),
+            // Device names whose «القدرة المستلمة» to read (running accounts, oldest reading first).
+            'ont' => OntReadings::needs(max(0, (int) $settings->get('sync.rx_limit'))),
             'subscriptions' => count($subscriptions),
         ]);
     }
@@ -62,7 +65,7 @@ class BrowserSyncController extends Controller
     /**
      * Step 2: lists and details arrive; run the sync.
      */
-    public function run(Request $request, CompanySync $sync, WalletTransactions $walletLog): JsonResponse
+    public function run(Request $request, CompanySync $sync, WalletTransactions $walletLog, OntReadings $ontReadings): JsonResponse
     {
         abort_unless($request->user()->can('sync.run'), 403);
         @set_time_limit(600);
@@ -72,6 +75,10 @@ class BrowserSyncController extends Controller
         $run = $sync->run('browser', new BrowserPayloadClient($customers, $subscriptions, $details));
         CompanySync::markDetailsChecked(array_map('strval', array_keys($details)));
 
+        // «القدرة المستلمة» read from each running account's ONT.
+        $ont = $request->input('ont');
+        $signals = $run->status === 'success' && is_array($ont) ? $ontReadings->apply(array_slice($ont, 0, 2000, true)) : 0;
+
         // The wallet log, when the extension could read it: Card or Wallet on each renewal.
         $wallet = $request->input('wallet');
         $paid = $run->status === 'success' && is_array($wallet) && is_array($wallet['items'] ?? null)
@@ -80,6 +87,7 @@ class BrowserSyncController extends Controller
         $s = $run->stats ?? [];
         $summary = $run->status === 'success'
             ? "{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
+                .($signals ? " · القدرة المستلمة: {$signals} جهاز" : '')
                 .($paid !== null
                     ? " · حركات المحفظة: {$paid['matched']} تجديد عُرف نوع دفعه (Card {$paid['card']}، Wallet {$paid['wallet']})"
                     : ' · لم تُقرأ حركات المحفظة: افتح صفحة المحفظة بموقع الشركة مرة وحدة والإضافة منصّبة، ثم أعد المزامنة')

@@ -21,6 +21,7 @@ class Account extends Model
             'external_ends_at' => 'immutable_datetime',
             'external_synced_at' => 'immutable_datetime',
             'company_synced_at' => 'immutable_datetime',
+            'rx_read_at' => 'immutable_datetime',
             'company_days_left' => 'integer',
         ];
     }

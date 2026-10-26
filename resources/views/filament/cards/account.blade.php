@@ -45,4 +45,13 @@
         <span style="color:var(--subs-amber)">ثانوي: <b>{{ number_format((int) $a->secondary_due) }}</b></span>
         <span style="color:var(--subs-red)">أولي: <b>{{ number_format((int) $a->primary_due) }}</b></span>
     </div>
+    @if ($a->fat_code || $a->port_number || ($signal = \App\Support\OpticalSignal::ofAccount($a)))
+        @php $signal = \App\Support\OpticalSignal::ofAccount($a); $sc = ['good' => 'var(--subs-green)', 'weak' => 'var(--subs-amber)', 'bad' => 'var(--subs-red)', 'off' => 'var(--subs-muted)'][$signal] ?? 'var(--subs-muted)'; @endphp
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:3px;color:var(--subs-text-2)">
+            <span dir="ltr">{{ $a->fat_code ?? '—' }} · بورت {{ $a->port_number ?? '—' }}</span>
+            @if ($signal)
+                <span style="color:{{ $sc }};font-weight:700" title="{{ \App\Support\OpticalSignal::readAt($a) }}">📶 {{ \App\Support\OpticalSignal::label($a) }}</span>
+            @endif
+        </div>
+    @endif
 </div>

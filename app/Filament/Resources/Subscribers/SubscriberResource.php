@@ -14,6 +14,7 @@ use App\Models\Subscriber;
 use App\Services\PaymentService;
 use App\Support\Arabic;
 use App\Support\Money;
+use App\Support\OpticalSignal;
 use App\Support\SubscriberFlags;
 use BackedEnum;
 use Filament\Actions\EditAction;
@@ -149,7 +150,7 @@ class SubscriberResource extends Resource
             // A subscriber with an active note is shaded wherever it appears, until the note is closed.
             ->recordClasses(fn ($record) => SubscriberFlags::rowClass($record->id))
             ->modifyQueryUsing(fn (Builder $query) => $query->withCount('accounts')
-                ->with(['accounts' => fn ($a) => $a->select('id', 'subscriber_id', 'username', 'fat_code', 'port_number', 'zone_code')->orderBy('id')])
+                ->with(['accounts' => fn ($a) => $a->select('id', 'subscriber_id', 'username', 'fat_code', 'port_number', 'zone_code', 'rx_power', 'ont_status', 'rx_read_at')->orderBy('id')])
                 ->withSum(['debts as open_debt' => fn (Builder $d) => $d->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])], 'balance')
                 ->withMax('accounts as service_ends_at', 'service_ends_at'))
             ->columns([
@@ -166,6 +167,11 @@ class SubscriberResource extends Resource
                     ->sortable(query: fn (Builder $query, string $direction) => $query->orderBy(
                         Account::query()->selectRaw("min(coalesce(fat_code, '') || lpad(coalesce(nullif(regexp_replace(port_number, '\\D', '', 'g'), ''), '0'), 4, '0'))")
                             ->whereColumn('accounts.subscriber_id', 'subscribers.id'), $direction)),
+                // «القدرة المستلمة»: the last fibre reading of each account, coloured by how good it is.
+                TextColumn::make('signal')->label('القدرة المستلمة')->listWithLineBreaks()->badge()->placeholder('—')
+                    ->state(fn (Subscriber $r) => $r->accounts->map(fn ($a) => OpticalSignal::label($a))->filter()->values()->all())
+                    ->color(fn (?string $state) => collect(OpticalSignal::LEVELS)->first(fn ($l) => $state && str_ends_with($state, $l[0]))[1] ?? 'gray')
+                    ->tooltip(fn (Subscriber $r) => $r->accounts->map(fn ($a) => OpticalSignal::readAt($a))->filter()->first()),
                 TextColumn::make('open_debt')->label('الدين')->formatStateUsing(fn ($state) => Money::format((int) $state))
                     ->color(fn ($state) => $state > 0 ? 'danger' : 'gray')->sortable(),
                 TextColumn::make('service_ends_at')->label('أقرب/آخر انتهاء')->dateTime('Y/m/d H:i')->sortable()
@@ -181,6 +187,16 @@ class SubscriberResource extends Resource
                     ->options(fn () => Account::query()->whereNotNull('fat_code')->where('fat_code', '<>', '')->distinct()->orderBy('fat_code')->pluck('fat_code', 'fat_code')->all())
                     ->query(fn (Builder $query, array $data) => filled($data['values'] ?? null)
                         ? $query->whereHas('accounts', fn (Builder $a) => $a->whereIn('fat_code', $data['values'])) : $query),
+                SelectFilter::make('signal')->label('القدرة المستلمة')
+                    ->options(collect(OpticalSignal::LEVELS)->map(fn ($l) => $l[0])->all())
+                    ->query(fn (Builder $query, array $data) => match ($data['value'] ?? null) {
+                        'off' => $query->whereHas('accounts', fn (Builder $a) => $a->whereNotNull('rx_read_at')
+                            ->where(fn ($q) => $q->whereRaw("lower(coalesce(ont_status, 'up')) <> 'up'")->orWhereNull('rx_power')->orWhere('rx_power', '<=', -39))),
+                        'bad' => $query->whereHas('accounts', fn (Builder $a) => $a->whereRaw("lower(coalesce(ont_status, 'up')) = 'up'")->where('rx_power', '>', -39)->where('rx_power', '<', -28)),
+                        'weak' => $query->whereHas('accounts', fn (Builder $a) => $a->whereRaw("lower(coalesce(ont_status, 'up')) = 'up'")->where('rx_power', '>=', -28)->where('rx_power', '<', -25)),
+                        'good' => $query->whereHas('accounts', fn (Builder $a) => $a->whereRaw("lower(coalesce(ont_status, 'up')) = 'up'")->where('rx_power', '>=', -25)),
+                        default => $query,
+                    }),
                 SelectFilter::make('zone')->label('المنطقة')->multiple()->searchable()
                     ->options(fn () => Account::query()->whereNotNull('zone_code')->where('zone_code', '<>', '')->distinct()->orderBy('zone_code')->pluck('zone_code', 'zone_code')->all())
                     ->query(fn (Builder $query, array $data) => filled($data['values'] ?? null)
