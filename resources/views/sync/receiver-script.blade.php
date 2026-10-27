@@ -8,6 +8,7 @@ window.subsReceiver = function ({ onStatus, onDone, onHello }) {
         const data = event.data;
         if (data.type === 'hello') { onHello && onHello(); return; }
         if (data.type === 'progress') { onStatus(data.text, ''); return; }
+        if (data.type === 'ont_done') { onStatus((data.ok ? 'تمت ✓ ' : '') + data.text, data.ok ? 'ok' : 'bad'); return; }
         if (!['plan', 'run', 'ont_plan', 'ont_run'].includes(data.type)) return;
         // «القدرة المستلمة» is its own run with its own two steps.
         const ontRun = data.type.startsWith('ont_');
@@ -27,7 +28,7 @@ window.subsReceiver = function ({ onStatus, onDone, onHello }) {
             } else if (data.type === 'ont_plan') {
                 onStatus(`قراءة القدرة المستلمة لـ ${body.ont.length} جهاز…`, '');
             } else if (data.type === 'ont_run') {
-                onStatus('تمت ✓ ' + body.summary, 'ok');
+                // One batch saved; the run goes on and ends with ont_done.
             } else {
                 onStatus('تمت المزامنة ✓ ' + body.summary, 'ok');
                 onDone && onDone(body);

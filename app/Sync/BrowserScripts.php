@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.3.0',
+            'version' => '1.3.1',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -203,32 +203,68 @@ async function subsSync(target, ready) {
 async function subsOntSync(target, ready) {
   const { box, say, send, get } = subsConnect(target, 'القدرة المستلمة');
   await ready;
+  // Oldest reading first: after a stop, the next run starts with the devices not read yet.
   const plan = await send({ type: 'ont_plan' });
-  const names = plan.ont || [], ont = {};
-  if (!names.length) throw new Error('لا توجد أجهزة فعّالة لقراءتها.');
+  const names = plan.ont || [];
+  if (!names.length) {
+    const text = plan.message || 'لا توجد أجهزة لقراءتها.';
+    try { target.postMessage({ type: 'ont_done', text, ok: true }, SUBS_APP); } catch (e) {}
+    box.textContent = 'القدرة المستلمة: ' + text;
+    box.style.background = '#15803d';
+    return { summary: text };
+  }
+  // Only the number and the status are kept and sent.
+  const slim = (body) => { const m = (body && body.model) || body || {}; return { model: { rxPower: m.rxPower ?? null, status: m.status ?? null } }; };
+  // Each reading is saved within seconds, in small batches, one batch at a time, so a stop loses nothing.
+  let queue = [], saved = 0, failed = 0, stopped = null, chain = Promise.resolve();
+  const flush = () => (chain = chain.then(async () => {
+    if (!queue.length) return;
+    const batch = Object.fromEntries(queue.splice(0));
+    try { saved += (await send({ type: 'ont_run', ont: batch })).count || 0; } catch (e) { stopped = stopped || e.message; }
+  }));
+  const keep = (name, body) => { queue.push([name, slim(body)]); if (queue.length >= 20) flush(); };
+  const sessionLost = (e) => /انتهت جلسة/.test(e.message);
+
   let base = subsLearnOnt();
   try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
   const bases = [...new Set([base, SUBS_ONT_PATH, '/api/subscriptions/ont', '/api/ont'].filter(Boolean))];
   let working = null;
   for (const b of bases) {
-    try { ont[names[0]] = await get(b + '?username=' + encodeURIComponent(names[0])); working = b; break; } catch (e) { /* next guess */ }
+    try { keep(names[0], await get(b + '?username=' + encodeURIComponent(names[0]))); working = b; break; } catch (e) { if (sessionLost(e)) throw e; }
   }
   if (!working) throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.');
   try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
+
   let next = 1, done = 1;
+  const read = async (name) => {
+    try { return await get(working + '?username=' + encodeURIComponent(name)); } catch (e) {
+      if (sessionLost(e)) throw e;
+      // The site hiccups now and then: one more try after a short pause.
+      await new Promise((r) => setTimeout(r, 2000));
+      return await get(working + '?username=' + encodeURIComponent(name));
+    }
+  };
   const worker = async () => {
-    while (next < names.length) {
+    while (next < names.length && !stopped) {
       const name = names[next++];
-      try { ont[name] = await get(working + '?username=' + encodeURIComponent(name)); } catch (e) { /* read on the next run */ }
-      if (++done % 10 === 0 || done === names.length) say('قراءة ' + done + ' من ' + names.length);
+      try { keep(name, await read(name)); } catch (e) {
+        if (sessionLost(e)) { stopped = e.message; break; }
+        failed++;
+      }
+      if (++done % 10 === 0 || done === names.length) say('قراءة ' + done + ' من ' + names.length + ' · حُفظ ' + saved);
     }
   };
   await Promise.all([worker(), worker(), worker(), worker()]);
-  say('حفظ في النظام…');
-  const result = await send({ type: 'ont_run', ont });
-  box.textContent = 'القدرة المستلمة: تمت ✓ ' + result.summary;
-  box.style.background = '#15803d';
-  return result;
+  flush();
+  await chain;
+
+  const left = names.length - saved;
+  const text = 'حُفظت القدرة المستلمة لـ ' + saved + ' جهاز' + (failed ? ' · تعذّرت ' + failed : '')
+    + (stopped ? ' · توقفت: ' + stopped + ' اضغط الزر مرة ثانية ويكمل من حيث توقف' + (left > 0 ? ' (باقي ' + left + ')' : '') : '');
+  try { target.postMessage({ type: 'ont_done', text, ok: !stopped }, SUBS_APP); } catch (e) {}
+  box.textContent = 'القدرة المستلمة: ' + (stopped ? '' : 'تمت ✓ ') + text;
+  box.style.background = stopped ? '#b45309' : '#15803d';
+  return { summary: text };
 }
 const subsWaitReady = (win) => new Promise((resolve) => {
   const f = (e) => { if (e.origin === SUBS_APP && e.data && e.data.type === 'ready') { removeEventListener('message', f); resolve(); } };

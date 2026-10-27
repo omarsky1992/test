@@ -284,4 +284,25 @@ class BrowserSyncTest extends TestCase
         $this->assertCount(520, $names, 'all running accounts, more than 500, the expired one left out');
         $this->assertNotContains('OLD0001', $names);
     }
+
+    public function test_readings_are_saved_batch_by_batch_and_a_second_press_finishes_the_rest(): void
+    {
+        foreach (range(1, 5) as $i) {
+            $this->account('م'.$i, "DEV{$i}")->update(['external_ends_at' => CarbonImmutable::now()->addDays(10)]);
+        }
+        $reading = fn (float $rx) => ['model' => ['status' => ['displayValue' => 'Up'], 'rxPower' => $rx]];
+
+        $this->assertSame(['DEV1', 'DEV2', 'DEV3', 'DEV4', 'DEV5'], $this->postJson('/sync/browser/ont-plan')->json('ont'));
+        // The run stopped after its first batch: those two are saved already.
+        $this->postJson('/sync/browser/ont', ['ont' => ['DEV1' => $reading(-20), 'DEV2' => $reading(-21)]])->assertOk()->assertJson(['count' => 2]);
+
+        // Pressed again: only the rest.
+        $this->assertSame(['DEV3', 'DEV4', 'DEV5'], $this->postJson('/sync/browser/ont-plan')->json('ont'));
+        $this->postJson('/sync/browser/ont', ['ont' => ['DEV3' => $reading(-30), 'DEV4' => $reading(-22), 'DEV5' => $reading(-41)]])->assertOk();
+        $this->assertSame([], $this->postJson('/sync/browser/ont-plan')->json('ont'));
+
+        // After the fresh window all of them are read again, oldest first.
+        $this->travel(7)->hours();
+        $this->assertCount(5, $this->postJson('/sync/browser/ont-plan')->json('ont'));
+    }
 }

@@ -14,11 +14,17 @@ use Illuminate\Support\Facades\DB;
  */
 class OntReadings
 {
-    /** Every running account (oldest reading first, never read first); $limit > 0 caps the list, 0 means all. */
-    public static function needs(int $limit = 0): array
+    /**
+     * The running accounts still to read: never read, or read more than $freshHours ago, oldest first.
+     * Pressing the button again after a stop so finishes the rest instead of starting over.
+     * $limit > 0 caps the list, 0 means all.
+     */
+    public static function needs(int $limit = 0, int $freshHours = 6): array
     {
         return SubscriberStatus::apply(SubscriberStatus::base(), 'active')
             ->whereNotNull('accounts.username')->where('accounts.username', '<>', '')
+            ->when($freshHours > 0, fn ($q) => $q->where(fn ($w) => $w->whereNull('accounts.rx_read_at')
+                ->orWhere('accounts.rx_read_at', '<', CarbonImmutable::now()->subHours($freshHours))))
             ->orderByRaw('accounts.rx_read_at asc nulls first')->orderBy('accounts.id')
             ->when($limit > 0, fn ($q) => $q->limit($limit))
             ->pluck('accounts.username')->all();

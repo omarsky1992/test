@@ -25,6 +25,8 @@ class Settings
         'sync.detail_limit' => 200,
         // 0 = every running account (the readings have their own run, so they never slow the sync).
         'sync.rx_limit' => 0,
+        // A device read within these hours is skipped, so a second press finishes the rest.
+        'sync.rx_fresh_hours' => 6,
         'subscribers.expiring_days' => 7,
         'periods.start_day' => 1,
         'periods.purchases_start' => null,

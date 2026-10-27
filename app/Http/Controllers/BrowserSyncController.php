@@ -97,7 +97,12 @@ class BrowserSyncController extends Controller
     {
         abort_unless($request->user()->can('sync.run'), 403);
 
-        return response()->json(['ont' => OntReadings::needs(max(0, (int) $settings->get('sync.rx_limit')))]);
+        $hours = max(0, (int) $settings->get('sync.rx_fresh_hours'));
+
+        return response()->json([
+            'ont' => OntReadings::needs(max(0, (int) $settings->get('sync.rx_limit')), $hours),
+            'message' => "كل الأجهزة الفعّالة مقروءة خلال آخر {$hours} ساعات.",
+        ]);
     }
 
     /** The readings arrive: the last one is kept on each account. */
