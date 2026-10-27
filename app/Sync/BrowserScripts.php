@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.3.1',
+            'version' => '1.3.2',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -215,51 +215,72 @@ async function subsOntSync(target, ready) {
   }
   // Only the number and the status are kept and sent.
   const slim = (body) => { const m = (body && body.model) || body || {}; return { model: { rxPower: m.rxPower ?? null, status: m.status ?? null } }; };
+  // A reply with neither a number nor a status is empty (the site was busy): it is not saved.
+  const empty = (body) => { const m = slim(body).model; return (m.rxPower === null || m.rxPower === undefined) && !m.status; };
+  let emptySample = null;
+  // A save the system never answers must not hold the run: give up after 45 seconds.
+  const sendWithin = (data, ms) => Promise.race([send(data), new Promise((_, no) => setTimeout(() => no(new Error('النظام لم يرد على الحفظ.')), ms))]);
   // Each reading is saved within seconds, in small batches, one batch at a time, so a stop loses nothing.
   let queue = [], saved = 0, failed = 0, stopped = null, chain = Promise.resolve();
   const flush = () => (chain = chain.then(async () => {
     if (!queue.length) return;
     const batch = Object.fromEntries(queue.splice(0));
-    try { saved += (await send({ type: 'ont_run', ont: batch })).count || 0; } catch (e) { stopped = stopped || e.message; }
+    try { saved += (await sendWithin({ type: 'ont_run', ont: batch }, 45000)).count || 0; } catch (e) { stopped = stopped || e.message; }
   }));
-  const keep = (name, body) => { queue.push([name, slim(body)]); if (queue.length >= 20) flush(); };
+  const keep = (name, body) => { queue.push([name, slim(body)]); if (queue.length >= 10) flush(); };
+  // Also every few seconds, so slow reading still saves as it goes.
+  const ticker = setInterval(() => { if (queue.length) flush(); }, 5000);
   const sessionLost = (e) => /انتهت جلسة/.test(e.message);
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
   let base = subsLearnOnt();
   try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
   const bases = [...new Set([base, SUBS_ONT_PATH, '/api/subscriptions/ont', '/api/ont'].filter(Boolean))];
   let working = null;
   for (const b of bases) {
-    try { keep(names[0], await get(b + '?username=' + encodeURIComponent(names[0]))); working = b; break; } catch (e) { if (sessionLost(e)) throw e; }
+    try { const body = await get(b + '?username=' + encodeURIComponent(names[0])); working = b; if (!empty(body)) keep(names[0], body); break; } catch (e) { if (sessionLost(e)) { clearInterval(ticker); throw e; } }
   }
-  if (!working) throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.');
+  if (!working) { clearInterval(ticker); throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.'); }
   try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
 
+  // Gently: two at a time with a short pause, since each reading asks the fibre equipment live.
   let next = 1, done = 1;
   const read = async (name) => {
-    try { return await get(working + '?username=' + encodeURIComponent(name)); } catch (e) {
-      if (sessionLost(e)) throw e;
-      // The site hiccups now and then: one more try after a short pause.
-      await new Promise((r) => setTimeout(r, 2000));
-      return await get(working + '?username=' + encodeURIComponent(name));
+    const url = working + '?username=' + encodeURIComponent(name);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const body = await get(url);
+        if (!empty(body)) return body;
+        emptySample = emptySample || JSON.stringify(body).slice(0, 160);
+      } catch (e) {
+        if (sessionLost(e)) throw e;
+        emptySample = emptySample || e.message;
+      }
+      await pause(2500 * (attempt + 1));
     }
+    return null;
   };
   const worker = async () => {
     while (next < names.length && !stopped) {
       const name = names[next++];
-      try { keep(name, await read(name)); } catch (e) {
+      try {
+        const body = await read(name);
+        if (body) keep(name, body); else failed++;
+      } catch (e) {
         if (sessionLost(e)) { stopped = e.message; break; }
         failed++;
       }
-      if (++done % 10 === 0 || done === names.length) say('قراءة ' + done + ' من ' + names.length + ' · حُفظ ' + saved);
+      if (++done % 5 === 0 || done === names.length) say('قراءة ' + done + ' من ' + names.length + ' · حُفظ ' + saved + (failed ? ' · تعذّر ' + failed : ''));
+      await pause(300);
     }
   };
-  await Promise.all([worker(), worker(), worker(), worker()]);
+  await Promise.all([worker(), worker()]);
+  clearInterval(ticker);
   flush();
   await chain;
 
   const left = names.length - saved;
-  const text = 'حُفظت القدرة المستلمة لـ ' + saved + ' جهاز' + (failed ? ' · تعذّرت ' + failed : '')
+  const text = 'حُفظت القدرة المستلمة لـ ' + saved + ' جهاز' + (failed ? ' · تعذّرت ' + failed + ' (تنقرا بالضغطة الجاية)' + (emptySample ? ' · مثال رد: ' + emptySample : '') : '')
     + (stopped ? ' · توقفت: ' + stopped + ' اضغط الزر مرة ثانية ويكمل من حيث توقف' + (left > 0 ? ' (باقي ' + left + ')' : '') : '');
   try { target.postMessage({ type: 'ont_done', text, ok: !stopped }, SUBS_APP); } catch (e) {}
   box.textContent = 'القدرة المستلمة: ' + (stopped ? '' : 'تمت ✓ ') + text;
