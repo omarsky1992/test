@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Models\WhatsappNumber;
 use App\Models\WhatsappOutbox;
 use App\Services\Audit;
 use App\Services\Settings as SettingsService;
@@ -12,6 +13,7 @@ use App\WhatsApp\LocalWhisperTranscriber;
 use App\WhatsApp\WahaGateway;
 use BackedEnum;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -56,6 +58,8 @@ class WhatsappSettings extends Page
         'alert_must_activate' => 'alerts.must_activate',
         'alert_secondary_expiring' => 'alerts.secondary_expiring',
         'alert_hours_before' => 'alerts.hours_before',
+        'alert_expenses' => 'alerts.expenses',
+        'alert_expenses_numbers' => 'alerts.expenses_numbers',
         'notify_separate' => 'whatsapp.notify_separate',
         'sub_enabled' => 'subscriber_messages.enabled',
         'sub_renewal' => 'subscriber_messages.renewal',
@@ -73,7 +77,7 @@ class WhatsappSettings extends Page
 
     private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
 
-    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
+    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'alert_expenses', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
 
     public static function canAccess(): bool
     {
@@ -138,6 +142,16 @@ class WhatsappSettings extends Page
                         Toggle::make('alert_secondary_expiring')->label('دين ثانوي ينتهي اشتراكه قريباً'),
                         TextInput::make('alert_hours_before')->label('قبل الانتهاء بـ (ساعة)')->integer()->minValue(1)->maxValue(168)->required(),
                     ]),
+                Section::make('تنبيه المشتريات والمصروفات')
+                    ->description('رسالة عند كل مشترى أو مصروف جديد: الوصف والمبلغ ومن أين دُفع ومن سجّله، مع مجموع المشتريات منذ آخر تصفير.')
+                    ->columns(2)->schema([
+                        Toggle::make('alert_expenses')->label('تشغيل تنبيه المشتريات والمصروفات')->live(),
+                        Select::make('alert_expenses_numbers')->label('يصل إلى')->multiple()->placeholder('كل الأرقام المصرح لها')
+                            ->helperText('اختر رقماً أو أكثر، أو اتركه فارغاً ليصل لكل الأرقام المصرح لها.')
+                            ->options(fn () => WhatsappNumber::with('user')->where('is_active', true)->get()
+                                ->mapWithKeys(fn ($n) => [$n->id => trim(($n->label ?: $n->user?->name ?: 'رقم').' – '.$n->phone)])->all())
+                            ->disabled(fn (Get $get) => ! $get('alert_expenses')),
+                    ]),
                 Section::make('رسائل المشتركين التلقائية')
                     ->description('نص كل رسالة من «قوالب الرسائل». لا تُرسل إلا للمشترك الذي له رقم هاتف، ومرة واحدة لكل مناسبة.')
                     ->columns(3)->schema([
@@ -182,6 +196,7 @@ class WhatsappSettings extends Page
             $new[$field] = match (true) {
                 in_array($field, self::INTEGERS, true) => (int) $value,
                 in_array($field, self::BOOLEANS, true) => (bool) $value,
+                $field === 'alert_expenses_numbers' => array_values(array_map('intval', array_filter((array) $value))),
                 default => is_string($value) ? trim($value) : $value,
             };
             $settings->set($key, $new[$field]);

@@ -11,11 +11,13 @@ use App\Models\AccountRenewal;
 use App\Models\Activation;
 use App\Models\ActivationDue;
 use App\Models\ActivationReminder;
+use App\Models\Expense;
 use App\Models\MessageTemplate;
 use App\Models\Payment;
 use App\Models\Subscriber;
 use App\Models\SubscriberNote;
 use App\Models\WhatsappNumber;
+use App\Services\AccountingPeriods;
 use App\Services\Settings;
 use App\Support\Money;
 use App\Support\SubscriberStatus;
@@ -45,6 +47,33 @@ class Notifier
         $text = "🟣 يجب التفعيل\n{$account?->subscriber?->full_name} ({$account?->username})\nسدّد الدين الثانوي ".Money::format($due->amount).'، فعّله على موقع الشركة.';
         foreach ($this->alertNumbers() as $number) {
             $this->outbox->queue($number->phone, $text, 'alert_must_activate', "alert:due:{$due->id}:{$due->paid_at->getTimestamp()}:{$number->id}", $due->account_id);
+        }
+    }
+
+    /**
+     * «تنبيه المشتريات والمصروفات»: a new purchase/expense, with the running total of purchases since the
+     * last «تصفير» (as on the dashboard), to the chosen authorized numbers (none chosen = all), once each.
+     */
+    public function expense(Expense $expense): void
+    {
+        if (! $this->settings->get('alerts.expenses')) {
+            return;
+        }
+        $ids = array_values(array_filter((array) $this->settings->get('alerts.expenses_numbers')));
+        $numbers = WhatsappNumber::with('user')->where('is_active', true)->when($ids, fn ($q) => $q->whereIn('id', $ids))->orderBy('id')->get()
+            ->filter(fn (WhatsappNumber $n) => $n->user?->is_active ?? true);
+        if ($numbers->isEmpty()) {
+            return;
+        }
+        $expense->loadMissing(['category', 'moneyAccount', 'creator']);
+        $periods = app(AccountingPeriods::class);
+        $total = $periods->totals($periods->lastReset('purchases'), CarbonImmutable::now()->addSecond(), exact: true)['purchases'];
+        $text = '🛒 مشتريات جديدة: '.($expense->category?->name_ar ? $expense->category->name_ar.' – ' : '').$expense->description
+            ."\nالمبلغ: ".Money::format((int) $expense->amount)
+            ."\nدُفع من: ".($expense->moneyAccount?->name ?? '—').' · سجّلها: '.($expense->creator?->name ?? '—')
+            ."\nمجموع المشتريات والمصروفات منذ آخر تصفير: ".Money::format((int) $total);
+        foreach ($numbers as $number) {
+            $this->outbox->queue($number->phone, $text, 'alert_expense', "expense:{$expense->id}:{$number->id}");
         }
     }
 

@@ -24,6 +24,7 @@ use App\Models\LedgerEntry;
 use App\Models\MoneyAccount;
 use App\Models\MoneyAccountReset;
 use App\Models\SettlementDistribution;
+use App\WhatsApp\Notifier;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -419,6 +420,8 @@ class TreasuryService
             ], $expense, "مصروف {$expense->number}", $from->branch_id);
             $expense->update(['txn_id' => $txn->id]);
             $this->audit->log('expense.created', $expense, null, ['amount' => $amount, 'category' => $category->name_ar, 'description' => $description]);
+            // Once saved: a failed or slow message never touches the expense.
+            DB::afterCommit(fn () => rescue(fn () => app(Notifier::class)->expense($expense), report: true));
 
             return $expense;
         });

@@ -44,6 +44,9 @@ class Settings
         'alerts.must_activate' => true,
         'alerts.secondary_expiring' => true,
         'alerts.hours_before' => 24,
+        // A WhatsApp message on every new purchase/expense, to the chosen authorized numbers (none chosen = all).
+        'alerts.expenses' => false,
+        'alerts.expenses_numbers' => [],
         'subscriber_messages.enabled' => false,
         'whatsapp.notify_separate' => false,
         'subscriber_messages.renewal' => true,
