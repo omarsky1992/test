@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\WhatsappNumber;
 use App\Services\RotationReport;
+use App\Services\Settings;
 use App\Support\Money;
 use BackedEnum;
 use Filament\Actions\Action;
@@ -14,7 +15,7 @@ use Filament\Support\Icons\Heroicon;
 use UnitEnum;
 
 /**
- * «تقرير الدوّار»: primary debts + cards + custody + «الربح والخسارة», with the cash and the company page
+ * «تقرير الدوّار»: primary debts + cards + custody + advances + «الربح والخسارة», with the cash and the company page
  * balance typed in when there are any, all added up; and a button to send it to the authorized numbers.
  */
 class RotationReportPage extends Page
@@ -36,6 +37,20 @@ class RotationReportPage extends Page
 
     public ?string $pageBalance = null;
 
+    /** «مقدار الدوّار»: what the total should be; kept so it need not be typed every time. */
+    public ?string $target = null;
+
+    public function mount(): void
+    {
+        $saved = app(Settings::class)->get('reports.rotation_target');
+        $this->target = $saved !== null ? (string) $saved : null;
+    }
+
+    public function updatedTarget(): void
+    {
+        app(Settings::class)->set('reports.rotation_target', $this->amount($this->target));
+    }
+
     public static function canAccess(): bool
     {
         return auth()->user()->can('reports.rotation');
@@ -52,7 +67,7 @@ class RotationReportPage extends Page
 
     public function report(): array
     {
-        return app(RotationReport::class)->compute($this->amount($this->cash), $this->amount($this->pageBalance));
+        return app(RotationReport::class)->compute($this->amount($this->cash), $this->amount($this->pageBalance), $this->amount($this->target));
     }
 
     protected function getHeaderActions(): array

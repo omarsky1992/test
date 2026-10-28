@@ -31,6 +31,7 @@ class Settings
         'periods.start_day' => 1,
         'periods.purchases_start' => null,
         'secondary_sales.reset_at' => null,
+        'reports.rotation_target' => null,
         'periods.sales_start' => null,
         'whatsapp.enabled' => false,
         'whatsapp.voice_enabled' => true,
