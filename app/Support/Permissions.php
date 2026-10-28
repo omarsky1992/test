@@ -43,6 +43,7 @@ class Permissions
         'follow_ups.create' => ['تسجيل نتيجة اتصال', true],
         'devices.manage' => ['الأجهزة', true],
         'reports.view' => ['التقارير', true],
+        'reports.rotation' => ['تقرير الدوّار (الديون الأولية والبطاقات والعهد والربح) وإرساله للواتساب', false],
         'plans.manage' => ['الفئات والأسعار', false],
         'promotions.manage' => ['العروض', false],
         'money_accounts.manage' => ['القاصات والمحافظ', false],
@@ -108,7 +109,7 @@ class Permissions
 
     /** The sections of «إدارة صلاحيات الموظفين»: label => permission names in that section. */
     public const GROUPS = [
-        'لوحة التحكم والتقارير' => ['dashboard.view', 'reports.view', 'employees.view', 'audit.view'],
+        'لوحة التحكم والتقارير' => ['dashboard.view', 'reports.view', 'reports.rotation', 'employees.view', 'audit.view'],
         'المشتركون' => ['subscribers.view', 'subscribers.create', 'subscribers.update', 'subscribers.archive', 'accounts.view', 'accounts.create', 'accounts.update', 'accounts.view_secret', 'accounts.close', 'devices.manage'],
         'وضع المشترك والقائمة السوداء' => ['notes.view', 'notes.create', 'notes.close', 'notes.delete', 'blacklist.view', 'blacklist.manage'],
         'مواقع المشتركين وصور بيوتهم' => ['locations.view', 'locations.create', 'locations.update', 'locations.delete', 'locations.directions', 'photos.view', 'photos.add', 'photos.delete'],
