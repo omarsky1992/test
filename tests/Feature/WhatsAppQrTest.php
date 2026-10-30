@@ -3,6 +3,9 @@
 namespace Tests\Feature;
 
 use App\Enums\ActivationKind;
+use App\Enums\DebtBucket;
+use App\Enums\DebtSource;
+use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Pages\WhatsappSettings;
@@ -12,6 +15,7 @@ use App\Models\MessageTemplate;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappOutbox;
 use App\Services\ActivationService;
+use App\Services\DebtService;
 use App\Services\PaymentService;
 use App\Services\RenewalService;
 use App\Services\Settings;
@@ -276,6 +280,7 @@ class WhatsAppQrTest extends TestCase
         $ended = $this->account('منتهي', phone: '07901110002');
         $ended->update(['external_ends_at' => now()->subHours(3)]);
         $owes = $this->renewed('مدين', days: 5);
+        app(DebtService::class)->transfer($owes->debts()->sole()); // a primary debt: reminded
         $this->travelTo(now()->addDays(2));
         $soon->update(['external_ends_at' => now()->addHours(20)]);
         $ended->update(['external_ends_at' => now()->subHours(3)]);
@@ -287,6 +292,27 @@ class WhatsAppQrTest extends TestCase
         $this->assertEqualsCanonicalizing(['sub_expiring', 'sub_expired', 'sub_debt'], WhatsappOutbox::pluck('kind')->all());
         $this->assertSame($owes->id, WhatsappOutbox::where('kind', 'sub_debt')->value('account_id'));
         $this->assertStringContainsString('انتهى اشتراككم', WhatsappOutbox::where('kind', 'sub_expired')->value('body'));
+    }
+
+    public function test_a_subscriber_with_a_secondary_debt_gets_no_message_at_the_end(): void
+    {
+        app(Settings::class)->set('subscriber_messages.enabled', true);
+        app(Settings::class)->set('subscriber_messages.renewal', false);
+        $soon = $this->account('قريب', phone: '07901110001');
+        $ended = $this->account('منتهي', phone: '07901110002');
+        foreach ([$soon, $ended] as $account) {
+            app(DebtService::class)->create($account, 35000, DebtBucket::Secondary, DebtSource::Opening, debtDate: CarbonImmutable::now()->subDays(5));
+        }
+        $soon->update(['external_ends_at' => now()->addHours(20)]);
+        $ended->update(['external_ends_at' => now()->subHours(3)]);
+
+        $this->assertSame(0, app(Notifier::class)->scanSubscribers());
+        $this->assertSame(0, WhatsappOutbox::count());
+
+        // Once paid, the usual messages come back.
+        $ended->debts()->sole()->update(['status' => DebtStatus::Paid]);
+        app(Notifier::class)->scanSubscribers();
+        $this->assertSame([$ended->id], WhatsappOutbox::pluck('account_id')->all());
     }
 
     public function test_subscribers_are_not_messaged_at_night_but_staff_alerts_are(): void
@@ -359,6 +385,8 @@ class WhatsAppQrTest extends TestCase
         $this->travelTo(now()->addDays(6)->addHours(10));
         // The 7-day activation was completed to 30 days on the company site.
         $completed->update(['external_ends_at' => now()->addHours(14)->addDays(23)]);
+        // Its secondary debt moved to the primary debts (an unpaid secondary debt gets no message).
+        app(DebtService::class)->transfer($completed->debts()->sole());
         $notifier = app(Notifier::class);
         $notifier->scanSubscribers();
         $this->assertSame(0, WhatsappOutbox::count(), 'the 7-day subscriber is not told it ends');

@@ -22,6 +22,8 @@ class WhatsappOutbox extends Model
         'sub_broadcast' => 'رسالة جماعية',
         'reminder' => 'تذكير يدوي',
         'alert_stuck_reply' => 'رد: تعذّرت المعالجة',
+        'alert_test' => 'اختبار: من الرقم الرئيسي',
+        'sub_test' => 'اختبار: كما يستلمها المشترك',
     ];
 
     public const STATUSES = ['pending' => 'بالانتظار', 'sent' => 'أُرسلت', 'failed' => 'فشلت', 'skipped' => 'أُلغيت'];

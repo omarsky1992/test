@@ -263,7 +263,8 @@ class Notifier
     }
 
     /**
-     * Subscriptions ending soon or just ended, and debt reminders every few days.
+     * Subscriptions ending soon or just ended, and debt reminders every few days. A subscriber with an
+     * unpaid secondary debt gets none of them: the staff follow those up.
      */
     public function scanSubscribers(?CarbonImmutable $now = null): int
     {
@@ -276,7 +277,7 @@ class Notifier
 
         if ($this->subscriberMessage('expiring')) {
             $hours = max(1, (int) $this->settings->get('subscriber_messages.expiring_hours'));
-            foreach (SubscriberStatus::base()->whereRaw("{$ends} > ? and {$ends} <= ?", [$now, $now->addHours($hours)])->get() as $account) {
+            foreach ($this->withoutSecondary(SubscriberStatus::base()->whereRaw("{$ends} > ? and {$ends} <= ?", [$now, $now->addHours($hours)]))->get() as $account) {
                 if ($this->shortActivation($account)) {
                     continue;
                 }
@@ -284,7 +285,7 @@ class Notifier
             }
         }
         if ($this->subscriberMessage('expired')) {
-            foreach (SubscriberStatus::base()->whereRaw("{$ends} <= ? and {$ends} > ?", [$now, $now->subDay()])->get() as $account) {
+            foreach ($this->withoutSecondary(SubscriberStatus::base()->whereRaw("{$ends} <= ? and {$ends} > ?", [$now, $now->subDay()]))->get() as $account) {
                 if ($this->shortActivation($account)) {
                     continue;
                 }
@@ -295,7 +296,7 @@ class Notifier
             $every = max(1, (int) $this->settings->get('subscriber_messages.debt_every_days'));
             // The same reference for every day of an N-day window: one reminder per window.
             $bucket = intdiv(intdiv($now->getTimestamp() + $now->setTimezone(config('app.timezone'))->getOffset(), 86400), $every);
-            $accounts = SubscriberStatus::base()->whereExists(fn ($q) => $q->selectRaw('1')->from('debts')->whereColumn('debts.account_id', 'accounts.id')
+            $accounts = $this->withoutSecondary(SubscriberStatus::base())->whereExists(fn ($q) => $q->selectRaw('1')->from('debts')->whereColumn('debts.account_id', 'accounts.id')
                 ->whereIn('debts.status', [DebtStatus::Open->value, DebtStatus::Partial->value])->where('debts.debt_date', '<', $now->subDay()))->get();
             foreach ($accounts as $account) {
                 $count += $this->toSubscriber($account, 'debt', "sub:debt:{$account->id}:{$bucket}") ? 1 : 0;
@@ -335,6 +336,13 @@ class Notifier
     {
         return $query->whereExists(fn ($q) => $q->selectRaw('1')->from('debts')->whereColumn('debts.account_id', 'accounts.id')
             ->where('debts.bucket', $bucket->value)->whereIn('debts.status', [DebtStatus::Open->value, DebtStatus::Partial->value]));
+    }
+
+    /** Accounts without an unpaid secondary debt. */
+    private function withoutSecondary(Builder $query): Builder
+    {
+        return $query->whereNotExists(fn ($q) => $q->selectRaw('1')->from('debts')->whereColumn('debts.account_id', 'accounts.id')
+            ->where('debts.bucket', DebtBucket::Secondary->value)->whereIn('debts.status', [DebtStatus::Open->value, DebtStatus::Partial->value]));
     }
 
     private function open(Builder $query, DebtBucket $bucket): Builder
