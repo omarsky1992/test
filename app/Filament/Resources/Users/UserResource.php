@@ -7,6 +7,7 @@ use App\Filament\Resources\Users\Pages\ManageUsers;
 use App\Models\Branch;
 use App\Models\User;
 use App\Services\Audit;
+use App\Services\EmployeeFinance;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
@@ -109,6 +110,9 @@ class UserResource extends Resource
             }
             $user->save();
 
+            if (! $isNew && $user->wasChanged('name')) {
+                app(EmployeeFinance::class)->renameCustody($user);
+            }
             if (! $isNew && ! $user->is_active) {
                 DB::table('sessions')->where('user_id', $user->id)->delete();
             }

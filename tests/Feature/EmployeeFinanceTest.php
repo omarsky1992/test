@@ -11,6 +11,7 @@ use App\Filament\Pages\EmployeeStatement;
 use App\Filament\Resources\EmployeeAdvances\Pages\ListEmployeeAdvances;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
 use App\Filament\Resources\Expenses\Pages\ListExpenses;
+use App\Filament\Resources\Users\Pages\ManageUsers;
 use App\Models\AuditLog;
 use App\Models\EmployeeAdvance;
 use App\Models\ExpenseCategory;
@@ -63,6 +64,19 @@ class EmployeeFinanceTest extends TestCase
         $this->assertSame(0, $summary['handed_over']);
         // The company cash box has not received it yet.
         $this->assertSame(0, app(TreasuryService::class)->balance($this->cash()));
+    }
+
+    public function test_the_custody_takes_the_users_new_name(): void
+    {
+        $box = $this->finance()->custodyAccount($this->ahmed);
+        $this->assertSame('عهدة أحمد', $box->name);
+
+        Livewire::test(ManageUsers::class)->callTableAction('edit', $this->ahmed, data: ['name' => 'أحمد ضياء'])->assertHasNoTableActionErrors();
+
+        $box->refresh();
+        $this->assertSame(['عهدة أحمد ضياء', 'أحمد ضياء', 'عهدة أحمد ضياء'], [$box->name, $box->holder_name, $box->ledgerAccount->name_ar]);
+        $this->assertSame($box->id, $this->finance()->custodyAccount($this->ahmed->fresh())->id);
+        $this->assertTrue(AuditLog::where('action', 'custody.renamed')->exists());
     }
 
     public function test_handing_custody_to_the_cash_box_moves_the_money(): void

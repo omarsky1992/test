@@ -2,9 +2,10 @@
 FROM serversideup/php:8.4-fpm-nginx
 
 USER root
-# intl for the panel; the PostgreSQL client (pg_dump) from the official PostgreSQL repository
+# intl for the panel; gd and calendar (ar-php) to draw the receipt image sent by WhatsApp; the PostgreSQL
+# client (pg_dump) from the official PostgreSQL repository
 # for the daily backup. The newest pg_dump can back up any older server version.
-RUN install-php-extensions intl \
+RUN install-php-extensions intl gd calendar \
     && apt-get update \
     && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
     && install -d /usr/share/postgresql-common/pgdg \

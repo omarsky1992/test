@@ -18,6 +18,7 @@ use App\Models\Subscriber;
 use App\Models\SubscriberNote;
 use App\Models\WhatsappNumber;
 use App\Services\AccountingPeriods;
+use App\Services\ReceiptImage;
 use App\Services\Settings;
 use App\Support\Money;
 use App\Support\SubscriberStatus;
@@ -224,7 +225,11 @@ class Notifier
             '{رقم_الوصل}' => (string) $payment->receipt_number,
             '{رقم_العملية}' => (string) ($payment->lines->pluck('reference')->filter()->implode('، ') ?: '—'),
         ];
-        $this->outbox->queue($phone, $template->render($values), 'sub_payment', "sub:payment:{$payment->id}", $account->id, ['payment_id' => $payment->id] + $template->media());
+        // The receipt drawn as an image or PDF when chosen; if drawing fails the text still goes.
+        $media = ($format = $template->receiptFormat())
+            ? rescue(fn () => app(ReceiptImage::class)->store(app(ReceiptImage::class)->data($payment), $format, 'whatsapp/receipts'), [])
+            : $template->media();
+        $this->outbox->queue($phone, $template->render($values), 'sub_payment', "sub:payment:{$payment->id}", $account->id, ['payment_id' => $payment->id] + $media);
     }
 
     /** A WhatsApp connection is set up (keys present) for the subscribers' messages. */

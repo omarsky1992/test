@@ -3,12 +3,16 @@
 namespace Tests\Feature;
 
 use App\Enums\ActivationKind;
+use App\Enums\PaymentMethod;
+use App\Filament\Pages\WhatsappTest;
 use App\Filament\Resources\MessageTemplates\Pages\ManageMessageTemplates;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
 use App\Models\MessageTemplate;
 use App\Models\User;
 use App\Models\WhatsappOutbox;
 use App\Services\ActivationService;
+use App\Services\PaymentService;
+use App\Services\ReceiptImage;
 use App\Services\Settings;
 use App\Services\SubscriberService;
 use App\WhatsApp\Outbox;
@@ -100,6 +104,50 @@ class WhatsAppMuteAndMediaTest extends TestCase
         Livewire::test(ManageMessageTemplates::class)
             ->callTableAction('edit', $template, data: ['media_type' => 'text', 'body' => 'ينتهي {الأيام} يوم الساعة {ساعة_الانتهاء}'])->assertHasNoTableActionErrors();
         $this->assertSame('text', $template->fresh()->media_type);
+    }
+
+    public function test_the_payment_message_can_carry_the_receipt_as_an_image_or_a_pdf(): void
+    {
+        Storage::fake('local');
+        config(['whatsapp.waha.url' => 'http://waha:3000', 'whatsapp.waha.api_key' => 'waha-key']);
+        app(Settings::class)->set('subscriber_messages.enabled', true);
+        $template = MessageTemplate::where('auto_event', 'payment')->sole();
+        $template->update(['media_type' => 'receipt_image']);
+        $account = $this->account('زينب كريم');
+
+        $payment = app(PaymentService::class)->record($account, 25000, PaymentMethod::Cash, $this->cash());
+        $message = WhatsappOutbox::where('payment_id', $payment->id)->sole();
+        $this->assertSame('image/png', $message->media_mime);
+        $this->assertStringStartsWith("\x89PNG", Storage::disk('local')->get($message->media_path));
+        $this->assertStringContainsString($payment->receipt_number, $message->media_path);
+
+        $template->update(['media_type' => 'receipt_pdf']);
+        $second = app(PaymentService::class)->record($account, 5000, PaymentMethod::Cash, $this->cash());
+        $pdf = WhatsappOutbox::where('payment_id', $second->id)->sole();
+        $this->assertSame('application/pdf', $pdf->media_mime);
+        $this->assertStringStartsWith('%PDF-1.4', Storage::disk('local')->get($pdf->media_path));
+
+        $files = new FakeWhatsApp;
+        $files->images = true;
+        app(Outbox::class)->dispatch($files, CarbonImmutable::parse('2026-09-21 12:00'));
+        $this->assertCount(1, $files->images_sent);
+        $this->assertSame('application/pdf', $files->files_sent[0]['mime']);
+
+        // On the test page a made-up receipt goes with the sample.
+        Livewire::test(WhatsappTest::class)->set('event', 'payment')->set('phone', '07701234567')
+            ->assertSee('الوصل PDF')->call('send');
+        $test = WhatsappOutbox::where('kind', 'alert_test')->sole();
+        $this->assertSame('application/pdf', $test->media_mime);
+    }
+
+    public function test_a_receipt_is_drawn_with_the_payment_details(): void
+    {
+        $receipts = app(ReceiptImage::class);
+        $data = $receipts->sample('أحمد ضياء', 'ahmed_fiber', 35000);
+        $this->assertSame([['استلمنا من', 'أحمد ضياء'], ['الحساب', 'ahmed_fiber']], [$data['rows'][1], $data['rows'][3]]);
+        $image = imagecreatefromstring($receipts->png($data));
+        $this->assertSame(900, imagesx($image));
+        $this->assertStringEndsWith("%%EOF\n", $receipts->pdf($data));
     }
 
     public function test_the_expiring_message_tells_the_end_hour(): void

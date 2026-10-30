@@ -29,6 +29,15 @@ class MessageTemplate extends Model
     /** How the message goes: its text alone, or an image or a PDF with the text as caption. */
     public const MEDIA_TYPES = ['text' => 'نص فقط', 'image' => 'صورة مع النص', 'pdf' => 'ملف PDF مع النص'];
 
+    /** Only for «استلام دفعة»: the payment's own receipt, drawn for each payment. */
+    public const RECEIPT_TYPES = ['receipt_image' => 'صورة الوصل مع النص', 'receipt_pdf' => 'الوصل PDF مع النص'];
+
+    /** 'png' or 'pdf' when the payment message carries the receipt itself. */
+    public function receiptFormat(): ?string
+    {
+        return $this->auto_event === 'payment' ? ['receipt_image' => 'png', 'receipt_pdf' => 'pdf'][$this->media_type] ?? null : null;
+    }
+
     /** Hour of a time, e.g. «10:30 م». */
     public static function hour(?DateTimeInterface $at): string
     {
@@ -47,7 +56,7 @@ class MessageTemplate extends Model
      */
     public function media(): array
     {
-        return $this->media_type !== 'text' && $this->media_path
+        return in_array($this->media_type, ['image', 'pdf'], true) && $this->media_path
             ? ['media_path' => $this->media_path, 'media_mime' => $this->media_mime ?? ($this->media_type === 'pdf' ? 'application/pdf' : 'image/jpeg')]
             : [];
     }

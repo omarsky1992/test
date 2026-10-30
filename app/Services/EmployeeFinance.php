@@ -42,6 +42,19 @@ class EmployeeFinance
             ?? $this->treasury->createMoneyAccount($user->branch_id ?? MoneyAccount::value('branch_id'), MoneyAccountKind::Custody, "عهدة {$user->name}", $user->name, $user->id);
     }
 
+    /** The custody box carries the user's current name («عهدة الاسم»), after a rename too. */
+    public function renameCustody(User $user): void
+    {
+        $box = MoneyAccount::where('kind', MoneyAccountKind::Custody)->where('user_id', $user->id)->first();
+        if (! $box || $box->holder_name === $user->name) {
+            return;
+        }
+        $old = $box->name;
+        $box->update(['name' => mb_substr("عهدة {$user->name}", 0, 100), 'holder_name' => mb_substr($user->name, 0, 100)]);
+        $box->ledgerAccount?->update(['name_ar' => $box->name]);
+        $this->audit->log('custody.renamed', $box, ['name' => $old], ['name' => $box->name]);
+    }
+
     public function custodyBalance(User $user): int
     {
         $box = MoneyAccount::where('kind', MoneyAccountKind::Custody)->where('user_id', $user->id)->first();

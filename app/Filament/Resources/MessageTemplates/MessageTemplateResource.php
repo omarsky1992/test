@@ -60,11 +60,12 @@ class MessageTemplateResource extends Resource
             TextInput::make('title')->label('العنوان')->required()->maxLength(80),
             TextInput::make('icon')->label('رمز (إيموجي)')->maxLength(10)->placeholder('⏳'),
             Textarea::make('body')->label('نص الرسالة')->required()->rows(6)->columnSpanFull()->helperText($help),
-            Select::make('auto_event')->label('تُرسل تلقائياً عند')->placeholder('لا (يدوي فقط)')
+            Select::make('auto_event')->label('تُرسل تلقائياً عند')->live()->placeholder('لا (يدوي فقط)')
                 ->options(self::EVENTS)->unique(ignoreRecord: true)
                 ->helperText('تشغيل الرسائل التلقائية وإيقافها من «إعدادات واتساب».'),
-            Select::make('media_type')->label('شكل الرسالة')->options(MessageTemplate::MEDIA_TYPES)->default('text')->required()->live()
-                ->helperText('الصورة أو PDF يُرسلان والنص تحتهما. الربط المجاني بالـ QR يرسل النص مع رابط للملف.'),
+            Select::make('media_type')->label('شكل الرسالة')->default('text')->required()->live()
+                ->options(fn (Get $get) => MessageTemplate::MEDIA_TYPES + ($get('auto_event') === 'payment' ? MessageTemplate::RECEIPT_TYPES : []))
+                ->helperText('الصورة أو PDF يُرسلان والنص تحتهما. لرسالة الدفعة يمكن إرسال الوصل نفسه صورة أو PDF. الربط المجاني بالـ QR يرسل النص مع رابط للملف.'),
             FileUpload::make('media_path')->label(fn (Get $get) => $get('media_type') === 'pdf' ? 'ملف PDF' : 'الصورة')
                 ->visible(fn (Get $get) => in_array($get('media_type'), ['image', 'pdf'], true))
                 ->required(fn (Get $get) => in_array($get('media_type'), ['image', 'pdf'], true))
@@ -85,7 +86,7 @@ class MessageTemplateResource extends Resource
                 TextColumn::make('title')->label('العنوان')->weight('bold')->formatStateUsing(fn ($state, MessageTemplate $r) => trim("{$r->icon} {$state}")),
                 TextColumn::make('auto_event')->label('تلقائية')->badge()->placeholder('يدوية')->formatStateUsing(fn (?string $state) => self::EVENTS[$state] ?? $state),
                 TextColumn::make('body')->label('النص')->limit(70)->wrap(),
-                TextColumn::make('media_type')->label('الشكل')->badge()->formatStateUsing(fn (?string $state) => MessageTemplate::MEDIA_TYPES[$state] ?? $state),
+                TextColumn::make('media_type')->label('الشكل')->badge()->formatStateUsing(fn (?string $state) => (MessageTemplate::MEDIA_TYPES + MessageTemplate::RECEIPT_TYPES)[$state] ?? $state),
                 IconColumn::make('is_active')->label('فعّالة')->boolean(),
             ])
             ->recordActions([

@@ -75,7 +75,7 @@ class WhatsappTest extends Page
 
             return;
         }
-        $message = app(TestMessages::class)->send($this->phone, $text, $this->line, app(TestMessages::class)->media($this->event));
+        $message = app(TestMessages::class)->send($this->phone, $text, $this->line, app(TestMessages::class)->media($this->event, $this->sample()));
         if (! $message) {
             Notification::make()->danger()->title('رقم غير صحيح')->body('اكتب الرقم كاملاً مع رمز الدولة، مثال: 9647701234567')->send();
 
@@ -91,7 +91,7 @@ class WhatsappTest extends Page
             'events' => TestMessages::events(),
             'lines' => TestMessages::LINES,
             'text' => $this->preview(),
-            'media' => app(TestMessages::class)->media($this->event),
+            'mediaLabel' => TestMessages::mediaLabel($this->event),
             'recent' => WhatsappOutbox::whereIn('kind', TestMessages::KINDS)->latest('id')->limit(10)->get(),
         ];
     }

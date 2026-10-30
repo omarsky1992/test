@@ -7,6 +7,7 @@ use App\Models\MessageTemplate;
 use App\Models\WhatsappNumber;
 use App\Models\WhatsappOutbox;
 use App\Services\Audit;
+use App\Services\ReceiptImage;
 use App\Support\Money;
 use Illuminate\Support\Str;
 
@@ -71,10 +72,35 @@ class TestMessages
         return $template?->render(self::values($sample));
     }
 
-    /** The event template's image or PDF, sent with the test as the subscriber would get it. */
-    public function media(string $event): array
+    /**
+     * The event template's image or PDF, sent with the test as the subscriber would get it; for the
+     * payment message with the receipt chosen, a made-up receipt drawn from the sample.
+     */
+    public function media(string $event, array $sample = []): array
     {
-        return $event === 'custom' ? [] : (MessageTemplate::where('auto_event', $event)->where('is_active', true)->first()?->media() ?? []);
+        $template = $event === 'custom' ? null : MessageTemplate::where('auto_event', $event)->where('is_active', true)->first();
+        if ($format = $template?->receiptFormat()) {
+            $receipts = app(ReceiptImage::class);
+            $values = self::values($sample);
+
+            return $receipts->store($receipts->sample($values['{الاسم}'], $values['{اليوزر}'], max(0, (int) ($sample['amount'] ?? 0))), $format, 'whatsapp/tests');
+        }
+
+        return $template?->media() ?? [];
+    }
+
+    /** What goes with the text, shown on the page before sending. */
+    public static function mediaLabel(string $event): ?string
+    {
+        $template = $event === 'custom' ? null : MessageTemplate::where('auto_event', $event)->where('is_active', true)->first();
+
+        return match (true) {
+            $template?->receiptFormat() === 'png' => 'تُرسل معها صورة الوصل (وصل تجريبي)',
+            $template?->receiptFormat() === 'pdf' => 'يُرسل معها الوصل PDF (وصل تجريبي)',
+            ($template?->media()['media_mime'] ?? null) === 'application/pdf' => 'يُرسل معها ملف PDF (من قالب الرسالة)',
+            $template !== null && $template->media() !== [] => 'تُرسل معها صورة (من قالب الرسالة)',
+            default => null,
+        };
     }
 
     /** Queues one test message; null when the number or the text is not valid. */
