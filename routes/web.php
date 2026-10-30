@@ -9,6 +9,7 @@ use App\Http\Controllers\WhatsAppWebhookController;
 use App\Imports\SubscriberImporter;
 use App\Models\Subscriber;
 use App\Models\WhatsappBroadcast;
+use App\Models\WhatsappOutbox;
 use App\Services\Audit;
 use App\Services\BackupService;
 use App\WhatsApp\WahaGateway;
@@ -105,3 +106,15 @@ Route::get('/whatsapp/broadcast/{broadcast}/image', function (WhatsappBroadcast 
 
     return response($disk->get($broadcast->image_path), 200, ['Content-Type' => $broadcast->image_mime ?? 'image/jpeg', 'Cache-Control' => 'private, max-age=86400']);
 })->middleware(['signed', 'throttle:120,1'])->name('whatsapp.broadcast.image');
+
+// The image or PDF of a template message, the same way: only the file of that one signed message.
+Route::get('/whatsapp/outbox/{message}/media', function (WhatsappOutbox $message) {
+    $disk = Storage::disk('local');
+    abort_unless($message->media_path && $message->broadcast_id === null && $disk->exists($message->media_path), 404);
+
+    return response($disk->get($message->media_path), 200, [
+        'Content-Type' => $message->media_mime ?? 'application/octet-stream',
+        'Content-Disposition' => 'inline; filename*=UTF-8\'\''.rawurlencode(basename($message->media_path)),
+        'Cache-Control' => 'private, max-age=86400',
+    ]);
+})->middleware(['signed', 'throttle:120,1'])->name('whatsapp.outbox.media');

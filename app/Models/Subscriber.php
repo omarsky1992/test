@@ -19,6 +19,8 @@ class Subscriber extends Model
     {
         return [
             'status' => SubscriberStatus::class,
+            'whatsapp_muted' => 'boolean',
+            'whatsapp_muted_at' => 'immutable_datetime',
         ];
     }
 

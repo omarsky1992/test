@@ -224,7 +224,7 @@ class Notifier
             '{رقم_الوصل}' => (string) $payment->receipt_number,
             '{رقم_العملية}' => (string) ($payment->lines->pluck('reference')->filter()->implode('، ') ?: '—'),
         ];
-        $this->outbox->queue($phone, $template->render($values), 'sub_payment', "sub:payment:{$payment->id}", $account->id, ['payment_id' => $payment->id]);
+        $this->outbox->queue($phone, $template->render($values), 'sub_payment', "sub:payment:{$payment->id}", $account->id, ['payment_id' => $payment->id] + $template->media());
     }
 
     /** A WhatsApp connection is set up (keys present) for the subscribers' messages. */
@@ -316,7 +316,7 @@ class Notifier
             return false;
         }
 
-        return $this->outbox->queue($phone, $template->render(WhatsappReminders::values($account)), "sub_{$event}", $reference, $account->id) !== null;
+        return $this->outbox->queue($phone, $template->render(WhatsappReminders::values($account)), "sub_{$event}", $reference, $account->id, $template->media()) !== null;
     }
 
     private function subscriberMessage(string $event): bool

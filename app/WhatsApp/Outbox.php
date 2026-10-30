@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use App\Models\Account;
 use App\Models\WhatsappNumber;
 use App\Models\WhatsappOutbox;
 use App\Services\Settings;
@@ -33,6 +34,9 @@ class Outbox
         if ($reference !== null && WhatsappOutbox::where('reference', $reference)->exists()) {
             return null;
         }
+        if ($accountId !== null && self::forSubscriber($kind) && self::muted()->whereKey($accountId)->exists()) {
+            return null; // «إيقاف رسائل الواتساب» is on for this subscriber
+        }
         try {
             // Its own savepoint: a duplicate never breaks the operation that queued it.
             return DB::transaction(fn () => WhatsappOutbox::create([
@@ -43,6 +47,18 @@ class Outbox
         } catch (UniqueConstraintViolationException) {
             return null;
         }
+    }
+
+    /** Kinds that reach the subscriber (the staff alerts and tests never do). */
+    public static function forSubscriber(string $kind): bool
+    {
+        return (str_starts_with($kind, 'sub_') && $kind !== 'sub_test') || $kind === 'reminder';
+    }
+
+    /** Accounts whose subscriber has «إيقاف رسائل الواتساب» on. */
+    private static function muted()
+    {
+        return Account::whereHas('subscriber', fn ($q) => $q->where('whatsapp_muted', true));
     }
 
     /** With a second phone for the subscribers: «notify» sends their messages (automatic and reminders), «main» the rest. */
@@ -71,6 +87,11 @@ class Outbox
             return [0, 0];
         }
 
+        // Waiting messages of a subscriber whose messages were stopped since are dropped, never sent.
+        $scope(WhatsappOutbox::where('status', 'pending'))->whereIn('account_id', self::muted()->select('accounts.id'))
+            ->where(fn ($q) => $q->where('kind', 'like', 'sub\\_%')->orWhere('kind', 'reminder'))->where('kind', '<>', 'sub_test')
+            ->update(['status' => 'skipped', 'error' => 'رسائل الواتساب موقوفة لهذا المشترك']);
+
         $query = $scope(WhatsappOutbox::where('status', 'pending')->orderBy('id'));
         if (! $this->duringDay($now)) {
             // At night only the staff alerts go out; subscribers are never messaged at night.
@@ -97,8 +118,8 @@ class Outbox
     }
 
     /**
-     * Text, or an image with the text as its caption. A connection that cannot send images (the free
-     * WAHA Core) gets the text with a link to the image instead.
+     * Text, or an image or a PDF with the text as its caption. A connection that cannot send files (the
+     * free WAHA Core) gets the text with a link to the file instead.
      */
     private function deliver(Gateway $gateway, WhatsappOutbox $message): void
     {
@@ -108,15 +129,20 @@ class Outbox
             return;
         }
         $disk = Storage::disk('local');
+        $pdf = $message->media_mime === 'application/pdf';
         if ($gateway->supportsImages() && $disk->exists($message->media_path)) {
-            $gateway->sendImage($message->to_phone, $disk->get($message->media_path), $message->media_mime ?? 'image/jpeg', $message->body);
+            $pdf
+                ? $gateway->sendFile($message->to_phone, $disk->get($message->media_path), 'application/pdf', basename($message->media_path), $message->body)
+                : $gateway->sendImage($message->to_phone, $disk->get($message->media_path), $message->media_mime ?? 'image/jpeg', $message->body);
 
             return;
         }
-        $link = $message->broadcast_id
-            ? URL::temporarySignedRoute('whatsapp.broadcast.image', now()->addDays(30), ['broadcast' => $message->broadcast_id])
-            : null;
-        $gateway->send($message->to_phone, $message->body.($link ? "\n\n🖼️ الصورة: {$link}" : ''));
+        $link = match (true) {
+            $message->broadcast_id !== null => URL::temporarySignedRoute('whatsapp.broadcast.image', now()->addDays(30), ['broadcast' => $message->broadcast_id]),
+            $disk->exists($message->media_path) => URL::temporarySignedRoute('whatsapp.outbox.media', now()->addDays(30), ['message' => $message->id]),
+            default => null,
+        };
+        $gateway->send($message->to_phone, $message->body.($link ? "\n\n".($pdf ? '📄 الملف' : '🖼️ الصورة').": {$link}" : ''));
     }
 
     public function duringDay(CarbonImmutable $now): bool

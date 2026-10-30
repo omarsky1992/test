@@ -93,7 +93,7 @@ class WhatsappReminders extends Page
         $outbox = app(\App\WhatsApp\Outbox::class);
         $queued = 0;
         foreach ($chosen as $account) {
-            if (($phone = self::phone($account)) && $outbox->queue($phone, $template->render(self::values($account)), 'reminder', null, $account->id)) {
+            if (($phone = self::phone($account)) && $outbox->queue($phone, $template->render(self::values($account)), 'reminder', null, $account->id, $template->media())) {
                 $queued++;
             }
         }
@@ -143,6 +143,7 @@ class WhatsappReminders extends Page
             '{الأيام}' => (string) (SubscriberStatus::daysLeft($account) ?? 0),
             '{المبلغ}' => Money::format((int) ($account->open_due ?? 0)),
             '{تاريخ_الانتهاء}' => $ends ? $ends->format('Y/m/d') : '—',
+            '{ساعة_الانتهاء}' => MessageTemplate::hour($ends),
             '{اليوزر}' => (string) $account->username,
         ];
     }

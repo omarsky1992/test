@@ -44,6 +44,9 @@
     </x-filament::section>
 
     <x-filament::section heading="📱 هكذا تصل">
+        @if ($media)
+            <p style="font-size:13px;margin:0 0 8px">📎 {{ $media['media_mime'] === 'application/pdf' ? 'يُرسل معها ملف PDF' : 'تُرسل معها صورة' }} (من قالب الرسالة)</p>
+        @endif
         @if ($text !== null)
             <div data-test="test-preview" style="white-space:pre-wrap;background:#dcf8c6;color:#111;border-radius:12px;padding:12px 14px;max-width:420px;font-size:14.5px;line-height:1.7">{{ $text }}</div>
         @else

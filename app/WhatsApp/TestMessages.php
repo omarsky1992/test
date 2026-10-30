@@ -50,6 +50,7 @@ class TestMessages
             '{الأيام}' => (string) $days,
             '{المبلغ}' => Money::format($amount),
             '{تاريخ_الانتهاء}' => now()->addDays($days)->setTimezone(config('app.timezone'))->format('Y/m/d'),
+            '{ساعة_الانتهاء}' => MessageTemplate::hour(now()->addDays($days)),
             '{اليوزر}' => trim((string) ($sample['device'] ?? '')) ?: 'test_user',
             '{المبلغ_المستلم}' => Money::format($amount),
             '{طريقة_الدفع}' => 'نقداً',
@@ -70,11 +71,17 @@ class TestMessages
         return $template?->render(self::values($sample));
     }
 
+    /** The event template's image or PDF, sent with the test as the subscriber would get it. */
+    public function media(string $event): array
+    {
+        return $event === 'custom' ? [] : (MessageTemplate::where('auto_event', $event)->where('is_active', true)->first()?->media() ?? []);
+    }
+
     /** Queues one test message; null when the number or the text is not valid. */
-    public function send(string $phone, string $text, string $line = 'main'): ?WhatsappOutbox
+    public function send(string $phone, string $text, string $line = 'main', array $media = []): ?WhatsappOutbox
     {
         $kind = self::KINDS[$line] ?? self::KINDS['main'];
-        $message = $this->outbox->queue($phone, $text, $kind, 'test:'.Str::uuid());
+        $message = $this->outbox->queue($phone, $text, $kind, 'test:'.Str::uuid(), null, $media);
         if ($message) {
             $this->audit->log('whatsapp.test_sent', $message, null, ['to' => WhatsappNumber::normalize($phone), 'line' => $line]);
         }

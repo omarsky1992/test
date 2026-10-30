@@ -147,6 +147,16 @@ class WahaGateway implements Gateway
         ]));
     }
 
+    public function sendFile(string $to, string $bytes, string $mimeType, string $fileName, string $caption): void
+    {
+        $this->ensureOk($this->http()->timeout(60)->post($this->url('/api/sendFile'), [
+            'session' => $this->session(),
+            'chatId' => self::digits($to).'@c.us',
+            'file' => ['mimetype' => $mimeType, 'filename' => $fileName, 'data' => base64_encode($bytes)],
+            'caption' => mb_substr($caption, 0, 1000),
+        ]));
+    }
+
     /** $mediaId is the media URL WAHA put in the webhook. */
     public function downloadMedia(string $mediaId): array
     {

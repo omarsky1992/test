@@ -45,6 +45,14 @@ class FakeWhatsApp implements Gateway, Transcriber
         $this->images_sent[] = ['to' => $to, 'bytes' => $bytes, 'mime' => $mimeType, 'caption' => $caption];
     }
 
+    /** @var array<int, array{to: string, bytes: string, mime: string, name: string, caption: string}> */
+    public array $files_sent = [];
+
+    public function sendFile(string $to, string $bytes, string $mimeType, string $fileName, string $caption): void
+    {
+        $this->files_sent[] = ['to' => $to, 'bytes' => $bytes, 'mime' => $mimeType, 'name' => $fileName, 'caption' => $caption];
+    }
+
     public function downloadMedia(string $mediaId): array
     {
         $this->downloads[] = $mediaId;

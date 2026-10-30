@@ -37,6 +37,19 @@ class CloudApiGateway implements Gateway
         ])->throw();
     }
 
+    public function sendFile(string $to, string $bytes, string $mimeType, string $fileName, string $caption): void
+    {
+        $media = $this->http()->attach('file', $bytes, $fileName, ['Content-Type' => $mimeType])
+            ->post($this->graph(config('whatsapp.phone_number_id').'/media'), ['messaging_product' => 'whatsapp', 'type' => $mimeType])->throw();
+        $this->http()->post($this->graph(config('whatsapp.phone_number_id').'/messages'), [
+            'messaging_product' => 'whatsapp',
+            'recipient_type' => 'individual',
+            'to' => $to,
+            'type' => 'document',
+            'document' => ['id' => $media->json('id'), 'filename' => $fileName, 'caption' => mb_substr($caption, 0, 1000)],
+        ])->throw();
+    }
+
     public function downloadMedia(string $mediaId): array
     {
         $meta = $this->http()->get($this->graph($mediaId))->throw()->json();

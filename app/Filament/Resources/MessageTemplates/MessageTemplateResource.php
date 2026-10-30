@@ -9,17 +9,21 @@ use BackedEnum;
 use Filament\Actions\CreateAction;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Resources\Resource;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 use UnitEnum;
 
 /**
@@ -59,6 +63,15 @@ class MessageTemplateResource extends Resource
             Select::make('auto_event')->label('تُرسل تلقائياً عند')->placeholder('لا (يدوي فقط)')
                 ->options(self::EVENTS)->unique(ignoreRecord: true)
                 ->helperText('تشغيل الرسائل التلقائية وإيقافها من «إعدادات واتساب».'),
+            Select::make('media_type')->label('شكل الرسالة')->options(MessageTemplate::MEDIA_TYPES)->default('text')->required()->live()
+                ->helperText('الصورة أو PDF يُرسلان والنص تحتهما. الربط المجاني بالـ QR يرسل النص مع رابط للملف.'),
+            FileUpload::make('media_path')->label(fn (Get $get) => $get('media_type') === 'pdf' ? 'ملف PDF' : 'الصورة')
+                ->visible(fn (Get $get) => in_array($get('media_type'), ['image', 'pdf'], true))
+                ->required(fn (Get $get) => in_array($get('media_type'), ['image', 'pdf'], true))
+                ->acceptedFileTypes(fn (Get $get) => $get('media_type') === 'pdf' ? ['application/pdf'] : ['image/jpeg', 'image/png', 'image/webp'])
+                ->maxSize(5120)->disk('local')->directory('whatsapp/templates')->visibility('private')
+                ->getUploadedFileNameForStorageUsing(fn (TemporaryUploadedFile $file) => Str::uuid().'/'.str_replace(['/', '\\'], '-', $file->getClientOriginalName()))
+                ->storeFileNamesIn('media_name')->columnSpanFull(),
             TextInput::make('sort_order')->label('الترتيب')->integer()->default(0),
             Toggle::make('is_active')->label('فعّالة')->default(true),
         ])->columns(2);
@@ -72,6 +85,7 @@ class MessageTemplateResource extends Resource
                 TextColumn::make('title')->label('العنوان')->weight('bold')->formatStateUsing(fn ($state, MessageTemplate $r) => trim("{$r->icon} {$state}")),
                 TextColumn::make('auto_event')->label('تلقائية')->badge()->placeholder('يدوية')->formatStateUsing(fn (?string $state) => self::EVENTS[$state] ?? $state),
                 TextColumn::make('body')->label('النص')->limit(70)->wrap(),
+                TextColumn::make('media_type')->label('الشكل')->badge()->formatStateUsing(fn (?string $state) => MessageTemplate::MEDIA_TYPES[$state] ?? $state),
                 IconColumn::make('is_active')->label('فعّالة')->boolean(),
             ])
             ->recordActions([

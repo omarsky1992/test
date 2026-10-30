@@ -10,6 +10,7 @@ use App\Models\FollowUp;
 use App\Models\Subscriber;
 use App\Support\Arabic;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,24 @@ class SubscriberService
         $original = $subscriber->getAttributes();
         $subscriber->update([...$this->subscriberFields($data), 'status' => $data['status'] ?? $subscriber->status, 'updated_by' => Auth::id()]);
         $this->audit->changes('subscriber.updated', $subscriber, $original, subscriberId: $subscriber->id);
+
+        return $subscriber;
+    }
+
+    /**
+     * «إيقاف رسائل الواتساب»: while on, no message reaches this subscriber (automatic, payment, bulk or
+     * reminder), and those already waiting are dropped; the staff alerts about them still go.
+     */
+    public function setWhatsappMuted(Subscriber $subscriber, bool $muted): Subscriber
+    {
+        if (! Auth::user()?->can('subscribers.update')) {
+            throw new AuthorizationException('لا تملك صلاحية تعديل المشترك.');
+        }
+        if ($subscriber->whatsapp_muted === $muted) {
+            return $subscriber;
+        }
+        $subscriber->update(['whatsapp_muted' => $muted, 'whatsapp_muted_at' => $muted ? now() : null, 'whatsapp_muted_by' => $muted ? Auth::id() : null]);
+        $this->audit->log($muted ? 'subscriber.whatsapp_muted' : 'subscriber.whatsapp_unmuted', $subscriber, ['whatsapp_muted' => ! $muted], ['whatsapp_muted' => $muted], subscriberId: $subscriber->id);
 
         return $subscriber;
     }
