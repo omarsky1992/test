@@ -50,7 +50,8 @@ class AppServiceProvider extends ServiceProvider
         Model::shouldBeStrict(! $this->app->isProduction());
 
         // Admins hold every permission, including ones added later.
-        Gate::before(fn (User $user) => $user->hasRole('admin') ? true : null);
+        // (Only a client's users have roles; the platform owner's account is not one of them.)
+        Gate::before(fn ($user) => $user instanceof User && $user->hasRole('admin') ? true : null);
 
         Event::listen(Login::class, fn (Login $event) => $event->user instanceof User
             ? $event->user->forceFill(['last_login_at' => now()])->saveQuietly()

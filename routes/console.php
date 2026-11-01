@@ -1,7 +1,11 @@
 <?php
 
 use App\Models\SyncRun;
+use App\Models\User;
+use App\Platform\PlatformAdmin;
+use App\Platform\PlatformAudit;
 use App\Platform\PlatformInstaller;
+use App\Platform\TenantStats;
 use App\Platform\TenantManager;
 use App\Services\BackupService;
 use App\Services\Settings;
@@ -15,6 +19,8 @@ use App\WhatsApp\WahaGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
 
@@ -47,6 +53,63 @@ Artisan::command('tenants:each {task : The command and its options, quoted}', fu
 
     return $failed === 0 ? 0 : 1;
 })->purpose('Run a command for every client, each on its own database');
+
+// Builds a NEW client's database (run by TenantProvisioner with TENANT=slug): its tables, the starting
+// reference data and its manager account. Refuses client 1 and any database that already has users.
+Artisan::command('platform:provision', function (TenantManager $tenants) {
+    $tenant = $tenants->current();
+    if ($tenant === null || $tenants->isHome()) {
+        $this->error('Refused: platform:provision only builds a new client (TENANT=slug), never client 1.');
+
+        return 1;
+    }
+    if (Schema::hasTable('users') && DB::table('users')->exists()) {
+        $this->error("Refused: {$tenant->database} already has users.");
+
+        return 1;
+    }
+    $this->call('migrate', ['--force' => true]);
+    $this->callSilently('db:seed', ['--force' => true]);
+
+    // The seeded first admin becomes the client's manager, with the owner's chosen details.
+    $username = (string) getenv('PROVISION_USERNAME');
+    $password = (string) getenv('PROVISION_PASSWORD');
+    if ($username === '' || strlen($password) < 8) {
+        $this->error('Missing manager username or password.');
+
+        return 1;
+    }
+    $admin = User::role('admin')->orderBy('id')->firstOrFail();
+    $admin->forceFill([
+        'name' => (string) getenv('PROVISION_NAME') ?: 'المدير',
+        'username' => $username,
+        'password' => $password,
+        'phone' => ((string) getenv('PROVISION_PHONE')) ?: null,
+        'password_changed_at' => null,
+    ])->save();
+    app(Settings::class)->set('company.name', (string) getenv('PROVISION_COMPANY'));
+    $this->info("Client {$tenant->slug} ready on {$tenant->database}.");
+})->purpose('Build a new client database (internal)');
+
+// The platform owner's account, from the server's command line only (the password is typed, hidden).
+Artisan::command('platform:admin {username} {--name= : Display name}', function (string $username) {
+    $password = (string) $this->secret('كلمة المرور (12 حرفاً على الأقل)');
+    if (strlen($password) < 12 || $password !== (string) $this->secret('أعد كتابة كلمة المرور')) {
+        $this->error('Passwords do not match or are shorter than 12 characters.');
+
+        return 1;
+    }
+    $admin = PlatformAdmin::whereRaw('lower(username) = ?', [strtolower($username)])->first() ?? new PlatformAdmin(['username' => $username]);
+    $admin->fill(['name' => $this->option('name') ?: ($admin->name ?: $username), 'password' => $password, 'is_active' => true])->save();
+    app(PlatformAudit::class)->log($admin->wasRecentlyCreated ? 'platform_admin.created' : 'platform_admin.password_reset', null, null, ['username' => $admin->username]);
+    $this->info("Platform owner «{$admin->username}» saved.");
+})->purpose('Create the platform owner account or reset its password');
+
+// The subscribers and staff counts shown on the platform panel.
+Artisan::command('platform:stats', function (TenantStats $stats) {
+    $this->info('Clients refreshed: '.$stats->refreshAll());
+})->purpose('Refresh the per-client counts on the platform panel');
+Schedule::command('platform:stats')->hourly()->withoutOverlapping(30);
 
 // Which client this process works on (for checks and for `tenants:each`).
 Artisan::command('tenants:current', function (TenantManager $tenants) {

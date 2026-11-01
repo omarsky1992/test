@@ -3,7 +3,6 @@
 namespace Tests\Feature\Platform;
 
 use App\Models\User;
-use App\Platform\PlatformInstaller;
 use App\Platform\Tenant;
 use App\Platform\TenantManager;
 use App\Services\SubscriberService;
@@ -19,51 +18,12 @@ use Illuminate\Support\Facades\Storage;
  */
 class TenantIsolationTest extends BaseTestCase
 {
-    private const HOME = 'subs_test_home';
-
-    private const SECOND = 'subs_test_second';
-
-    private static bool $built = false;
+    use BuildsClientDatabases;
 
     protected function setUp(): void
     {
         parent::setUp();
-        config([
-            'platform.home_database' => self::HOME,
-            'database.connections.pgsql.database' => self::HOME,
-            'whatsapp.waha.api_key' => 'home-waha-key',
-            'backup.server_dir' => '/backups',
-        ]);
-        DB::purge('pgsql');
-        if (! self::$built) {
-            foreach (['subs_test_platform', self::HOME, self::SECOND] as $name) {
-                $this->server()->statement("DROP DATABASE IF EXISTS \"{$name}\" WITH (FORCE)");
-            }
-            foreach ([self::HOME, self::SECOND] as $name) {
-                $this->server()->statement("CREATE DATABASE \"{$name}\"");
-                config(["database.connections.build_{$name}" => ['database' => $name] + config('database.connections.pgsql')]);
-                Artisan::call('migrate', ['--database' => "build_{$name}", '--force' => true]);
-                Artisan::call('db:seed', ['--database' => "build_{$name}", '--force' => true]);
-                DB::purge("build_{$name}");
-            }
-            DB::purge('pgsql');
-            app(PlatformInstaller::class)->install();
-            Tenant::create(['slug' => 'wakeel2', 'name' => 'الوكيل الثاني', 'domain' => 'wakeel2.test', 'database' => self::SECOND]);
-            self::$built = true;
-        }
-    }
-
-    public static function tearDownAfterClass(): void
-    {
-        self::$built = false;
-        parent::tearDownAfterClass();
-    }
-
-    private function server()
-    {
-        config(['database.connections.server' => ['database' => 'postgres'] + config('database.connections.pgsql')]);
-
-        return DB::connection('server');
+        $this->setUpClients();
     }
 
     private function tenants(): TenantManager

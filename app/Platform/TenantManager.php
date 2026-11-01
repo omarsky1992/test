@@ -2,9 +2,13 @@
 
 namespace App\Platform;
 
+use App\Services\Audit;
+use App\Services\Ledger;
+use App\Services\Settings;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Facade;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\PermissionRegistrar;
 
@@ -17,6 +21,8 @@ use Spatie\Permission\PermissionRegistrar;
 class TenantManager
 {
     private ?Tenant $current = null;
+
+    private bool $platform = false;
 
     /** @var array<string, mixed>|null the server-wide settings of client 1, restored on the way back */
     private ?array $homeConfig = null;
@@ -52,6 +58,11 @@ class TenantManager
      */
     public function identify(string $host): bool
     {
+        if ($this->isPlatformHost($host)) {
+            $this->activatePlatform();
+
+            return true;
+        }
         if ($this->isHomeHost($host)) {
             $this->activate(null);
 
@@ -97,27 +108,53 @@ class TenantManager
     /** null = client 1. Everything that caches data of the previous client is dropped. */
     public function activate(?Tenant $tenant): void
     {
-        $database = $tenant?->database ?? $this->homeDatabase();
+        $this->platform = false;
         $this->current = $tenant;
+        $this->switchTo($tenant?->database ?? $this->homeDatabase(), $tenant === null || $tenant->database === $this->homeDatabase() ? null : "tenants/{$tenant->slug}");
+    }
+
+    /**
+     * The platform owner's panel: the default connection points at the platform database, so nothing
+     * there can read a client's data by mistake (sessions and cache live there too).
+     */
+    public function activatePlatform(): void
+    {
+        $this->platform = true;
+        $this->current = null;
+        $this->switchTo((string) config('database.connections.platform.database'), 'platform');
+    }
+
+    public function isPlatform(): bool
+    {
+        return $this->platform;
+    }
+
+    public function isPlatformHost(string $host): bool
+    {
+        return self::normalizeHost($host) === self::normalizeHost((string) config('platform.admin_host'));
+    }
+
+    /** $folder: null = client 1's own storage folders. */
+    private function switchTo(string $database, ?string $folder): void
+    {
         $connection = config('database.default');
         if (config("database.connections.{$connection}.database") === $database) {
             return;
         }
         $this->homeConfig ??= $this->serverWide();
-        $home = $database === $this->homeDatabase();
 
         config(["database.connections.{$connection}.database" => $database]);
         DB::purge($connection);
 
-        // Files: client 1 keeps its folders; another client gets its own.
+        // Files: client 1 keeps its folders; another client (or the platform) gets its own.
         config([
-            'filesystems.disks.local.root' => $home ? storage_path('app/private') : storage_path("app/tenants/{$tenant->slug}/private"),
-            'filesystems.disks.public.root' => $home ? storage_path('app/public') : storage_path("app/tenants/{$tenant->slug}/public"),
+            'filesystems.disks.local.root' => $folder === null ? storage_path('app/private') : storage_path("app/{$folder}/private"),
+            'filesystems.disks.public.root' => $folder === null ? storage_path('app/public') : storage_path("app/{$folder}/public"),
         ]);
         Storage::forgetDisk(['local', 'public']);
 
         // Client 1's WhatsApp phones, AI keys and server dumps are never another client's.
-        config($home ? $this->homeConfig : array_map(fn () => null, $this->homeConfig));
+        config($folder === null ? $this->homeConfig : array_map(fn () => null, $this->homeConfig));
 
         $this->forgetCaches();
     }
@@ -151,7 +188,12 @@ class TenantManager
         if ($app->resolved('auth')) {
             $app->make('auth')->forgetGuards();
         }
-        $app->forgetScopedInstances();
+        // This system's own per-request services that read the database (never the framework's:
+        // Filament keeps the current panel in its own).
+        foreach ([Settings::class, Audit::class, Ledger::class] as $service) {
+            $app->forgetInstance($service);
+        }
+        Facade::clearResolvedInstances();
         if ($app->resolved(PermissionRegistrar::class)) {
             $registrar = $app->make(PermissionRegistrar::class);
             $registrar->initializeCache();

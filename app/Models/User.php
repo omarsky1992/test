@@ -61,7 +61,8 @@ class User extends Authenticatable implements FilamentUser
 
     public function canAccessPanel(Panel $panel): bool
     {
-        return $this->is_active;
+        // A client's users never open the platform owner's panel.
+        return $panel->getId() === 'admin' && $this->is_active;
     }
 
     /**
