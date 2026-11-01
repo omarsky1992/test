@@ -133,7 +133,8 @@ class BackupService
     private function dump(string $name): string
     {
         $db = config('database.connections.'.config('database.default'));
-        $path = storage_path('app/private/'.$name);
+        // On this client's own private disk (another client's files never land in client 1's folder).
+        $path = \Illuminate\Support\Facades\Storage::disk('local')->path($name);
         @mkdir(dirname($path), 0700, true);
 
         $args = [config('backup.pg_dump'), '--format=custom', '--no-owner', '--no-privileges', '--file='.$path];

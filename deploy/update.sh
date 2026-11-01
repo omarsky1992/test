@@ -14,6 +14,20 @@ if [ -n "$(docker compose --env-file .env ps -q db 2>/dev/null)" ]; then
         echo "Backup failed: update stopped, nothing was changed." >&2
         exit 1
     fi
+    # Every other client's own database («${POSTGRES_DB}_t_…»), each in its own file.
+    for client in $(docker compose --env-file .env exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT datname FROM pg_database WHERE datname LIKE '"'"'${POSTGRES_DB}\_t\_%'"'"'"'); do
+        client=$(echo "$client" | tr -d '\r')
+        mkdir -p "backups/pre-update/clients/$client"
+        file="backups/pre-update/clients/$client/$(date +%Y%m%d-%H%M%S).sql.gz"
+        if docker compose --env-file .env exec -T db sh -c "pg_dump -U \"\$POSTGRES_USER\" \"$client\"" | gzip > "$file" && [ -s "$file" ]; then
+            echo "Backup: $file"
+            ls -1t "backups/pre-update/clients/$client"/*.sql.gz | tail -n +11 | xargs -r rm -f
+        else
+            rm -f "$file"
+            echo "Backup of client database $client failed: update stopped, nothing was changed." >&2
+            exit 1
+        fi
+    done
     # The platform database (clients and subscriptions), once it exists.
     if docker compose --env-file .env exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT 1 FROM pg_database WHERE datname = '"'"'${POSTGRES_DB}_platform'"'"'"' | grep -q 1; then
         mkdir -p backups/pre-update/platform

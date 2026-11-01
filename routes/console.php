@@ -4,6 +4,7 @@ use App\Models\SyncRun;
 use App\Models\User;
 use App\Platform\PlatformAdmin;
 use App\Platform\PlatformAudit;
+use App\Platform\ClientBackups;
 use App\Platform\PlatformInstaller;
 use App\Platform\SubscriptionAlerts;
 use App\Platform\TenantStats;
@@ -117,6 +118,19 @@ Artisan::command('platform:alerts', function (SubscriptionAlerts $alerts) {
     $this->info('Alerts raised: '.$alerts->scan());
 })->purpose('Raise the subscription alerts that are due');
 Schedule::command('platform:alerts')->hourly()->withoutOverlapping(30);
+
+// The daily copy of the platform database and of every client's database but client 1's.
+Artisan::command('platform:backup', function (ClientBackups $backups) {
+    $failed = 0;
+    foreach ($backups->run() as $database => $result) {
+        $ok = ! str_starts_with($result, 'failed:');
+        $failed += $ok ? 0 : 1;
+        $ok ? $this->info("{$database}: {$result}") : $this->error("{$database}: {$result}");
+    }
+
+    return $failed === 0 ? 0 : 1;
+})->purpose('Back up the platform database and the clients\' databases');
+Schedule::command('platform:backup')->dailyAt('03:30')->timezone('Asia/Baghdad')->withoutOverlapping(120);
 
 // Which client this process works on (for checks and for `tenants:each`).
 Artisan::command('tenants:current', function (TenantManager $tenants) {

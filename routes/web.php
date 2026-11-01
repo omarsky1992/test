@@ -19,6 +19,16 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
+// Caddy asks this (from inside the server only, as http://app:8080) before issuing a certificate for
+// an address: yes only for a registered, not archived client's address.
+Route::get('/platform/tls-check', function (Request $request) {
+    abort_unless(App\Platform\TenantManager::normalizeHost($request->getHost()) === 'app', 404);
+    $domain = App\Platform\TenantManager::normalizeHost((string) $request->query('domain'));
+    $known = $domain !== '' && rescue(fn () => App\Platform\Tenant::where('domain', $domain)->where('status', '<>', 'archived')->exists(), false, report: false);
+
+    return $known ? response('ok') : response('unknown', 404);
+})->name('platform.tls-check');
+
 // «انتهى الاشتراك»: the only page a stopped client can open (with signing out).
 Route::get('/subscription-ended', \App\Http\Controllers\SubscriptionEndedController::class)->name('subscription.ended');
 

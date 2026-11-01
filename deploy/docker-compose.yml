@@ -30,6 +30,10 @@ services:
       DB_HOST: db
       DB_PORT: 5432
       AUTORUN_ENABLED: "false"
+    # The same files as the site: WhatsApp images/PDFs it sends, and the clients' daily dumps
+    # (storage/app/platform-backups).
+    volumes:
+      - storage:/var/www/html/storage/app
     depends_on:
       - app
 

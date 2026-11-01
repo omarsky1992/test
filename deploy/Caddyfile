@@ -1,6 +1,23 @@
-# The site (client 1) and the platform owner's panel on «platform.» of the same address. Each gets
-# its own HTTPS certificate, obtained and renewed automatically.
+# HTTPS for every address, obtained and renewed automatically:
+# - the site (client 1) and the platform owner's panel on «platform.» of the same address;
+# - each client's own address («slug.» of the same address), issued the first time it is opened, and
+#   only after the app confirms the address belongs to a registered client (nobody can make the
+#   server request certificates for names that are not its clients').
+{
+	on_demand_tls {
+		ask http://app:8080/platform/tls-check
+	}
+}
+
 {$APP_DOMAIN}, platform.{$APP_DOMAIN} {
+	encode gzip
+	reverse_proxy app:8080
+}
+
+https:// {
+	tls {
+		on_demand
+	}
 	encode gzip
 	reverse_proxy app:8080
 }

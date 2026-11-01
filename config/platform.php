@@ -19,6 +19,10 @@ return [
     // Addresses no client may take.
     'reserved_slugs' => ['platform', 'www', 'admin', 'api', 'app', 'mail', 'smtp', 'ftp', 'main', 'static', 'assets', 'cdn', 'waha', 'db'],
 
+    // Daily dumps of the platform database and of the clients' databases (client 1 has its own).
+    'backup_dir' => env('PLATFORM_BACKUP_DIR', storage_path('app/platform-backups')),
+    'backup_keep' => (int) env('PLATFORM_BACKUP_KEEP', 7),
+
     // «قريب من الانتهاء» from this many days before the end.
     'expiring_days' => 7,
 ];
