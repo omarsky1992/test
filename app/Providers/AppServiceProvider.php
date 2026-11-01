@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Models\User;
+use App\Platform\TenantManager;
 use App\Services\Audit;
 use App\Services\Ledger;
 use App\Services\Settings;
@@ -16,6 +17,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        $this->app->singleton(TenantManager::class);
         $this->app->scoped(Ledger::class);
         $this->app->scoped(Audit::class);
         $this->app->scoped(Settings::class);
@@ -33,6 +35,18 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // The client first, before anything reads the database: a command names it (TENANT=slug,
+        // from `tenants:each`); a web request comes from its address (checked again, with 404 for an
+        // unknown address, by the IdentifyTenant middleware).
+        $tenants = $this->app->make(TenantManager::class);
+        if ($this->app->runningInConsole()) {
+            if (is_string($slug = getenv('TENANT')) && $slug !== '') {
+                $tenants->activateSlug($slug);
+            }
+        } elseif ($this->app->bound('request')) {
+            $tenants->identify($this->app->make('request')->getHost());
+        }
+
         Model::shouldBeStrict(! $this->app->isProduction());
 
         // Admins hold every permission, including ones added later.

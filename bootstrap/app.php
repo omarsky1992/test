@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // The app runs behind Caddy, which terminates HTTPS.
         $middleware->trustProxies(at: '*');
+        // Before sessions and everything else: the request runs on its client's database.
+        $middleware->prepend(\App\Http\Middleware\IdentifyTenant::class);
         $middleware->redirectGuestsTo('/login');
     })
     ->withExceptions(function (Exceptions $exceptions): void {

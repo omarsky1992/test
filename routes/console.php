@@ -2,6 +2,7 @@
 
 use App\Models\SyncRun;
 use App\Platform\PlatformInstaller;
+use App\Platform\TenantManager;
 use App\Services\BackupService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
@@ -12,7 +13,9 @@ use App\WhatsApp\Notifier;
 use App\WhatsApp\Outbox;
 use App\WhatsApp\WahaGateway;
 use Carbon\CarbonImmutable;
+use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
 
 // Sets up the platform (SaaS) database and registers this system as client 1; safe on every start.
@@ -20,6 +23,35 @@ Artisan::command('platform:install', function (PlatformInstaller $installer) {
     $result = $installer->install();
     $this->info(($result['created_database'] ? 'Platform database created. ' : '')."Client 1: {$result['tenant']->name} ({$result['tenant']->database}).");
 })->purpose('Set up the platform database and register the original system as client 1');
+
+// Runs a command once per client, each in its own process on its own database (TENANT=slug), side
+// by side so one client's pauses never hold up another. Before the platform exists: just client 1.
+Artisan::command('tenants:each {task : The command and its options, quoted}', function (TenantManager $tenants) {
+    $task = preg_split('/\s+/', trim($this->argument('task')));
+    // Before the platform database exists there is only client 1: one run, no TENANT.
+    $slugs = $tenants->runnableSlugs() ?? [null];
+    $results = Process::pool(function (Pool $pool) use ($slugs, $task) {
+        foreach ($slugs as $slug) {
+            $pool->as($slug ?? 'main')->path(base_path())->env($slug === null ? [] : ['TENANT' => $slug])->forever()
+                ->command([PHP_BINARY, 'artisan', ...$task, '--no-interaction']);
+        }
+    })->start()->wait();
+    $failed = 0;
+    foreach ($results as $slug => $result) {
+        $output = trim($result->output()."\n".$result->errorOutput());
+        if ($output !== '') {
+            $this->line("[{$slug}] ".$output);
+        }
+        $failed += $result->failed() ? 1 : 0;
+    }
+
+    return $failed === 0 ? 0 : 1;
+})->purpose('Run a command for every client, each on its own database');
+
+// Which client this process works on (for checks and for `tenants:each`).
+Artisan::command('tenants:current', function (TenantManager $tenants) {
+    $this->line(($tenants->current()?->slug ?? 'main').' '.config('database.connections.'.config('database.default').'.database'));
+})->purpose('Show the client and database this process works on');
 
 Artisan::command('backup:run', function (BackupService $backups) {
     $run = $backups->run('cli');
@@ -31,7 +63,7 @@ Artisan::command('backup:run', function (BackupService $backups) {
 })->purpose('Dump the database and upload it to Google Drive');
 
 // On servers that run the scheduler (the Docker Compose setup). Free hosts use the GitHub Actions trigger instead.
-Schedule::command('backup:run')->dailyAt('03:00')->timezone('Asia/Baghdad')->withoutOverlapping();
+Schedule::command('tenants:each', ['backup:run'])->dailyAt('03:00')->timezone('Asia/Baghdad')->withoutOverlapping();
 
 Artisan::command('company:sync {--scheduled : Run only when automatic sync is on and its interval has passed}', function (CompanySync $sync, Settings $settings) {
     if ($this->option('scheduled')) {
@@ -49,7 +81,7 @@ Artisan::command('company:sync {--scheduled : Run only when automatic sync is on
     return $run->status === 'success' ? 0 : 1;
 })->purpose('Update subscribers from the company site and detect renewals');
 
-Schedule::command('company:sync --scheduled')->everyFiveMinutes()->withoutOverlapping(30);
+Schedule::command('tenants:each', ['company:sync --scheduled'])->everyFiveMinutes()->withoutOverlapping(30);
 
 Artisan::command('company:keep-session', function (FtthApiClient $client) {
     try {
@@ -64,7 +96,7 @@ Artisan::command('company:keep-session', function (FtthApiClient $client) {
 })->purpose('Renew the company sign-in with the stored refresh token so it never expires from idleness');
 
 // EarthLink ends idle sign-ins after a while; renewing every 10 minutes keeps the refresh token valid.
-Schedule::command('company:keep-session')->everyTenMinutes()->withoutOverlapping(5);
+Schedule::command('tenants:each', ['company:keep-session'])->everyTenMinutes()->withoutOverlapping(5);
 
 Artisan::command('whatsapp:scan', function (Notifier $notifier, Inbox $inbox) {
     $inbox->closeStuck();
@@ -96,6 +128,6 @@ Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway
     return 0;
 })->purpose('Send queued WhatsApp messages slowly from the linked phone');
 
-Schedule::command('whatsapp:scan')->everyFifteenMinutes()->withoutOverlapping(10);
+Schedule::command('tenants:each', ['whatsapp:scan'])->everyFifteenMinutes()->withoutOverlapping(10);
 // In the background so the pauses between messages never hold up the other scheduled tasks.
-Schedule::command('whatsapp:dispatch')->everyMinute()->withoutOverlapping(10)->runInBackground();
+Schedule::command('tenants:each', ['whatsapp:dispatch'])->everyMinute()->withoutOverlapping(10)->runInBackground();
