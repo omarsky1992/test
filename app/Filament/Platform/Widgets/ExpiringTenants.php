@@ -15,6 +15,8 @@ class ExpiringTenants extends TableWidget
 
     protected int|string|array $columnSpan = 'full';
 
+    protected static bool $isLazy = false;
+
     protected static ?string $heading = 'اشتراكات تنتهي قريباً أو انتهت';
 
     public function table(Table $table): Table

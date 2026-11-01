@@ -91,7 +91,8 @@ class TenantManager
     }
 
     /**
-     * The clients whose scheduled work runs (archived ones never), or null before the platform
+     * The clients whose scheduled work runs: not archived, suspended or past their subscription (a
+     * stopped client sends no message and syncs nothing until renewed), or null before the platform
      * database exists (only client 1 then).
      *
      * @return list<string>|null
@@ -99,10 +100,12 @@ class TenantManager
     public function runnableSlugs(): ?array
     {
         try {
-            return Tenant::where('status', '<>', 'archived')->orderBy('id')->pluck('slug')->all();
+            $tenants = Tenant::where('status', 'active')->orderBy('id')->get();
         } catch (QueryException) {
             return null;
         }
+
+        return $tenants->reject(fn (Tenant $t) => Subscription::state($t) === 'expired')->pluck('slug')->values()->all();
     }
 
     /** null = client 1. Everything that caches data of the previous client is dropped. */

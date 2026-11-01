@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\Platform;
 
+use App\Filament\Platform\Pages\PlatformSettingsPage;
 use App\Filament\Platform\Resources\Tenants\Pages\ListTenants;
+use App\Filament\Platform\Widgets\SubscriptionAlertsList;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Platform\PlatformAdmin;
+use App\Platform\PlatformSettings;
 use App\Platform\Subscription;
 use App\Platform\Tenant;
 use App\Platform\TenantManager;
@@ -131,7 +134,7 @@ class PlatformPanelTest extends BaseTestCase
 
         Livewire::test(ListTenants::class)->callTableAction('toggleSuspend', $second);
         $this->assertSame('suspended', Subscription::state($second->fresh()));
-        $this->get('http://wakeel2.test/login')->assertOk(); // the address still answers (the stop page comes with the subscriptions)
+        $this->get('http://wakeel2.test/login')->assertRedirect(route('subscription.ended')); // stopped, data kept
         $this->asOwner();
 
         Livewire::test(ListTenants::class)->callTableAction('toggleArchive', $second, ['confirm' => 'wrong'])->assertHasTableActionErrors(['confirm']);
@@ -180,6 +183,20 @@ class PlatformPanelTest extends BaseTestCase
         $this->assertSame('trial', Subscription::state($trial, $now));
         $this->assertSame('expired', Subscription::state($trial, $now->addDays(4)));
         $this->assertSame('permanent', Subscription::state(new Tenant(['status' => 'active', 'is_permanent' => true])));
+    }
+
+    public function test_the_contact_details_and_the_alerts_list(): void
+    {
+        $this->asOwner();
+        Livewire::test(PlatformSettingsPage::class)
+            ->fillForm(['contact_name' => 'عمر', 'contact_phone' => '07700000001', 'contact_message' => 'للتجديد اتصل بنا.'])
+            ->call('save')->assertHasNoFormErrors();
+        $this->assertSame('07700000001', app(PlatformSettings::class)->get('contact.phone'));
+
+        $second = Tenant::where('slug', 'wakeel2')->sole();
+        DB::connection('platform')->table('tenant_alerts')->insert(['tenant_id' => $second->id, 'kind' => 'subscription', 'ends_at' => now()->addDays(3), 'days_before' => 3, 'created_at' => now(), 'updated_at' => now()]);
+        Livewire::test(SubscriptionAlertsList::class)->assertOk()->assertSee('الوكيل الثاني')->assertSee('الاشتراك ينتهي بعد 3 أيام');
+        $this->get('http://platform.localhost/')->assertOk()->assertSee('تنبيهات الاشتراكات');
     }
 
     public function test_the_owner_account_is_made_only_from_the_command_line(): void

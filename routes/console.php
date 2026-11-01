@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Platform\PlatformAdmin;
 use App\Platform\PlatformAudit;
 use App\Platform\PlatformInstaller;
+use App\Platform\SubscriptionAlerts;
 use App\Platform\TenantStats;
 use App\Platform\TenantManager;
 use App\Services\BackupService;
@@ -110,6 +111,12 @@ Artisan::command('platform:stats', function (TenantStats $stats) {
     $this->info('Clients refreshed: '.$stats->refreshAll());
 })->purpose('Refresh the per-client counts on the platform panel');
 Schedule::command('platform:stats')->hourly()->withoutOverlapping(30);
+
+// «تنبيه قرب انتهاء الاشتراك» (7, 3, 1 days and the day itself), each raised once.
+Artisan::command('platform:alerts', function (SubscriptionAlerts $alerts) {
+    $this->info('Alerts raised: '.$alerts->scan());
+})->purpose('Raise the subscription alerts that are due');
+Schedule::command('platform:alerts')->hourly()->withoutOverlapping(30);
 
 // Which client this process works on (for checks and for `tenants:each`).
 Artisan::command('tenants:current', function (TenantManager $tenants) {

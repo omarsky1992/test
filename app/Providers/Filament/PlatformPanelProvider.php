@@ -2,7 +2,7 @@
 
 namespace App\Providers\Filament;
 
-use App\Filament\Platform\Pages\PlatformLogin;
+use App\Filament\Platform\Auth\PlatformLogin;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -41,6 +41,7 @@ class PlatformPanelProvider extends PanelProvider
             ->maxContentWidth(Width::Full)
             ->discoverResources(in: app_path('Filament/Platform/Resources'), for: 'App\Filament\Platform\Resources')
             ->discoverWidgets(in: app_path('Filament/Platform/Widgets'), for: 'App\Filament\Platform\Widgets')
+            ->discoverPages(in: app_path('Filament/Platform/Pages'), for: 'App\Filament\Platform\Pages')
             ->pages([Dashboard::class])
             ->middleware([
                 EncryptCookies::class,

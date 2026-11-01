@@ -19,6 +19,9 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 
+// «انتهى الاشتراك»: the only page a stopped client can open (with signing out).
+Route::get('/subscription-ended', \App\Http\Controllers\SubscriptionEndedController::class)->name('subscription.ended');
+
 Route::middleware('auth')->group(function () {
     Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
     // The house photo, only to who may see it; never a public file.

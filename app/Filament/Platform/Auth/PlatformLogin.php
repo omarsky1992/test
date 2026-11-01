@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Filament\Platform\Pages;
+namespace App\Filament\Platform\Auth;
 
 use App\Filament\Pages\Auth\Login;
 
