@@ -95,7 +95,7 @@ services:
       interval: 5s
       retries: 10
 
-  # HTTPS certificate is obtained and renewed automatically for APP_DOMAIN.
+  # HTTPS certificates are obtained and renewed automatically for APP_DOMAIN and platform.APP_DOMAIN.
   caddy:
     image: caddy:2
     restart: unless-stopped

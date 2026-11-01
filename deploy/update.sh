@@ -37,5 +37,8 @@ for key in WAHA_API_KEY WAHA_WEBHOOK_SECRET; do
     fi
 done
 docker compose --env-file .env up -d --build
+# Caddy keeps its addresses until told to re-read the Caddyfile (a new address gets its certificate).
+docker compose --env-file .env exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null 2>&1 \
+    || docker compose --env-file .env restart caddy
 docker image prune -f >/dev/null
 echo "Updated."

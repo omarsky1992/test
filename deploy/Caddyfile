@@ -1,4 +1,6 @@
-{$APP_DOMAIN} {
+# The site (client 1) and the platform owner's panel on «platform.» of the same address. Each gets
+# its own HTTPS certificate, obtained and renewed automatically.
+{$APP_DOMAIN}, platform.{$APP_DOMAIN} {
 	encode gzip
 	reverse_proxy app:8080
 }
