@@ -100,6 +100,24 @@ return [
             'timezone' => env('APP_TIMEZONE', 'Asia/Baghdad'),
         ],
 
+        // The platform (SaaS) database: the clients, their subscriptions and the platform owner. Each
+        // client's own data stays in its own database; client 1 is the original database above.
+        'platform' => [
+            'driver' => 'pgsql',
+            'url' => env('PLATFORM_DB_URL'),
+            'host' => env('DB_HOST', '127.0.0.1'),
+            'port' => env('DB_PORT', '5432'),
+            'database' => env('PLATFORM_DB_DATABASE', env('DB_DATABASE', 'laravel').'_platform'),
+            'username' => env('DB_USERNAME', 'root'),
+            'password' => env('DB_PASSWORD', ''),
+            'charset' => env('DB_CHARSET', 'utf8'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'search_path' => 'public',
+            'sslmode' => env('DB_SSLMODE', 'prefer'),
+            'timezone' => env('APP_TIMEZONE', 'Asia/Baghdad'),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),

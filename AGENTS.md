@@ -106,6 +106,13 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - `deploy/update.sh` dumps the database to `deploy/backups/pre-update/` before pulling (keeps the last 10) and stops if the dump fails.
 - System reset (Settings) is admin-only, needs the admin password and typing «تصفير»; it keeps users, settings, plans, payment methods and the audit log.
 
+## Platform (multi-tenant SaaS, in progress)
+
+- Decision: one database per client (tenant) on the same server, same code. Client 1 is the original database (`DB_DATABASE`, e.g. `subs`) with its users, data and address unchanged; never migrate or rewrite its rows for the platform.
+- Platform database: connection `platform` (`PLATFORM_DB_DATABASE`, default `{DB_DATABASE}_platform`), migrations only in `database/migrations/platform` (never in the main folder). Tables: `tenants` (slug, name, domain, database, status active/suspended/archived, `is_permanent`, plan, trial/subscription dates, `grace_days`, cached counts), `platform_admins` (the platform owner, separate from every client's users), `platform_audit_logs` (append-only trigger), `tenant_alerts` (unique per tenant/kind/end date/days, so an alert is raised once).
+- `php artisan platform:install` (`App\Platform\PlatformInstaller`, run on every start by `deploy/entrypoint.d/62-platform.sh`, a failure never stops the site): creates the platform database if missing (own connection, outside any transaction), migrates it and registers client 1 once (slug `main`, permanent, domain from `APP_URL`); it only reads client 1 (`settings.company.name`). `update.sh` also dumps the platform database to `backups/pre-update/platform/`.
+- Rollback point before this work: commit `048084d`.
+
 ## Code map
 
 | Path | What |

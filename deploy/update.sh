@@ -14,6 +14,19 @@ if [ -n "$(docker compose --env-file .env ps -q db 2>/dev/null)" ]; then
         echo "Backup failed: update stopped, nothing was changed." >&2
         exit 1
     fi
+    # The platform database (clients and subscriptions), once it exists.
+    if docker compose --env-file .env exec -T db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT 1 FROM pg_database WHERE datname = '"'"'${POSTGRES_DB}_platform'"'"'"' | grep -q 1; then
+        mkdir -p backups/pre-update/platform
+        file="backups/pre-update/platform/$(date +%Y%m%d-%H%M%S).sql.gz"
+        if docker compose --env-file .env exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "${POSTGRES_DB}_platform"' | gzip > "$file" && [ -s "$file" ]; then
+            echo "Backup: $file"
+            ls -1t backups/pre-update/platform/*.sql.gz | tail -n +11 | xargs -r rm -f
+        else
+            rm -f "$file"
+            echo "Backup of the platform database failed: update stopped, nothing was changed." >&2
+            exit 1
+        fi
+    fi
 fi
 git pull --ff-only
 # Keys for the WhatsApp QR service, created once (never shown, never committed).

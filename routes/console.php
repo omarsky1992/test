@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SyncRun;
+use App\Platform\PlatformInstaller;
 use App\Services\BackupService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
@@ -13,6 +14,12 @@ use App\WhatsApp\WahaGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+
+// Sets up the platform (SaaS) database and registers this system as client 1; safe on every start.
+Artisan::command('platform:install', function (PlatformInstaller $installer) {
+    $result = $installer->install();
+    $this->info(($result['created_database'] ? 'Platform database created. ' : '')."Client 1: {$result['tenant']->name} ({$result['tenant']->database}).");
+})->purpose('Set up the platform database and register the original system as client 1');
 
 Artisan::command('backup:run', function (BackupService $backups) {
     $run = $backups->run('cli');
