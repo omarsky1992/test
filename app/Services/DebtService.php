@@ -75,8 +75,9 @@ class DebtService
             $this->audit->log('debt.created', $debt, null, [
                 'number' => $debt->number, 'amount' => $amount, 'bucket' => $bucket->value, 'source' => $source->value,
             ], subscriberId: $account->subscriber_id);
+            app(PaymentService::class)->settleFromCredit($account); // advance credit pays it
 
-            return $debt;
+            return $debt->fresh();
         });
     }
 

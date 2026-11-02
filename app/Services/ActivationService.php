@@ -159,8 +159,9 @@ class ActivationService
                     debtIds: [$debt->id],
                     notes: "تسديد التفعيل {$activation->number}",
                 );
-            } elseif ($settlement === Settlement::Credit) {
-                app(PaymentService::class)->applyCredit($account, $debt->fresh());
+            } else {
+                // Credit already on the account pays the new debt (also when «دين» was chosen).
+                app(PaymentService::class)->settleFromCredit($account);
             }
             app(Notifier::class)->activation($activation);
 

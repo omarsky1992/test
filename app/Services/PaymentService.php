@@ -36,8 +36,9 @@ class PaymentService
     ) {}
 
     /**
-     * Records a receipt. Debt payments go to the chosen debts in order, else oldest first; anything
-     * left over becomes advance credit on the account. A 7-day debt paid in full completes its
+     * Records a receipt. Debt payments go to the chosen debts in order, else oldest first; an advance
+     * («دفع مقدم») first pays any open debt (primary or secondary, oldest first), so an account never
+     * shows credit beside a debt; anything left over becomes advance credit on the account. A 7-day debt paid in full completes its
      * activation; with $transferRemainder, a 7-day debt left partly unpaid moves to primary debts.
      *
      * The money can arrive through several payment methods at once ($lines); the single-method
@@ -112,7 +113,7 @@ class PaymentService
                 ]);
             }
 
-            $plan = $type === PaymentType::DebtPayment ? $this->allocationPlan($account, $amount, $debtIds) : [];
+            $plan = $this->allocationPlan($account, $amount, $type === PaymentType::DebtPayment ? $debtIds : null);
             $allocated = array_sum(array_column($plan, 'amount'));
             $credit = $amount - $allocated;
 
@@ -245,6 +246,29 @@ class PaymentService
         }
 
         return $plan;
+    }
+
+    /**
+     * The account's advance credit pays its open debts, oldest first (called whenever a debt is
+     * added), so credit and a debt never stand side by side. Returns the amount used.
+     */
+    public function settleFromCredit(Account $account): int
+    {
+        $used = 0;
+        if ($this->creditBalance($account) <= 0) {
+            return 0;
+        }
+        $open = Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])
+            ->where('balance', '>', 0)->orderBy('debt_date')->orderBy('id')->get();
+        foreach ($open as $debt) {
+            $applied = $this->applyCredit($account, $debt);
+            $used += $applied;
+            if ($applied === 0 || $this->creditBalance($account) <= 0) {
+                break;
+            }
+        }
+
+        return $used;
     }
 
     /**

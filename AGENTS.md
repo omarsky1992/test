@@ -44,6 +44,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Each operation lives in a service (`app/Services`); Filament actions call services, never write money tables directly. Services log to `App\Services\Audit`.
 
 **Debts**
+- An account never shows advance credit beside an unpaid debt: an advance («دفع مقدم») first pays the open debts, primary or secondary, oldest first (`PaymentService::record`, same allocation as a debt payment), only the rest becomes credit; and every new debt (manual, opening, sync renewal, activation whatever its settlement, device sale) is paid at once from credit already there (`PaymentService::settleFromCredit` → `applyCredit`, normal `credit_application` postings). `php artisan credits:settle` lists accounts that had both from before; `--apply` settles them (audited, source `system`); run per client with `TENANT=` or `tenants:each`.
 - Secondary debts (الديون الثانوية) and primary debts (الديون الأولية) are separate ledger accounts. Debts are shown beside the total balance and are never added to it.
 - Total balance on the dashboard = cash boxes + wallets + company balance + employees' custody. Employee advances are shown beside it, not in it.
 

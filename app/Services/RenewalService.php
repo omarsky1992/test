@@ -147,6 +147,7 @@ class RenewalService
                         ['account' => Ledger::RENEWALS_CLEARING, 'credit' => $amount],
                     ], $debt, "دين ثانوي – تجديد {$account->username}", $account->branch_id);
                     $renewal->update(['debt_id' => $debt->id]);
+                    app(PaymentService::class)->settleFromCredit($account); // advance credit pays it
                 }
 
                 $this->audit->log('renewal.detected', $renewal, ['days_left' => $previousDays, 'ends_at' => $previousEndsAt], [

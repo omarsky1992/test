@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\SyncRun;
+use App\Services\PaymentService;
 use App\Models\User;
 use App\Platform\Php;
 use App\Platform\PlatformAdmin;
@@ -27,6 +28,29 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
+
+// Accounts that show advance credit beside an unpaid debt (from before advances paid debts): lists
+// them; with --apply the credit pays those debts through the normal ledger posting (nothing edited).
+Artisan::command('credits:settle {--apply : Use the credit to pay the debts}', function (PaymentService $payments) {
+    $accounts = \App\Models\Account::whereHas('debts', fn ($q) => $q->whereIn('status', ['open', 'partial'])->where('balance', '>', 0))->with('subscriber')->get()
+        ->filter(fn ($account) => $payments->creditBalance($account) > 0)->values();
+    if ($accounts->isEmpty()) {
+        $this->info('No account has credit beside a debt.');
+
+        return 0;
+    }
+    $total = 0;
+    foreach ($accounts as $account) {
+        $credit = $payments->creditBalance($account);
+        $due = (int) $account->debts()->whereIn('status', ['open', 'partial'])->sum('balance');
+        $used = $this->option('apply') ? app(\App\Services\Audit::class)->withSource('system', fn () => $payments->settleFromCredit($account)) : min($credit, $due);
+        $total += $used;
+        $this->line(sprintf('%s (%s): credit %s, debts %s → %s %s', $account->subscriber?->full_name, $account->username, number_format($credit), number_format($due), $this->option('apply') ? 'paid' : 'would pay', number_format($used)));
+    }
+    $this->info(($this->option('apply') ? 'Paid from credit: ' : 'Would pay from credit (run with --apply): ').number_format($total).' IQD on '.$accounts->count().' accounts.');
+
+    return 0;
+})->purpose('List (or settle with --apply) accounts that have advance credit beside an unpaid debt');
 
 // Sets up the platform (SaaS) database and registers this system as client 1; safe on every start.
 Artisan::command('platform:install', function (PlatformInstaller $installer) {

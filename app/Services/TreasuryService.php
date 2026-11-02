@@ -522,6 +522,9 @@ class TreasuryService
             $txn = $this->ledger->post('device_sale', $now, $lines, $sale, "بيع {$sale->number}", $sale->branch_id);
             $sale->update(['txn_id' => $txn->id]);
             $this->audit->log('sale.created', $sale, null, ['description' => $description, 'total' => $total, 'settlement' => $sale->settlement], subscriberId: $account?->subscriber_id);
+            if (isset($debt)) {
+                app(PaymentService::class)->settleFromCredit($account); // advance credit pays the sale's debt
+            }
 
             return $sale;
         });

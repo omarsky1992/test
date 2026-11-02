@@ -609,12 +609,10 @@ class Operations
         if (! $account || $amount <= 0) {
             return null;
         }
-        if ($get('payment_type') === PaymentType::Advance->value) {
-            return new HtmlString('يُضاف <b>'.Money::format($amount).'</b> رصيداً مقدماً على الحساب.');
-        }
-
+        // An advance pays the open debts first (oldest first); only the rest becomes credit.
+        $advance = $get('payment_type') === PaymentType::Advance->value;
         try {
-            $plan = app(PaymentService::class)->allocationPlan($account, $amount, array_map('intval', $get('debt_ids') ?? []) ?: null);
+            $plan = app(PaymentService::class)->allocationPlan($account, $amount, $advance ? null : (array_map('intval', $get('debt_ids') ?? []) ?: null));
         } catch (BusinessRuleException $e) {
             return new HtmlString(e($e->getMessage()));
         }
@@ -630,6 +628,10 @@ class Operations
             $lines[] = 'رصيد مقدم: '.Money::format($credit);
         }
 
-        return new HtmlString('<b>معاينة التوزيع</b><br>'.implode('<br>', $lines));
+        if ($advance && $plan === []) {
+            return new HtmlString('يُضاف <b>'.Money::format($amount).'</b> رصيداً مقدماً على الحساب.');
+        }
+
+        return new HtmlString('<b>معاينة التوزيع</b>'.($advance ? ' (يُسدَّد الدين أولاً)' : '').'<br>'.implode('<br>', $lines));
     }
 }
