@@ -8,6 +8,7 @@ use App\Platform\PlatformAudit;
 use App\Platform\ClientBackups;
 use App\Platform\PlatformInstaller;
 use App\Platform\SubscriptionAlerts;
+use App\Platform\Tenant;
 use App\Platform\TenantStats;
 use App\Platform\TenantManager;
 use App\Services\BackupService;
@@ -132,6 +133,33 @@ Artisan::command('platform:backup', function (ClientBackups $backups) {
     return $failed === 0 ? 0 : 1;
 })->purpose('Back up the platform database and the clients\' databases');
 Schedule::command('platform:backup')->dailyAt('03:30')->timezone('Asia/Baghdad')->withoutOverlapping(120);
+
+// A client's own WhatsApp (QR) service, for deploy/client-whatsapp.sh: makes its keys once (kept
+// encrypted in the platform database) and prints them as the service's environment lines.
+Artisan::command('platform:whatsapp {slug} {--url= : The service inside the server, e.g. http://waha-slug:3000}', function (string $slug) {
+    $tenant = Tenant::where('slug', $slug)->first();
+    if ($tenant === null || $tenant->database === app(TenantManager::class)->homeDatabase()) {
+        $this->error("No such client (client 1 keeps the server's own WhatsApp): {$slug}");
+
+        return 1;
+    }
+    $url = (string) ($this->option('url') ?: "http://waha-{$slug}:3000");
+    if (! preg_match('#^http://waha-[a-z0-9-]+:3000$#', $url)) {
+        $this->error("Unexpected service address: {$url}");
+
+        return 1;
+    }
+    $new = ! $tenant->hasWhatsapp();
+    $tenant->forceFill([
+        'waha_url' => $url,
+        'waha_api_key' => $tenant->waha_api_key ?: bin2hex(random_bytes(32)),
+        'waha_webhook_secret' => $tenant->waha_webhook_secret ?: bin2hex(random_bytes(32)),
+    ])->save();
+    if ($new) {
+        app(PlatformAudit::class)->log('tenant.whatsapp_service', $tenant, null, ['waha_url' => $url]);
+    }
+    $this->line('WAHA_API_KEY='.$tenant->waha_api_key);
+})->purpose('Create (once) and print the keys of a client\'s own WhatsApp service');
 
 // Which client this process works on (for checks and for `tenants:each`).
 Artisan::command('tenants:current', function (TenantManager $tenants) {

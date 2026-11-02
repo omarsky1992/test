@@ -41,7 +41,7 @@ class WhatsAppWebhookController extends Controller
      * Messages from the phone linked by QR code (WAHA). Signed with X-Webhook-Hmac: SHA-512 HMAC
      * of the raw body with WAHA_WEBHOOK_SECRET.
      */
-    public function receiveQr(Request $request, \App\WhatsApp\WahaInbox $inbox): Response
+    public function receiveQr(Request $request, \App\WhatsApp\WahaInbox $inbox, ?string $client = null): Response
     {
         $secret = (string) config('whatsapp.waha.webhook_secret');
         $signature = (string) $request->header('X-Webhook-Hmac');

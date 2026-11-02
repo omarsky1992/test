@@ -227,7 +227,11 @@ class WhatsappSettings extends Page
                 'sent_today' => WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', now()->startOfDay())->count(),
                 'failed' => WhatsappOutbox::where('status', 'failed')->count(),
             ],
-            'checks' => [
+            // Another client: its service is set up by the platform owner; no server keys to show.
+            'checks' => ! app(\App\Platform\TenantManager::class)->isHome() ? [
+                ['إدارة المنصة', 'خدمة الربط بالباركود (إن لم تكن جاهزة: تواصل مع إدارة المنصة لتجهيزها)', WahaGateway::configured() && filled(config('whatsapp.waha.webhook_secret'))],
+                ['whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', LocalWhisperTranscriber::configured()],
+            ] : [
                 ['WAHA_API_KEY + WAHA_WEBHOOK_SECRET', 'خدمة الربط بالباركود', WahaGateway::configured() && filled(config('whatsapp.waha.webhook_secret'))],
                 ['ANTHROPIC_API_KEY', 'فهم الأوامر الحرة والمشتريات (Claude)', ClaudeInterpreter::configured()],
                 [HttpTranscriber::configured() ? 'OPENAI_API_KEY' : 'whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', HttpTranscriber::configured() || LocalWhisperTranscriber::configured()],

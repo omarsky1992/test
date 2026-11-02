@@ -44,7 +44,7 @@ class AppServiceProvider extends ServiceProvider
                 $tenants->activateSlug($slug);
             }
         } elseif ($this->app->bound('request')) {
-            $tenants->identify($this->app->make('request')->getHost());
+            $tenants->identify($this->app->make('request')->getHost(), $this->app->make('request')->path());
         }
 
         Model::shouldBeStrict(! $this->app->isProduction());

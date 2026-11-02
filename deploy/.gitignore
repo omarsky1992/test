@@ -1,2 +1,5 @@
 backups/
 .env
+# Per-client WhatsApp services (keys), written by client-whatsapp.sh on the server.
+clients/
+docker-compose.clients.yml

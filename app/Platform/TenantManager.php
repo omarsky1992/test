@@ -56,7 +56,7 @@ class TenantManager
      * Switches to the client of this host. Returns false for a host that belongs to no client (the
      * caller answers 404); client 1's hosts work even before the platform database exists.
      */
-    public function identify(string $host): bool
+    public function identify(string $host, string $path = '/'): bool
     {
         if ($this->isPlatformHost($host)) {
             $this->activatePlatform();
@@ -64,6 +64,17 @@ class TenantManager
             return true;
         }
         if ($this->isHomeHost($host)) {
+            // A client's own WhatsApp service posts to http://app:8080/whatsapp/qr-webhook/{slug}: only
+            // from inside the server, and the controller still checks that client's own signature.
+            if (self::normalizeHost($host) === 'app' && preg_match('#^/?whatsapp/qr-webhook/([a-z][a-z0-9-]{1,28}[a-z0-9])$#', $path, $m)) {
+                $tenant = rescue(fn () => Tenant::where('slug', $m[1])->where('status', '<>', 'archived')->first(), null, report: false);
+                if ($tenant === null || ! $tenant->hasWhatsapp()) {
+                    return false;
+                }
+                $this->activate($tenant);
+
+                return true;
+            }
             $this->activate(null);
 
             return true;
@@ -156,8 +167,17 @@ class TenantManager
         ]);
         Storage::forgetDisk(['local', 'public']);
 
-        // Client 1's WhatsApp phones, AI keys and server dumps are never another client's.
+        // Client 1's WhatsApp phones, AI keys and server dumps are never another client's; a client
+        // with its own WhatsApp service gets that one (its webhook comes back to its own path).
         config($folder === null ? $this->homeConfig : array_map(fn () => null, $this->homeConfig));
+        if ($folder !== null && $this->current?->hasWhatsapp()) {
+            config([
+                'whatsapp.waha.url' => $this->current->waha_url,
+                'whatsapp.waha.api_key' => $this->current->waha_api_key,
+                'whatsapp.waha.webhook_secret' => $this->current->waha_webhook_secret,
+                'whatsapp.waha.webhook_url' => 'http://app:8080/whatsapp/qr-webhook/'.$this->current->slug,
+            ]);
+        }
 
         $this->forgetCaches();
     }
@@ -166,6 +186,7 @@ class TenantManager
     private function serverWide(): array
     {
         $keys = [
+            'whatsapp.waha.url', 'whatsapp.waha.webhook_url',
             'whatsapp.waha.api_key', 'whatsapp.waha.webhook_secret', 'whatsapp.waha_notify.api_key',
             'whatsapp.access_token', 'whatsapp.phone_number_id', 'whatsapp.app_secret', 'whatsapp.verify_token',
             'whatsapp.ai.api_key', 'whatsapp.transcribe.api_key', 'backup.server_dir',

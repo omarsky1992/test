@@ -24,7 +24,7 @@ class IdentifyTenant
 
     public function handle(Request $request, Closure $next): Response
     {
-        abort_unless($this->tenants->identify($request->getHost()), 404);
+        abort_unless($this->tenants->identify($request->getHost(), $request->path()), 404);
 
         $tenant = $this->tenants->current();
         if ($tenant !== null && in_array(Subscription::state($tenant), ['expired', 'suspended'], true) && ! $this->allowed($request)) {

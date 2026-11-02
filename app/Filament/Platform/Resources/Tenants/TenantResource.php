@@ -72,6 +72,10 @@ class TenantResource extends Resource
                 TextColumn::make('subscription_ends_at')->label('الانتهاء')->date('Y/m/d')->sortable()->placeholder('—')
                     ->description(fn (Tenant $t) => $t->trial_ends_at ? 'تجربة حتى '.$t->trial_ends_at->setTimezone(Subscription::tz())->format('Y/m/d') : null),
                 TextColumn::make('plan')->label('الباقة')->placeholder('—'),
+                TextColumn::make('whatsapp')->label('واتساب')->badge()
+                    ->state(fn (Tenant $t) => $t->is_permanent ? 'رقمك' : ($t->hasWhatsapp() ? 'مجهّز' : 'غير مجهّز'))
+                    ->color(fn (string $state) => $state === 'غير مجهّز' ? 'gray' : 'success')
+                    ->tooltip(fn (Tenant $t) => $t->is_permanent || $t->hasWhatsapp() ? null : "على السيرفر: bash ~/subs/deploy/client-whatsapp.sh {$t->slug}"),
                 TextColumn::make('subscribers_count')->label('المشتركون')->numeric()->sortable(),
                 TextColumn::make('users_count')->label('الموظفون')->numeric()->sortable(),
                 TextColumn::make('created_at')->label('أُنشئ')->date('Y/m/d')->sortable(),

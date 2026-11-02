@@ -110,6 +110,12 @@ Route::post('/whatsapp/qr-webhook', [WhatsAppWebhookController::class, 'receiveQ
     ->withoutMiddleware(PreventRequestForgery::class)
     ->middleware('throttle:300,1')
     ->name('whatsapp.qr-webhook');
+// The same for another client's own WhatsApp service (the client comes from {client}, internal host only, see TenantManager).
+Route::post('/whatsapp/qr-webhook/{client}', [WhatsAppWebhookController::class, 'receiveQr'])
+    ->withoutMiddleware(PreventRequestForgery::class)
+    ->middleware('throttle:300,1')
+    ->where('client', '[a-z][a-z0-9-]{1,28}[a-z0-9]')
+    ->name('whatsapp.qr-webhook.client');
 
 // The image of a bulk message, for connections that send it as a link (free WAHA Core). Only with a
 // valid signature from the message itself; nothing else is reachable this way.
