@@ -2,6 +2,7 @@
 
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Platform\Php;
 use App\Platform\PlatformAdmin;
 use App\Platform\PlatformAudit;
 use App\Platform\ClientBackups;
@@ -41,7 +42,7 @@ Artisan::command('tenants:each {task : The command and its options, quoted}', fu
     $results = Process::pool(function (Pool $pool) use ($slugs, $task) {
         foreach ($slugs as $slug) {
             $pool->as($slug ?? 'main')->path(base_path())->env($slug === null ? [] : ['TENANT' => $slug])->forever()
-                ->command([PHP_BINARY, 'artisan', ...$task, '--no-interaction']);
+                ->command([Php::binary(), 'artisan', ...$task, '--no-interaction']);
         }
     })->start()->wait();
     $failed = 0;

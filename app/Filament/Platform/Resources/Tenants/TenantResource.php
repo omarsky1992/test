@@ -137,6 +137,14 @@ class TenantResource extends Resource
                     $action->halt();
 
                     return;
+                } catch (\Throwable $e) {
+                    // Nothing is left half-made (the provisioner removes it); say why, keep the form.
+                    report($e);
+                    Notification::make()->danger()->persistent()->title('تعذّر إنشاء العميل')
+                        ->body(Str::limit($e->getMessage(), 400))->send();
+                    $action->halt();
+
+                    return;
                 }
                 Notification::make()->success()->persistent()->title("أُنشئ العميل «{$tenant->name}»")
                     ->body("الرابط: https://{$tenant->domain}\nالمستخدم: {$data['username']}\nكلمة المرور: المؤقتة التي كانت في النموذج (لا تُحفظ في المنصة).")

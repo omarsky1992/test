@@ -3,9 +3,11 @@
 namespace Tests\Feature\Platform;
 
 use App\Platform\ClientBackups;
+use App\Platform\Php;
 use App\Platform\Tenant;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Process;
 
 /** Certificates only for real clients' addresses, and the daily dumps of every client's database. */
 class PlatformOperationsTest extends BaseTestCase
@@ -32,6 +34,13 @@ class PlatformOperationsTest extends BaseTestCase
         // Only from inside the server.
         Tenant::where('slug', 'wakeel2')->update(['status' => 'active']);
         $this->get('http://localhost/platform/tls-check?domain=wakeel2.test')->assertNotFound();
+    }
+
+    public function test_child_processes_use_the_command_line_php(): void
+    {
+        $php = Php::binary();
+        $this->assertStringNotContainsString('fpm', $php);
+        $this->assertSame('cli', trim(Process::run([$php, '-r', 'echo PHP_SAPI;'])->output()));
     }
 
     public function test_the_daily_backup_dumps_the_platform_and_every_client_but_client_1(): void

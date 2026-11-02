@@ -32,6 +32,7 @@ class TenantProvisioner
             throw ValidationException::withMessages(['password' => 'كلمة المرور 8 أحرف على الأقل.']);
         }
 
+        @set_time_limit(600); // building a database takes a little while inside a web request
         $this->createDatabase($database);
         $tenant = null;
         try {
@@ -50,7 +51,7 @@ class TenantProvisioner
                 'PROVISION_PASSWORD' => $data['password'],
                 'PROVISION_PHONE' => (string) ($data['phone'] ?? ''),
                 'PROVISION_COMPANY' => $data['name'],
-            ])->run([PHP_BINARY, 'artisan', 'platform:provision', '--no-interaction']);
+            ])->run([Php::binary(), 'artisan', 'platform:provision', '--no-interaction']);
             if ($result->failed()) {
                 throw new \RuntimeException('Provisioning failed: '.Str::limit(trim($result->errorOutput() ?: $result->output()), 500));
             }
