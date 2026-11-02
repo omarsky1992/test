@@ -213,6 +213,21 @@ class WhatsAppQrTest extends TestCase
 
     // ---- Staff alerts ----
 
+    public function test_an_advance_payment_on_a_secondary_debt_is_a_debt_payment_with_its_alert(): void
+    {
+        app(NumberRegistry::class)->add('07702222222', $this->admin, 'المحل', alerts: true);
+        $account = $this->renewed('حسن علي');
+
+        app(PaymentService::class)->record($account, 35000, PaymentMethod::Cash, $this->cash(), \App\Enums\PaymentType::Advance);
+
+        // The secondary debt is paid, «يجب التفعيل» opens and the staff are told, as with any debt payment.
+        $this->assertSame(\App\Enums\DebtStatus::Paid, $account->debts()->sole()->status);
+        $this->assertTrue(\App\Models\ActivationDue::where('account_id', $account->id)->where('status', 'pending')->exists());
+        $alert = WhatsappOutbox::where('kind', 'alert_must_activate')->sole();
+        $this->assertStringContainsString('حسن علي', $alert->body);
+        $this->assertSame(0, app(PaymentService::class)->creditBalance($account));
+    }
+
     public function test_paying_a_secondary_debt_alerts_the_alert_numbers_and_the_queue_sends_it(): void
     {
         app(NumberRegistry::class)->add('07702222222', $this->admin, 'المحل', alerts: true);
