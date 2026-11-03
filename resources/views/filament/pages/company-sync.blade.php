@@ -6,6 +6,23 @@
     $td = 'padding:8px 6px;border-bottom:1px solid var(--subs-subtle);vertical-align:top';
 @endphp
 <x-filament-panels::page>
+    @if ($firstImport)
+        <x-filament::section icon="heroicon-o-arrow-down-tray" icon-color="success" heading="استيراد المشتركين من موقع الشركة (أول مرة)">
+            <p style="font-size:14px;line-height:1.9;margin:0">
+                النظام فارغ. الاستيراد يجلب كل مشتركيك من موقع الشركة (الفعّالين والمنتهين) مع أرقامهم والفات والبورت والموقع وتواريخ الانتهاء،
+                بدون أي دين أو حركة مالية. أول مرة قد يأخذ بضع دقائق حسب عدد المشتركين.
+            </p>
+            <ol style="font-size:14px;line-height:2;margin:10px 0;padding-inline-start:20px">
+                <li><a href="{{ route('sync.extension') }}" style="color:#0f766e;font-weight:700">نزّل إضافة كروم الخاصة بنظامك</a> ونصّبها (الخطوات في «تنصيب إضافة كروم» بالأسفل).</li>
+                <li>سجّل الدخول في موقع الشركة admin.ftth.iq بنفس المتصفح.</li>
+                <li>اضغط الزر وانتظر حتى تظهر النتيجة هنا.</li>
+            </ol>
+            <button type="button" id="subs-import-start"
+                    style="display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:10px;border:0;background:#15803d;color:#fff;font:inherit;font-weight:700;font-size:16px;cursor:pointer">
+                ⬇ استيراد المشتركين الآن
+            </button>
+        </x-filament::section>
+    @endif
     <x-filament::section icon="heroicon-o-arrow-path" icon-color="primary" heading="المزامنة من موقع الشركة">
         <p style="font-size:14px;line-height:1.9;margin:0">
             موقع الشركة لا يقبل الاتصال من سيرفرات خارج العراق، لذلك تتم المزامنة من متصفحك بجلستك في موقع الشركة.
@@ -67,12 +84,14 @@
             onDone: () => setTimeout(() => location.reload(), 4000),
         });
         document.addEventListener('click', (e) => {
-            const button = e.target.closest && e.target.closest('#subs-sync-start, #subs-ont-start');
+            const button = e.target.closest && e.target.closest('#subs-sync-start, #subs-ont-start, #subs-import-start');
             if (!button) return;
             heard = false;
             // The readings have their own button and run, so they never slow the activations sync.
             const mode = button.id === 'subs-ont-start' ? 'subs-ont' : 'subs-sync';
-            const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#' + mode, 'ftth_sync');
+            // The first import reads the whole list (active and ended), not only the active subscriptions.
+            const list = button.id === 'subs-import-start' ? 'https://admin.ftth.iq/subscriptions' : 'https://admin.ftth.iq/subscriptions?filterBy=Active';
+            const tab = window.open(list + '#' + mode, 'ftth_sync');
             if (!tab) { set('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.', 'bad'); return; }
             set('جارٍ فتح موقع الشركة…', '');
             clearTimeout(watchdog);

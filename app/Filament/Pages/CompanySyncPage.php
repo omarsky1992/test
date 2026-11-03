@@ -194,6 +194,8 @@ class CompanySyncPage extends Page
         $s = app(Settings::class);
 
         return [
+            // An empty system: the page leads with «استيراد المشتركين» (the whole list, all details).
+            'firstImport' => ! \App\Models\Account::query()->exists(),
             'enabled' => (bool) $s->get('sync.enabled'),
             'interval' => (int) $s->get('sync.interval_minutes'),
             'configured' => filled($s->get('sync.client_id')) && (filled($s->get('sync.password')) || filled($s->get('sync.refresh_token'))),

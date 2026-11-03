@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\Settings;
+use App\Models\Account;
 use App\Sync\BrowserPayloadClient;
 use App\Sync\BrowserScripts;
 use App\Sync\CompanySync;
@@ -54,8 +55,12 @@ class BrowserSyncController extends Controller
         [$customers, $subscriptions] = $this->lists($request);
         $client = new BrowserPayloadClient($customers, $subscriptions);
 
+        // The first import into an empty system fetches every customer's details at once (phone,
+        // device, FAT, GPS); later syncs only the few that still miss something.
+        $limit = Account::query()->exists() ? max(0, (int) $settings->get('sync.detail_limit')) : PHP_INT_MAX;
+
         return response()->json([
-            'needs' => $sync->customersNeedingDetails($client, max(0, (int) $settings->get('sync.detail_limit'))),
+            'needs' => $sync->customersNeedingDetails($client, $limit),
             'subscriptions' => count($subscriptions),
         ]);
     }

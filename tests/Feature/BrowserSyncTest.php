@@ -63,6 +63,40 @@ class BrowserSyncTest extends TestCase
         $this->postJson('/sync/browser/plan', $this->lists())->assertOk()->assertJson(['needs' => []]);
     }
 
+    /** @return array{customers: list<array>, subscriptions: list<array>} {$count} subscribers, each its own customer */
+    private function manyLists(int $count): array
+    {
+        $lists = ['customers' => [], 'subscriptions' => []];
+        for ($i = 1; $i <= $count; $i++) {
+            $lists['customers'][] = ['id' => (string) (900000 + $i), 'displayValue' => "مشترك {$i}"];
+            $lists['subscriptions'][] = [
+                'username' => sprintf('USER%04d', $i), 'status' => ['displayValue' => $i % 3 === 0 ? 'Expired' : 'Active'],
+                'services' => [['type' => ['displayValue' => 'Base'], 'value' => 'BASIC']], 'expires' => '2026-10-15T10:00:00Z',
+                'customer' => ['id' => (string) (900000 + $i), 'displayValue' => "مشترك {$i}"], 'self' => ['id' => (string) (700000 + $i)],
+            ];
+        }
+
+        return $lists;
+    }
+
+    public function test_the_first_import_into_an_empty_system_takes_everyone_with_all_details(): void
+    {
+        $this->get('/company-sync')->assertOk()->assertSee('استيراد المشتركين الآن')->assertSee('id="subs-import-start"', false);
+
+        // Every customer's details are asked for at once (not 200 per sync), the ended ones included.
+        $lists = $this->manyLists(300);
+        $this->assertCount(300, $this->postJson('/sync/browser/plan', $lists)->assertOk()->json('needs'));
+
+        $this->postJson('/sync/browser/run', $lists)->assertOk()->assertJsonPath('status', 'success');
+        $this->assertSame([300, 300], [Subscriber::count(), Account::count()]);
+        $this->assertSame(0, \App\Models\Debt::count(), 'importing records no debt');
+
+        // From then on: the usual page and the usual limit.
+        $this->get('/company-sync')->assertOk()->assertDontSee('id="subs-import-start"', false);
+        \Illuminate\Support\Facades\Cache::flush();
+        $this->assertCount(200, $this->postJson('/sync/browser/plan', $lists)->assertOk()->json('needs'));
+    }
+
     public function test_a_browser_run_creates_the_subscriber_with_all_fields(): void
     {
         $response = $this->postJson('/sync/browser/run', [...$this->lists(), 'details' => $this->details()]);
