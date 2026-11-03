@@ -108,6 +108,7 @@ Never require manual SQL on the server. Schema changes go in new migrations (nev
 - Every screen and action checks a permission (`App\Support\Permissions`, grouped in `Permissions::GROUPS`); admins pass everything via `Gate::before`.
 - Per employee: role permissions + direct grants − `users.denied_permissions` (`User::hasPermissionTo`), set from «إدارة صلاحيات الموظفين» (`PermissionService::apply`). Nobody edits their own permissions, only the admin assigns roles, and a non-admin manager cannot grant what they do not hold. Services re-check permissions (AuthorizationException), not only the buttons.
 - `deploy/update.sh` dumps the database to `deploy/backups/pre-update/` before pulling (keeps the last 10) and stops if the dump fails.
+- «سجل العمليات» (`AuditLogResource`, `App\Support\AuditDetails`, read only): each entry shows «إلى من» (the subscriber, linked, and the account, read from the entry's record when the entry did not write it), «من أين» (لوحة التحكم / واتساب / مزامنة / النظام, the box the money went to or came from, phone or computer) and «كيف» (the written fields in Arabic, amounts as dinars, old ← new); filters by action, user, source and subscriber. New actions get an Arabic label in `ACTIONS` and new field names in `AuditDetails::KEYS`.
 - System reset (Settings) is admin-only, needs the admin password and typing «تصفير»; it keeps users, settings, plans, payment methods and the audit log.
 
 ## Platform (multi-tenant SaaS, in progress)

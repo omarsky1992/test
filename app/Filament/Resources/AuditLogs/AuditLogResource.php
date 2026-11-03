@@ -3,8 +3,10 @@
 namespace App\Filament\Resources\AuditLogs;
 
 use App\Filament\Resources\AuditLogs\Pages\ListAuditLogs;
+use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Support\AuditDetails;
 use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\KeyValueEntry;
@@ -50,6 +52,24 @@ class AuditLogResource extends Resource
         'account.synced_new' => 'حساب جديد من الموقع', 'account.synced' => 'تحديث حساب من الموقع', 'renewal.detected' => 'تجديد مكتشف', 'renewal.reclassified' => 'تصحيح تجديد إلى تفعيل',
         'settings.sync_updated' => 'إعدادات المزامنة', 'custody.settled' => 'تسديد عهدة للصندوق', 'advance.created' => 'سلفة موظف',
         'advance.repaid' => 'تسديد سلفة', 'system.reset' => 'تصفير النظام',
+        'payment.box_changed' => 'تصحيح الصندوق', 'subscriber.notify_phone' => 'رقم الرسائل', 'custody.renamed' => 'تغيير اسم العهدة',
+        'custody.handover_requested' => 'طلب تسليم عهدة', 'custody.handover_approved' => 'موافقة تسليم عهدة', 'custody.handover_rejected' => 'رفض تسليم عهدة',
+        'fund_transfer.voided' => 'إلغاء تحويل', 'money_account.reset' => 'تصفير رصيد بطاقة', 'money_account.reset_voided' => 'إلغاء تصفير بطاقة',
+        'renewal.decided' => 'قرار المفعّل حديثاً', 'renewal.payment_source' => 'نوع دفع التجديد',
+        'activation_due.opened' => 'يجب التفعيل', 'activation_due.done' => 'تم التفعيل', 'activation_due.cancelled' => 'إلغاء يجب التفعيل',
+        'activation_reminder.set' => 'تذكير تفعيل', 'activation_reminder.cancelled' => 'إلغاء تذكير تفعيل',
+        'note.created' => 'ملاحظة جديدة', 'note.closed' => 'إغلاق ملاحظة', 'note.deleted' => 'حذف ملاحظة',
+        'blacklist.added' => 'إضافة للقائمة السوداء', 'blacklist.removed' => 'إزالة من القائمة السوداء',
+        'location.deleted' => 'حذف موقع البيت', 'location.photo_deleted' => 'حذف صورة البيت',
+        'secondary_sale.created' => 'مبيعات ثانوية', 'secondary_sale.voided' => 'إلغاء مبيعات ثانوية', 'secondary_sales.reset' => 'تصفير المبيعات الثانوية',
+        'stock.added' => 'إضافة كروت', 'stock.activated' => 'تفعيل كارت', 'stock.dispensed' => 'صرف كارت', 'stock.voided' => 'إلغاء كارت',
+        'period.closed' => 'تصفير المبيعات/المشتريات', 'period.opened' => 'فتح فترة', 'report.rotation_sent' => 'إرسال تقرير الدوّار',
+        'whatsapp.command' => 'أمر واتساب', 'whatsapp.unauthorized' => 'رقم غير مخوّل', 'whatsapp.test_sent' => 'اختبار رسالة واتساب',
+        'whatsapp.broadcast' => 'رسائل جماعية', 'whatsapp.reminder' => 'تذكير واتساب', 'whatsapp.reminders_queued' => 'تذكيرات واتساب',
+        'whatsapp_number.added' => 'رقم واتساب مخوّل', 'whatsapp_number.deleted' => 'حذف رقم واتساب',
+        'message_template.created' => 'قالب رسالة جديد', 'message_template.updated' => 'تعديل قالب رسالة', 'message_template.deleted' => 'حذف قالب رسالة',
+        'command_pattern.created' => 'صيغة أمر جديدة', 'command_pattern.updated' => 'تعديل صيغة أمر', 'command_pattern.deleted' => 'حذف صيغة أمر',
+        'user.permissions_changed' => 'تعديل الصلاحيات',
     ];
 
     public static function canViewAny(): bool
@@ -68,32 +88,40 @@ class AuditLogResource extends Resource
             TextEntry::make('occurred_at')->label('الوقت')->dateTime('Y/m/d H:i:s'),
             TextEntry::make('user.name')->label('المستخدم')->placeholder('النظام'),
             TextEntry::make('action')->label('العملية')->formatStateUsing(fn ($state) => self::ACTIONS[$state] ?? $state),
-            TextEntry::make('entity')->label('السجل')->state(fn (AuditLog $r) => "{$r->entity_type} #{$r->entity_id}"),
+            TextEntry::make('target')->label('إلى من')->state(fn (AuditLog $r) => AuditDetails::target($r))->placeholder('—'),
+            TextEntry::make('origin')->label('من أين')->state(fn (AuditLog $r) => AuditDetails::origin($r)),
             TextEntry::make('reason')->label('السبب')->placeholder('—')->columnSpanFull(),
-            KeyValueEntry::make('old_values')->label('القيمة السابقة')->placeholder('—'),
-            KeyValueEntry::make('new_values')->label('القيمة الجديدة')->placeholder('—'),
+            KeyValueEntry::make('old_values')->label('القيمة السابقة')->placeholder('—')
+                ->state(fn (AuditLog $r) => AuditDetails::details($r->old_values) ?: null)->keyLabel('الحقل')->valueLabel('القيمة'),
+            KeyValueEntry::make('new_values')->label('كيف (التفاصيل)')->placeholder('—')
+                ->state(fn (AuditLog $r) => AuditDetails::details($r->new_values) ?: null)->keyLabel('الحقل')->valueLabel('القيمة'),
             TextEntry::make('ip_address')->label('IP')->placeholder('—'),
-            TextEntry::make('source')->label('المصدر'),
+            TextEntry::make('entity')->label('السجل')->state(fn (AuditLog $r) => "{$r->entity_type} #{$r->entity_id}"),
         ]);
     }
 
     public static function table(Table $table): Table
     {
         return $table
-            ->modifyQueryUsing(fn ($query) => $query->with('user'))
+            ->modifyQueryUsing(fn ($query) => $query->with(['user', 'subscriber']))
             ->defaultSort('occurred_at', 'desc')
             ->columns([
                 TextColumn::make('occurred_at')->label('الوقت')->dateTime('Y/m/d H:i')->sortable(),
                 TextColumn::make('user.name')->label('المستخدم')->placeholder('النظام'),
                 TextColumn::make('action')->label('العملية')->badge()->formatStateUsing(fn ($state) => self::ACTIONS[$state] ?? $state)
                     ->color(fn ($state) => str_contains($state, 'void') || str_contains($state, 'secret') || str_contains($state, 'edited') ? 'danger' : 'gray'),
-                TextColumn::make('summary')->label('التفاصيل')->wrap()->limit(80)
-                    ->state(fn (AuditLog $r) => collect($r->new_values ?? [])->map(fn ($v, $k) => $k.': '.(is_array($v) ? json_encode($v, JSON_UNESCAPED_UNICODE) : $v))->join(' · ')),
+                TextColumn::make('target')->label('إلى من')->placeholder('—')->wrap()
+                    ->state(fn (AuditLog $r) => AuditDetails::target($r))
+                    ->url(fn (AuditLog $r) => $r->subscriber_id && auth()->user()->can('subscribers.view') ? SubscriberResource::getUrl('view', ['record' => $r->subscriber_id]) : null),
+                TextColumn::make('origin')->label('من أين')->wrap()->state(fn (AuditLog $r) => AuditDetails::origin($r)),
+                TextColumn::make('summary')->label('كيف')->wrap()->limit(160)->state(fn (AuditLog $r) => AuditDetails::summary($r)),
                 TextColumn::make('reason')->label('السبب')->placeholder('—')->limit(40),
             ])
             ->filters([
                 SelectFilter::make('action')->label('العملية')->options(self::ACTIONS),
                 SelectFilter::make('user_id')->label('المستخدم')->options(fn () => User::pluck('name', 'id')),
+                SelectFilter::make('source')->label('من أين')->options(AuditDetails::SOURCES),
+                SelectFilter::make('subscriber_id')->label('المشترك')->relationship('subscriber', 'full_name')->searchable(),
             ])
             ->recordActions([ViewAction::make()]);
     }
