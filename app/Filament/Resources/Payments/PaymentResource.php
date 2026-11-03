@@ -108,7 +108,7 @@ class PaymentResource extends Resource
             ])
             ->recordActions([
                 Operations::receipt(),
-                ActionGroup::make([Operations::voidPayment()]),
+                ActionGroup::make([Operations::changePaymentBox(), Operations::voidPayment()]),
             ]);
     }
 

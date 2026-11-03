@@ -20,6 +20,7 @@ class Subscriber extends Model
         return [
             'status' => SubscriberStatus::class,
             'whatsapp_muted' => 'boolean',
+            'notify_alt_phone' => 'boolean',
             'whatsapp_muted_at' => 'immutable_datetime',
         ];
     }

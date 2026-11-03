@@ -302,6 +302,7 @@ class EmployeeFinance
                     $e->txn_type === 'fund_transfer' && $amount < 0 => ['handover', 'تسديد عهدة للصندوق'],
                     $e->txn_type === 'fund_transfer' => ['custody_in', 'تحويل إلى العهدة'],
                     $e->txn_type === 'reversal' => ['reversal', 'إلغاء عملية'],
+                    $e->txn_type === 'payment_box_change' => ['box_change', $amount < 0 ? 'تصحيح سند: نُقل من العهدة' : 'تصحيح سند: نُقل إلى العهدة'],
                     default => ['custody_other', $e->memo ?? $e->txn_type],
                 };
                 $payment = $e->txn_type === 'payment' ? $payments->get($e->source_id) : null;

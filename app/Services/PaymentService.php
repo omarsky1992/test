@@ -20,6 +20,7 @@ use App\Models\PaymentLine;
 use App\Models\PaymentMethodType;
 use App\WhatsApp\Notifier;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -310,6 +311,71 @@ class PaymentService
             }
 
             return $amount;
+        });
+    }
+
+    /**
+     * «تصحيح الصندوق»: the money of one line of a receipt went to the wrong box (e.g. an employee's
+     * custody instead of the Super Key card) or was entered with the wrong method. The ledger gets a
+     * correcting posting (out of the old box, into the new one; nothing is edited), the receipt line
+     * shows the new box and method, and the change is kept in `payment_box_changes`. Debts, credit
+     * and the subscriber are untouched; a later void reverses from the new box.
+     */
+    public function changeBox(Payment $payment, PaymentLine $line, MoneyAccount $to, ?PaymentMethodType $method, string $reason): Payment
+    {
+        if (! Auth::user()?->can('payments.change_box')) {
+            throw new AuthorizationException('لا تملك صلاحية تصحيح صندوق السند.');
+        }
+        if (trim($reason) === '') {
+            throw new BusinessRuleException('اكتب سبب التصحيح.');
+        }
+
+        return DB::transaction(function () use ($payment, $line, $to, $method, $reason) {
+            $payment = Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            $line = PaymentLine::whereKey($line->id)->where('payment_id', $payment->id)->lockForUpdate()->first()
+                ?? throw new BusinessRuleException('هذا السطر لا يخص السند.');
+            if ($payment->status !== DocumentStatus::Posted) {
+                throw new BusinessRuleException('لا يُصحَّح سند ملغى.');
+            }
+            if (! $to->is_active) {
+                throw new BusinessRuleException('الصندوق المختار غير فعّال.');
+            }
+            $from = MoneyAccount::findOrFail($line->money_account_id);
+            $method ??= $line->method;
+            if ($from->id === $to->id && $method->id === $line->payment_method_id) {
+                throw new BusinessRuleException('لم يتغيّر الصندوق ولا طريقة الدفع.');
+            }
+
+            $txn = null;
+            if ($from->id !== $to->id) {
+                $tag = ['subscriber_id' => $payment->subscriber_id, 'account_id' => $payment->account_id];
+                $txn = $this->ledger->post('payment_box_change', CarbonImmutable::now(), [
+                    ['account' => $to->ledger_account_id, 'debit' => $line->amount, ...$tag],
+                    ['account' => $from->ledger_account_id, 'credit' => $line->amount, ...$tag],
+                ], $payment, "تصحيح صندوق السند {$payment->receipt_number}: من {$from->name} إلى {$to->name}", $payment->branch_id);
+            }
+            DB::table('payment_box_changes')->insert([
+                'payment_id' => $payment->id, 'payment_line_id' => $line->id,
+                'from_money_account_id' => $from->id, 'to_money_account_id' => $to->id,
+                'from_method_id' => $line->payment_method_id, 'to_method_id' => $method->id,
+                'amount' => $line->amount, 'txn_id' => $txn?->id, 'reason' => mb_substr($reason, 0, 300),
+                'created_by' => Auth::id(), 'created_at' => now(),
+            ]);
+            $oldMethod = $line->method->name_ar;
+            $line->update(['money_account_id' => $to->id, 'payment_method_id' => $method->id]);
+
+            // The receipt's own summary follows its lines.
+            $lines = $payment->lines()->with('method')->orderBy('id')->get();
+            $categories = $lines->map(fn (PaymentLine $l) => $l->method->category)->unique(fn ($c) => $c->value)->values();
+            $payment->update([
+                'money_account_id' => $lines->first()->money_account_id,
+                'method' => $categories->count() === 1 ? $categories->first() : PaymentMethod::Mixed,
+            ]);
+
+            $this->audit->log('payment.box_changed', $payment, ['money_account' => $from->name, 'method' => $oldMethod],
+                ['money_account' => $to->name, 'method' => $method->name_ar, 'amount' => $line->amount], $reason, $payment->subscriber_id);
+
+            return $payment->fresh();
         });
     }
 

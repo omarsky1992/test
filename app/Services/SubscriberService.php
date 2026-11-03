@@ -74,6 +74,23 @@ class SubscriberService
         return $subscriber;
     }
 
+    /** Which of the subscriber's two numbers gets the WhatsApp messages (true = the second). */
+    public function setNotifyAltPhone(Subscriber $subscriber, bool $alt): Subscriber
+    {
+        if (! Auth::user()?->can('subscribers.update')) {
+            throw new AuthorizationException('لا تملك صلاحية تعديل المشترك.');
+        }
+        if ($alt && blank($subscriber->alt_phone)) {
+            throw new \App\Exceptions\BusinessRuleException('لا يوجد رقم ثانٍ لهذا المشترك.');
+        }
+        if ($subscriber->notify_alt_phone !== $alt) {
+            $subscriber->update(['notify_alt_phone' => $alt]);
+            $this->audit->log('subscriber.notify_phone', $subscriber, ['notify_alt_phone' => ! $alt], ['notify_alt_phone' => $alt, 'phone' => $alt ? $subscriber->alt_phone : $subscriber->phone], subscriberId: $subscriber->id);
+        }
+
+        return $subscriber;
+    }
+
     public function createAccount(Subscriber $subscriber, array $data): Account
     {
         $account = Account::create([

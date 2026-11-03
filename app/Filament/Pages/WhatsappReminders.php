@@ -148,9 +148,14 @@ class WhatsappReminders extends Page
         ];
     }
 
+    /**
+     * The number the subscriber's messages go to: the second number when chosen on the subscriber page
+     * (the one registered at the company may be out of use), else the account's or the first one.
+     */
     public static function phone(Account $account): ?string
     {
-        $phone = Arabic::phone($account->phone ?? $account->subscriber?->phone);
+        $subscriber = $account->subscriber;
+        $phone = Arabic::phone($subscriber?->notify_alt_phone && filled($subscriber->alt_phone) ? $subscriber->alt_phone : ($account->phone ?? $subscriber?->phone));
 
         return strlen($phone) >= 10 ? preg_replace('/^00/', '', $phone) : null;
     }

@@ -9,6 +9,7 @@ use App\Filament\Resources\Blacklist\BlacklistResource;
 use App\Filament\Resources\Debts\DebtResource;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Services\SubscriberService;
+use App\Support\Arabic;
 use App\Support\SubscriberFlags;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -47,6 +48,37 @@ class ViewSubscriber extends ViewRecord
             });
     }
 
+    /**
+     * «واتساب»: one button with a single number; with two, a menu to open a chat with either, and
+     * the choice of which number gets the messages (the company's may be out of use).
+     */
+    private function whatsappActions(): array
+    {
+        $subscriber = $this->getRecord();
+        $chat = fn (string $name, string $label, ?string $phone) => Action::make($name)->label($label)->icon(Heroicon::OutlinedChatBubbleLeftRight)->color('gray')
+            ->url('https://wa.me/'.preg_replace('/^00/', '', Arabic::phone((string) $phone)))->openUrlInNewTab();
+        if (blank($subscriber->alt_phone)) {
+            return [$chat('whatsapp', 'واتساب', $subscriber->phone)];
+        }
+        $usesAlt = (bool) $subscriber->notify_alt_phone;
+
+        return [ActionGroup::make([
+            $chat('whatsappFirst', 'واتساب الرقم الأول: '.$subscriber->phone.($usesAlt ? '' : ' ✓'), $subscriber->phone),
+            $chat('whatsappSecond', 'واتساب الرقم الثاني: '.$subscriber->alt_phone.($usesAlt ? ' ✓' : ''), $subscriber->alt_phone),
+            Action::make('notifyPhone')
+                ->label($usesAlt ? 'الرسائل تصل للرقم الثاني ← حوّلها للأول' : 'الرسائل تصل للرقم الأول ← حوّلها للثاني')
+                ->icon(Heroicon::OutlinedArrowsRightLeft)
+                ->visible(fn () => auth()->user()->can('subscribers.update'))
+                ->requiresConfirmation()
+                ->modalHeading('رقم رسائل الواتساب')
+                ->modalDescription(fn () => 'من الآن تصل رسائل المشترك (التفعيل، الانتهاء، الديون، الدفعات، الجماعية، التذكيرات) إلى: '.($usesAlt ? $subscriber->phone.' (الأول)' : $subscriber->alt_phone.' (الثاني)'))
+                ->action(function () use ($usesAlt) {
+                    app(SubscriberService::class)->setNotifyAltPhone($this->getRecord(), ! $usesAlt);
+                    Notification::make()->success()->title('تغيّر رقم رسائل الواتساب')->send();
+                }),
+        ])->label('واتساب')->icon(Heroicon::OutlinedChatBubbleLeftRight)->button()->color('gray')];
+    }
+
     protected function getHeaderActions(): array
     {
         return [
@@ -58,8 +90,7 @@ class ViewSubscriber extends ViewRecord
             DebtResource::manualDebtAction($this->getRecord()->accounts()->count() === 1 ? $this->getRecord()->accounts()->first() : null),
             Action::make('call')->label('اتصال')->icon(Heroicon::OutlinedPhone)->color('gray')
                 ->url(fn () => 'tel:'.$this->getRecord()->phone),
-            Action::make('whatsapp')->label('واتساب')->icon(Heroicon::OutlinedChatBubbleLeftRight)->color('gray')
-                ->url(fn () => 'https://wa.me/'.$this->getRecord()->phone_normalized)->openUrlInNewTab(),
+            ...$this->whatsappActions(),
             $this->muteAction(),
             ActionGroup::make([
                 BlacklistResource::addAction($this->getRecord()),

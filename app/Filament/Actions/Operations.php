@@ -388,6 +388,45 @@ class Operations
             fn (Payment $record, string $reason) => app(PaymentService::class)->void($record, $reason));
     }
 
+    /**
+     * «تصحيح الصندوق»: move a receipt line's money to the right box (and method) after a mistake,
+     * through a correcting ledger posting; debts and the subscriber are untouched.
+     */
+    public static function changePaymentBox(): Action
+    {
+        return Action::make('changePaymentBox')->label('تصحيح الصندوق')->icon(Heroicon::OutlinedArrowsRightLeft)->color('warning')
+            ->visible(fn (Payment $record) => $record->status === DocumentStatus::Posted && auth()->user()->can('payments.change_box'))
+            ->modalHeading(fn (Payment $record) => "تصحيح صندوق السند {$record->receipt_number}")
+            ->modalDescription('يُنقل المبلغ من الصندوق الخاطئ إلى الصحيح بقيد تصحيح (بدون تعديل أو حذف أي قيد)، ويبقى الدين والمشترك كما هما.')
+            ->fillForm(function (Payment $record) {
+                $line = $record->lines()->orderBy('id')->first();
+
+                return ['line_id' => $line?->id, 'money_account_id' => $line?->money_account_id, 'method_id' => $line?->payment_method_id];
+            })
+            ->schema(fn (Payment $record) => [
+                Select::make('line_id')->label('السطر')->required()->native(false)
+                    ->visible($record->lines()->count() > 1)
+                    ->options(fn () => $record->lines()->with(['method', 'moneyAccount'])->orderBy('id')->get()
+                        ->mapWithKeys(fn ($l) => [$l->id => "{$l->method->name_ar} · {$l->moneyAccount->name} — ".Money::format($l->amount)])->all()),
+                Select::make('money_account_id')->label('الصندوق الصحيح')->required()->native(false)->searchable()
+                    ->options(fn () => MoneyAccount::where('is_active', true)->orderBy('kind')->orderBy('name')->pluck('name', 'id')->all()),
+                Select::make('method_id')->label('طريقة الدفع')->required()->native(false)
+                    ->options(fn () => PaymentMethodType::orderBy('sort_order')->pluck('name_ar', 'id')->all()),
+                Textarea::make('reason')->label('السبب')->required()->rows(2)->maxLength(300)->placeholder('مثال: سُجّل في عهدة الموظف بالخطأ، الدفع كان على بطاقة سوبر كي'),
+            ])
+            ->modalSubmitActionLabel('تصحيح')
+            ->action(function (array $data, Payment $record, Action $action) {
+                try {
+                    $line = $record->lines()->whereKey($data['line_id'] ?? $record->lines()->orderBy('id')->value('id'))->firstOrFail();
+                    app(PaymentService::class)->changeBox($record, $line, MoneyAccount::findOrFail($data['money_account_id']), PaymentMethodType::findOrFail($data['method_id']), $data['reason']);
+                    Notification::make()->success()->title('صُحّح صندوق السند')->send();
+                } catch (BusinessRuleException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+                    $action->halt();
+                }
+            });
+    }
+
     public static function revealSecret(): Action
     {
         return Action::make('revealSecret')

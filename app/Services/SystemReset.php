@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Hash;
 class SystemReset
 {
     public const OPERATION_TABLES = [
-        'activation_dues', 'custody_handover_requests', 'ledger_entries', 'payment_allocations', 'payment_lines', 'debt_transfers', 'account_renewals', 'follow_ups',
+        'activation_dues', 'custody_handover_requests', 'ledger_entries', 'payment_box_changes', 'payment_allocations', 'payment_lines', 'debt_transfers', 'account_renewals', 'follow_ups',
         'settlement_distributions', 'employee_advance_repayments', 'device_notes', 'devices', 'payments', 'debts',
         'activation_periods', 'activations', 'device_sales', 'expenses', 'fund_transfers', 'company_settlements',
         'employee_advances', 'money_account_resets', 'period_closings', 'voucher_cards', 'secondary_sales', 'financial_transactions', 'sync_runs', 'import_runs', 'whatsapp_messages', 'whatsapp_outbox', 'document_sequences',
