@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Services\Settings;
 use App\Models\Account;
+use App\Services\Settings;
 use App\Sync\BrowserPayloadClient;
 use App\Sync\BrowserScripts;
 use App\Sync\CompanySync;
 use App\Sync\OntReadings;
 use App\Sync\WalletTransactions;
+use App\WhatsApp\Notifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -118,6 +119,28 @@ class BrowserSyncController extends Controller
         $count = is_array($ont) ? $readings->apply(array_slice($ont, 0, 20000, true)) : 0;
 
         return response()->json(['status' => 'success', 'summary' => "قُرئت القدرة المستلمة لـ {$count} جهاز", 'count' => $count]);
+    }
+
+    /**
+     * A fresh form token for the sync page left open for hours: when the session ran out and «تذكرني»
+     * signed the user in again, the page's old token is refused (419); it takes this one and retries.
+     */
+    public function token(Request $request): JsonResponse
+    {
+        abort_unless($request->user()->can('sync.run'), 403);
+
+        return response()->json(['token' => csrf_token()]);
+    }
+
+    /**
+     * «المزامنة التلقائية» lost the company panel session: the staff alert numbers are told to sign in
+     * again (at most once every three hours). Nothing is signed in for them.
+     */
+    public function sessionLost(Request $request, Notifier $notifier): JsonResponse
+    {
+        abort_unless($request->user()->can('sync.run'), 403);
+
+        return response()->json(['queued' => $notifier->syncSessionLost($request->user()->name)]);
     }
 
     /**

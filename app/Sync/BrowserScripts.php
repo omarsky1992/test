@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.4.0',
+            'version' => '1.4.1',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -324,7 +324,9 @@ const subsAuto = () => {
     box.style.background = color || '#0f766e';
     try { if (opener && !opener.closed) opener.postMessage({ type: 'auto_state', text }, SUBS_APP); } catch (e) {}
   };
-  let timer = null, busy = false;
+  let timer = null, busy = false, warned = false;
+  // Tell the system once per sign-out, so the staff get a WhatsApp alert to sign in again.
+  const lost = () => { if (warned) return; warned = true; try { if (opener && !opener.closed) opener.postMessage({ type: 'session_lost' }, SUBS_APP); } catch (e) {} };
   const stop = (text) => {
     sessionStorage.removeItem(SUBS_AUTO); sessionStorage.removeItem(SUBS_AUTO + '_last');
     clearInterval(timer);
@@ -336,7 +338,8 @@ const subsAuto = () => {
   const tick = async () => {
     if (busy || !sessionStorage.getItem(SUBS_AUTO)) return;
     if (!opener || opener.closed) { stop('صفحة المزامنة في النظام مسكّرة. افتحها واضغط «تشغيل المزامنة التلقائية» من جديد.'); return; }
-    if (!subsToken()) { show('بانتظار تسجيل الدخول لموقع الشركة. سجّل الدخول وتكمل وحدها.', '#b45309'); return; }
+    if (!subsToken()) { lost(); show('بانتظار تسجيل الدخول لموقع الشركة. سجّل الدخول وتكمل وحدها.', '#b45309'); return; }
+    warned = false;
     if (Date.now() - Number(sessionStorage.getItem(SUBS_AUTO + '_last') || 0) < minutes * 60000) return;
     busy = true;
     sessionStorage.setItem(SUBS_AUTO + '_last', String(Date.now()));
@@ -346,7 +349,7 @@ const subsAuto = () => {
       try { await subsOntSync(opener, Promise.resolve()); } catch (e) { note += ' · القدرة المستلمة: ' + e.message; retry = signedOut(e); }
     }
     // Signed out half way: start again as soon as the user signs in.
-    if (retry) sessionStorage.setItem(SUBS_AUTO + '_last', '0');
+    if (retry) { sessionStorage.setItem(SUBS_AUTO + '_last', '0'); lost(); }
     busy = false;
     if (sessionStorage.getItem(SUBS_AUTO)) {
       show((retry ? 'توقفت الدورة لأن جلسة موقع الشركة انتهت. سجّل الدخول وتكمل وحدها.' : 'آخر دورة ' + clock(Date.now()) + ' · الدورة الجاية ' + clock(Date.now() + minutes * 60000)) + (note ? ' · ' + note : ''), retry ? '#b45309' : '#15803d');

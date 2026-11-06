@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Models\WhatsappNumber;
+use App\Models\WhatsappOutbox;
 use App\Sync\BrowserScripts;
 use Tests\TestCase;
 
@@ -42,6 +44,25 @@ class SyncOnlyUserTest extends TestCase
         // It never signs in: without the user's own panel session it waits.
         $this->assertStringContainsString('بانتظار تسجيل الدخول', $script);
         $this->assertStringNotContainsString('password', strtolower($script));
-        $this->assertStringContainsString('"version": "1.4.0"', BrowserScripts::manifest('https://subs.example'));
+        $this->assertStringContainsString('"version": "1.4.1"', BrowserScripts::manifest('https://subs.example'));
+    }
+
+    public function test_a_page_left_open_gets_a_fresh_token(): void
+    {
+        $this->getJson('/sync/browser/token')->assertOk()->assertJsonStructure(['token']);
+        auth()->logout();
+        $this->getJson('/sync/browser/token')->assertUnauthorized();
+    }
+
+    public function test_a_lost_company_session_alerts_the_staff_once_in_three_hours(): void
+    {
+        WhatsappNumber::create(['phone' => '9647701111111', 'label' => 'علي', 'user_id' => $this->admin->id, 'is_active' => true, 'receives_alerts' => true]);
+
+        $this->postJson('/sync/browser/session-lost')->assertOk()->assertJson(['queued' => 1]);
+        $this->postJson('/sync/browser/session-lost')->assertOk()->assertJson(['queued' => 0]);
+
+        $sent = WhatsappOutbox::sole();
+        $this->assertSame('alert_sync', $sent->kind);
+        $this->assertStringContainsString('سجّل الدخول لموقع الشركة', $sent->body);
     }
 }

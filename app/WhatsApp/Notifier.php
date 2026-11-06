@@ -52,6 +52,23 @@ class Notifier
     }
 
     /**
+     * «المزامنة التلقائية» stopped because the company panel session ended: the alert numbers are asked
+     * to sign in again on the sync machine. Once per three-hour window and number.
+     */
+    public function syncSessionLost(string $user, ?CarbonImmutable $now = null): int
+    {
+        $now ??= CarbonImmutable::now();
+        $window = intdiv($now->getTimestamp(), 3 * 3600);
+        $text = "⚠️ المزامنة التلقائية متوقفة\nانتهت جلسة موقع الشركة على جهاز المزامنة (حساب {$user}).\nسجّل الدخول لموقع الشركة على ذاك الجهاز وتكمل المزامنة وحدها.";
+        $queued = 0;
+        foreach ($this->alertNumbers() as $number) {
+            $queued += $this->outbox->queue($number->phone, $text, 'alert_sync', "sync:session:{$window}:{$number->id}") ? 1 : 0;
+        }
+
+        return $queued;
+    }
+
+    /**
      * «تنبيه المشتريات والمصروفات»: a new purchase/expense, with the running total of purchases since the
      * last «تصفير» (as on the dashboard), to the chosen authorized numbers (none chosen = all), once each.
      */

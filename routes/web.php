@@ -5,11 +5,14 @@ use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BrowserSyncController;
 use App\Http\Controllers\InterfaceController;
 use App\Http\Controllers\ReceiptController;
+use App\Http\Controllers\SubscriptionEndedController;
 use App\Http\Controllers\WhatsAppWebhookController;
 use App\Imports\SubscriberImporter;
 use App\Models\Subscriber;
 use App\Models\WhatsappBroadcast;
 use App\Models\WhatsappOutbox;
+use App\Platform\Tenant;
+use App\Platform\TenantManager;
 use App\Services\Audit;
 use App\Services\BackupService;
 use App\WhatsApp\WahaGateway;
@@ -22,15 +25,15 @@ use Illuminate\Support\Str;
 // Caddy asks this (from inside the server only, as http://app:8080) before issuing a certificate for
 // an address: yes only for a registered, not archived client's address.
 Route::get('/platform/tls-check', function (Request $request) {
-    abort_unless(App\Platform\TenantManager::normalizeHost($request->getHost()) === 'app', 404);
-    $domain = App\Platform\TenantManager::normalizeHost((string) $request->query('domain'));
-    $known = $domain !== '' && rescue(fn () => App\Platform\Tenant::where('domain', $domain)->where('status', '<>', 'archived')->exists(), false, report: false);
+    abort_unless(TenantManager::normalizeHost($request->getHost()) === 'app', 404);
+    $domain = TenantManager::normalizeHost((string) $request->query('domain'));
+    $known = $domain !== '' && rescue(fn () => Tenant::where('domain', $domain)->where('status', '<>', 'archived')->exists(), false, report: false);
 
     return $known ? response('ok') : response('unknown', 404);
 })->name('platform.tls-check');
 
 // «انتهى الاشتراك»: the only page a stopped client can open (with signing out).
-Route::get('/subscription-ended', \App\Http\Controllers\SubscriptionEndedController::class)->name('subscription.ended');
+Route::get('/subscription-ended', SubscriptionEndedController::class)->name('subscription.ended');
 
 Route::middleware('auth')->group(function () {
     Route::get('/receipts/{payment}', [ReceiptController::class, 'show'])->name('receipts.show');
@@ -66,6 +69,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/sync/browser/run', [BrowserSyncController::class, 'run'])->name('sync.browser.run');
     Route::post('/sync/browser/ont-plan', [BrowserSyncController::class, 'ontPlan'])->name('sync.browser.ont-plan');
     Route::post('/sync/browser/ont', [BrowserSyncController::class, 'ont'])->name('sync.browser.ont');
+    Route::get('/sync/browser/token', [BrowserSyncController::class, 'token'])->name('sync.browser.token');
+    Route::post('/sync/browser/session-lost', [BrowserSyncController::class, 'sessionLost'])->name('sync.browser.session-lost');
     Route::get('/backup/download', function (BackupService $backups) {
         abort_unless(auth()->user()->can('settings.manage'), 403);
         @set_time_limit(900);
