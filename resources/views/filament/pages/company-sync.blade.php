@@ -39,6 +39,28 @@
             </button>
             <span id="subs-sync-status" style="font-size:14px;font-weight:600"></span>
         </div>
+        <div id="subs-auto-box" style="margin:14px 0 10px;padding:12px 14px;border:1px dashed var(--subs-border);border-radius:12px">
+            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px">
+                <b style="font-size:14px">🔁 المزامنة التلقائية</b>
+                <label style="font-size:14px">كل
+                    <select id="subs-auto-minutes" style="padding:4px 8px;border-radius:8px;border:1px solid var(--subs-border);background:transparent;color:inherit;font:inherit">
+                        <option value="15">15 دقيقة</option>
+                        <option value="30" selected>30 دقيقة</option>
+                        <option value="60">ساعة</option>
+                        <option value="120">ساعتين</option>
+                    </select>
+                </label>
+                <button type="button" id="subs-auto-start"
+                        style="padding:8px 16px;border-radius:10px;border:0;background:#0f766e;color:#fff;font:inherit;font-weight:700;cursor:pointer">تشغيل المزامنة التلقائية</button>
+                <button type="button" id="subs-auto-stop"
+                        style="padding:8px 16px;border-radius:10px;border:1px solid #b91c1c;background:transparent;color:#b91c1c;font:inherit;font-weight:700;cursor:pointer;display:none">إيقاف</button>
+            </div>
+            <div id="subs-auto-status" style="font-size:13.5px;font-weight:600;margin-top:6px"></div>
+            <p style="font-size:13px;color:var(--subs-muted);margin:6px 0 0;line-height:1.8">
+                تزامن الاشتراكات ثم تقرأ القدرة المستلمة للأجهزة اللي ما انقرت مؤخراً، كل فترة، ما دام هذا التبويب وتبويب موقع الشركة مفتوحين
+                (مناسبة لجهاز أو RDP يبقى شغّال). تستخدم جلستك أنت وطلبات قراءة فقط؛ إذا انتهت جلسة موقع الشركة تنتظر حتى تسجّل الدخول بنفسك ثم تكمل.
+            </p>
+        </div>
         <p style="font-size:13px;color:var(--subs-muted);margin:0">
             يفتح تبويب الاشتراكات الفعّالة في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
             آخر مزامنة: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
@@ -78,10 +100,50 @@
             el.style.color = cls === 'ok' ? 'var(--subs-green)' : (cls === 'bad' ? 'var(--subs-red)' : '');
         };
         let heard = false, watchdog = null;
+        // «المزامنة التلقائية»: remembered in this tab, so a reload keeps showing it (the panel tab keeps running).
+        const AUTO = 'subs_auto_on';
+        const autoOn = () => { try { return !!sessionStorage.getItem(AUTO); } catch (e) { return false; } };
+        const autoShow = (text) => {
+            const on = autoOn();
+            const st = document.getElementById('subs-auto-status');
+            if (st && text !== undefined) st.textContent = text;
+            const a = document.getElementById('subs-auto-start'), b = document.getElementById('subs-auto-stop');
+            if (a) a.style.display = on ? 'none' : '';
+            if (b) b.style.display = on ? '' : 'none';
+        };
+        document.addEventListener('DOMContentLoaded', () => autoShow(autoOn() ? 'شغّالة. لا تسكّر هذا التبويب ولا تبويب موقع الشركة.' : ''));
+        setTimeout(() => autoShow(autoOn() ? 'شغّالة. لا تسكّر هذا التبويب ولا تبويب موقع الشركة.' : undefined), 0);
         window.subsReceiver({
             onHello: () => { heard = true; set('فُتح موقع الشركة. سجّل الدخول إذا طُلب منك، وتبدأ المزامنة وحدها…', ''); },
             onStatus: (text, cls) => { heard = true; set(text, cls); },
-            onDone: () => setTimeout(() => location.reload(), 4000),
+            onAuto: (text) => { heard = true; autoShow(text); },
+            // While the automatic sync runs, the page stays (a reload would cut the readings that follow).
+            onDone: () => { if (!autoOn()) setTimeout(() => location.reload(), 4000); },
+        });
+        document.addEventListener('click', (e) => {
+            const start = e.target.closest && e.target.closest('#subs-auto-start');
+            const stop = e.target.closest && e.target.closest('#subs-auto-stop');
+            if (start) {
+                const minutes = document.getElementById('subs-auto-minutes')?.value || '30';
+                const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#subs-auto-' + minutes, 'ftth_auto');
+                if (!tab) { autoShow('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.'); return; }
+                try { sessionStorage.setItem(AUTO, minutes); } catch (err) {}
+                heard = false;
+                autoShow('جارٍ فتح موقع الشركة… سجّل الدخول إذا طُلب منك.');
+                clearTimeout(watchdog);
+                watchdog = setTimeout(() => { if (!heard) autoShow('لم تستجب الإضافة. نزّل الإضافة الجديدة (1.4.0) وبدّلها، ثم أعد المحاولة.'); }, 30000);
+            }
+            if (stop) {
+                // The panel tab by its name; a blank tab means it was already closed.
+                const tab = window.open('', 'ftth_auto');
+                try {
+                    if (tab && tab.location.href === 'about:blank') tab.close();
+                } catch (err) {
+                    tab.postMessage({ type: 'auto_stop' }, 'https://admin.ftth.iq');
+                }
+                try { sessionStorage.removeItem(AUTO); } catch (err) {}
+                autoShow('أُوقفت المزامنة التلقائية.');
+            }
         });
         document.addEventListener('click', (e) => {
             const button = e.target.closest && e.target.closest('#subs-sync-start, #subs-ont-start, #subs-import-start');

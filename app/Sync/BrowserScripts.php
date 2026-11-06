@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.3.2',
+            'version' => '1.4.0',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -311,6 +311,52 @@ JS;
      * opened it. If the sign-in pages cut that link, one click opens a small system window instead.
      */
     private const EXTENSION = <<<'JS'
+const SUBS_AUTO = 'subs_auto_minutes';
+// «المزامنة التلقائية»: while this panel tab and the system's sync page stay open, every few minutes it
+// syncs the subscriptions, then reads the RX power of the devices not read lately. Only with the user's
+// own sign-in: when the panel session ends it waits until the user signs in again; it never signs in.
+const subsAuto = () => {
+  const minutes = Math.max(10, Number(sessionStorage.getItem(SUBS_AUTO)) || 30);
+  const opener = window.opener;
+  const box = subsBox();
+  const show = (text, color) => {
+    box.textContent = 'المزامنة التلقائية: ' + text;
+    box.style.background = color || '#0f766e';
+    try { if (opener && !opener.closed) opener.postMessage({ type: 'auto_state', text }, SUBS_APP); } catch (e) {}
+  };
+  let timer = null, busy = false;
+  const stop = (text) => {
+    sessionStorage.removeItem(SUBS_AUTO); sessionStorage.removeItem(SUBS_AUTO + '_last');
+    clearInterval(timer);
+    show(text, '#b45309');
+  };
+  addEventListener('message', (e) => { if (e.origin === SUBS_APP && e.data && e.data.type === 'auto_stop') stop('أُوقفت من النظام.'); });
+  const clock = (ms) => new Date(ms).toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit' });
+  const signedOut = (e) => /جلسة|سجّل الدخول/.test(e.message);
+  const tick = async () => {
+    if (busy || !sessionStorage.getItem(SUBS_AUTO)) return;
+    if (!opener || opener.closed) { stop('صفحة المزامنة في النظام مسكّرة. افتحها واضغط «تشغيل المزامنة التلقائية» من جديد.'); return; }
+    if (!subsToken()) { show('بانتظار تسجيل الدخول لموقع الشركة. سجّل الدخول وتكمل وحدها.', '#b45309'); return; }
+    if (Date.now() - Number(sessionStorage.getItem(SUBS_AUTO + '_last') || 0) < minutes * 60000) return;
+    busy = true;
+    sessionStorage.setItem(SUBS_AUTO + '_last', String(Date.now()));
+    let note = '', retry = false;
+    try { note = (await subsSync(opener, Promise.resolve())).summary || ''; } catch (e) { note = 'المزامنة: ' + e.message; retry = signedOut(e); }
+    if (!retry) {
+      try { await subsOntSync(opener, Promise.resolve()); } catch (e) { note += ' · القدرة المستلمة: ' + e.message; retry = signedOut(e); }
+    }
+    // Signed out half way: start again as soon as the user signs in.
+    if (retry) sessionStorage.setItem(SUBS_AUTO + '_last', '0');
+    busy = false;
+    if (sessionStorage.getItem(SUBS_AUTO)) {
+      show((retry ? 'توقفت الدورة لأن جلسة موقع الشركة انتهت. سجّل الدخول وتكمل وحدها.' : 'آخر دورة ' + clock(Date.now()) + ' · الدورة الجاية ' + clock(Date.now() + minutes * 60000)) + (note ? ' · ' + note : ''), retry ? '#b45309' : '#15803d');
+    }
+  };
+  show('شغّالة كل ' + minutes + ' دقيقة. خلّ هذا التبويب وصفحة المزامنة في النظام مفتوحين.');
+  timer = setInterval(tick, 30000);
+  // The first round waits a little for the page's own list, so the same filter is read.
+  setTimeout(tick, 8000);
+};
 (() => {
   const KEY = 'subs_sync_pending';
   if (location.hash.includes('subs-sync') || location.hash.includes('subs-ont')) {
@@ -332,6 +378,14 @@ JS;
     }, 1500);
     setTimeout(() => clearInterval(learn), 60000);
   }
+  // «المزامنة التلقائية»: a tab opened with #subs-auto-{minutes} keeps syncing while it stays open.
+  const auto = location.hash.match(/subs-auto-(\d+)/);
+  if (auto) {
+    sessionStorage.setItem(SUBS_AUTO, auto[1]);
+    sessionStorage.removeItem(SUBS_AUTO + '_last');
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+  if (sessionStorage.getItem(SUBS_AUTO)) { subsAuto(); return; }
   const since = Number(sessionStorage.getItem(KEY) || 0);
   if (!since || Date.now() - since > 15 * 60 * 1000) { sessionStorage.removeItem(KEY); return; }
 

@@ -1,6 +1,6 @@
 {{-- Receives what the browser sync (extension or bookmark) read on the company panel and posts it to the system. --}}
 <script>
-window.subsReceiver = function ({ onStatus, onDone, onHello }) {
+window.subsReceiver = function ({ onStatus, onDone, onHello, onAuto }) {
     const PANEL = {!! json_encode(\App\Http\Controllers\BrowserSyncController::PANEL_ORIGIN, JSON_UNESCAPED_SLASHES) !!};
     const csrf = document.querySelector('meta[name=csrf-token]')?.content;
     window.addEventListener('message', async (event) => {
@@ -8,6 +8,7 @@ window.subsReceiver = function ({ onStatus, onDone, onHello }) {
         const data = event.data;
         if (data.type === 'hello') { onHello && onHello(); return; }
         if (data.type === 'progress') { onStatus(data.text, ''); return; }
+        if (data.type === 'auto_state') { onAuto ? onAuto(data.text) : onStatus(data.text, ''); return; }
         if (data.type === 'ont_done') { onStatus((data.ok ? 'تمت ✓ ' : '') + data.text, data.ok ? 'ok' : 'bad'); return; }
         if (!['plan', 'run', 'ont_plan', 'ont_run'].includes(data.type)) return;
         // «القدرة المستلمة» is its own run with its own two steps.
