@@ -8,6 +8,7 @@ Subscriber, debt and cash management for an Iraqi FTTH internet agent (the agent
 
 - Business vocabulary and decisions: [`docs/architecture/README.md`](docs/architecture/README.md) (glossary, decisions, implementation status). Database: `02-database.md`, rules: `04-business-logic.md`, permissions: `05-permissions.md`.
 - User-facing overview: [`README.md`](README.md).
+- Handing over to another AI tool: [`docs/HANDOVER.md`](docs/HANDOVER.md) (starter prompt for the owner, workflow, test setup, hard limits, open items).
 
 ## Stack
 
