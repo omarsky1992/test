@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\FollowUpChannel;
 use App\Enums\FollowUpOutcome;
+use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\Activation;
 use App\Models\FollowUp;
@@ -17,9 +18,7 @@ use Illuminate\Support\Facades\DB;
 
 class SubscriberService
 {
-    public function __construct(private Audit $audit)
-    {
-    }
+    public function __construct(private Audit $audit) {}
 
     /**
      * @param  array<string, mixed>  $data  subscriber fields
@@ -81,7 +80,7 @@ class SubscriberService
             throw new AuthorizationException('لا تملك صلاحية تعديل المشترك.');
         }
         if ($alt && blank($subscriber->alt_phone)) {
-            throw new \App\Exceptions\BusinessRuleException('لا يوجد رقم ثانٍ لهذا المشترك.');
+            throw new BusinessRuleException('لا يوجد رقم ثانٍ لهذا المشترك.');
         }
         if ($subscriber->notify_alt_phone !== $alt) {
             $subscriber->update(['notify_alt_phone' => $alt]);
@@ -120,6 +119,10 @@ class SubscriberService
 
     public function revealSecret(Account $account): ?string
     {
+        // Re-checked here, not only on the button: revealing a stored password is sensitive.
+        if (! Auth::user()?->can('accounts.view_secret')) {
+            throw new AuthorizationException('لا تملك صلاحية إظهار الباسورد.');
+        }
         $this->audit->log('account.secret_viewed', $account, subscriberId: $account->subscriber_id);
 
         return $account->secret_encrypted ? Crypt::decryptString($account->secret_encrypted) : null;
