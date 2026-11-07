@@ -125,6 +125,7 @@ class CustomPatterns
             'transfer' => $name ? new Command('transfer', subscriber: $name) : null,
             'void_debt' => $name ? new Command('void_debt', subscriber: $name, amount: $amount) : null,
             'subscriber_debt' => $name ? new Command('query', subscriber: $name, query: 'subscriber_debt') : null,
+            'subscriber_app' => $name ? new Command('query', subscriber: $name, query: 'subscriber_app') : null,
             'purchase', 'sale' => ($items = self::items($values['I'] ?? '', $amount)) ? new Command($pattern->action, items: $items) : null,
             default => null,
         };

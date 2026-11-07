@@ -14,9 +14,7 @@ use Illuminate\Support\Facades\DB;
  */
 class NumberRegistry
 {
-    public function __construct(private Audit $audit)
-    {
-    }
+    public function __construct(private Audit $audit) {}
 
     public function add(string $phone, User $user, ?string $label = null, bool $active = true, bool $alerts = false): WhatsappNumber
     {

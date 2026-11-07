@@ -84,6 +84,10 @@ class RuleInterpreter implements Interpreter
         if (preg_match('/^(?:امسح|احذف|الغي|شيل)\s+(?:دين|ديون)\s+(.+)$/u', $t, $m)) {
             return new Command('void_debt', subscriber: $m[1]);
         }
+        // «برنامج محمد» / «تطبيق محمد» / «رقم برنامج محمد»: the subscriber's «ملاحظات» field.
+        if (preg_match('/^(?:شنو\s+|شني\s+|شكو\s+)?(?:رقم\s+)?(?:ال)?(?:برنامج|تطبيق|برامج)\s+(?:بخصوص\s+|مال\s+|ل)?(.+)$/u', $t, $m)) {
+            return new Command('query', subscriber: $m[1], query: 'subscriber_app');
+        }
         // «شكد دين محمد» / «كم دين محمد»
         if (preg_match('/^(?:شكد|كم|شقد)\s+(?:دين|ديون|عليه\s+دين)\s+(.+)$/u', $t, $m)) {
             return new Command('query', subscriber: $m[1], query: 'subscriber_debt');

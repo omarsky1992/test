@@ -77,7 +77,7 @@ class CommandExecutor
 
     public static function help(): string
     {
-        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• سجل دين على محمد 20 الف\n• ناقل دين محمد\n• بعت راوتر ب 40 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
+        return "ما فهمت الطلب. أمثلة:\n• محمد رمضان فعلته سبع أيام\n• علي حسين دفع 25 الف\n• سجل دين على محمد 20 الف\n• ناقل دين محمد\n• بعت راوتر ب 40 الف\n• شريت كيبل 30 متر سعر المتر 5 آلاف\n• امسح دين محمد\n• برنامج محمد\n• الديون الثانوية / المتأخرين / مبيعات اليوم / عهد الموظفين";
     }
 
     private function activate(Command $c, User $user): Result
@@ -397,6 +397,7 @@ class CommandExecutor
             'custody', 'advances' => 'employees.view',
             'sales_today', 'purchases_today', 'activated_today' => 'reports.view',
             'must_activate' => 'accounts.view',
+            'subscriber_app' => 'subscribers.view',
             default => 'debts.view',
         };
         if (! $user->can($permission)) {
@@ -450,10 +451,39 @@ class CommandExecutor
 
                 return $open->isEmpty() ? "✅ {$name} ما عليه دين." : "{$name} عليه ".Money::format((int) $open->sum('balance'))."\n".$open->map(fn (Debt $d) => "• {$d->bucket->getLabel()}: ".Money::format($d->balance, false))->implode("\n");
             })(),
+            'subscriber_app' => $this->program($c->subscriber),
             default => self::help(),
         };
 
         return Result::done($reply, ['query' => $c->query]);
+    }
+
+    /**
+     * «برنامج فلان»: the name and the subscriber's «ملاحظات» field (where the program/app number is
+     * written, e.g. 9 or 6). Every subscriber matching the name is listed, since it only reads.
+     */
+    private function program(?string $term): string
+    {
+        if ($term === null || trim($term) === '') {
+            return 'برنامج منو تريد تعرف؟';
+        }
+        $subscribers = Subscriber::query()->search($term)->limit(6)->get();
+        $exact = $subscribers->filter(fn (Subscriber $s) => $s->name_search === Arabic::normalize($term));
+        $subscribers = $exact->count() === 1 ? $exact : $subscribers;
+        if ($subscribers->isEmpty()) {
+            $account = $this->findAccount($term); // a misspelt name: the closest one, or a question
+            if (is_string($account)) {
+                return $account;
+            }
+            $subscribers = collect([$account->subscriber]);
+        }
+
+        return $subscribers->map(function (Subscriber $s) {
+            // The «notes» column, not the notes() relation of the same name.
+            $value = trim(preg_replace('/\s+/u', ' ', (string) ($s->getAttributes()['notes'] ?? '')));
+
+            return "📱 {$s->full_name}\nرقم البرنامج: ".($value !== '' ? mb_substr($value, 0, 120) : 'ما مكتوب بالملاحظات');
+        })->implode("\n\n");
     }
 
     private function debtList(DebtBucket $bucket): string

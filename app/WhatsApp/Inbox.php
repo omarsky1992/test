@@ -2,6 +2,7 @@
 
 namespace App\WhatsApp;
 
+use App\Models\Account;
 use App\Models\User;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappNumber;
@@ -10,6 +11,7 @@ use App\Services\Settings;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -30,8 +32,7 @@ class Inbox
         private CommandExecutor $executor,
         private Audit $audit,
         private Settings $settings,
-    ) {
-    }
+    ) {}
 
     public function handle(array $payload): void
     {
@@ -76,7 +77,7 @@ class Inbox
         $from = WhatsappNumber::normalize((string) $message['from']);
         try {
             // Its own savepoint, so a duplicate does not break an enclosing transaction.
-            $record = \Illuminate\Support\Facades\DB::transaction(fn () => WhatsappMessage::create([
+            $record = DB::transaction(fn () => WhatsappMessage::create([
                 'wa_message_id' => mb_substr((string) $message['id'], 0, 150),
                 'from_phone' => mb_substr($from, 0, 20),
                 'type' => mb_substr((string) ($message['type'] ?? 'unknown'), 0, 15),
@@ -223,7 +224,7 @@ class Inbox
         Auth::setUser($user);
         try {
             // One transaction per command: a failure leaves no half-done change behind.
-            return \Illuminate\Support\Facades\DB::transaction(fn () => $this->audit->withSource('whatsapp', $callback));
+            return DB::transaction(fn () => $this->audit->withSource('whatsapp', $callback));
         } finally {
             $previous ? Auth::setUser($previous) : Auth::forgetUser();
         }
@@ -233,7 +234,7 @@ class Inbox
     {
         $accountId = $result->changes['account_id'] ?? null;
 
-        return $accountId ? \App\Models\Account::whereKey($accountId)->value('subscriber_id') : null;
+        return $accountId ? Account::whereKey($accountId)->value('subscriber_id') : null;
     }
 
     private function reply(WhatsappMessage $record, string $to, string $text): void

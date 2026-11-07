@@ -2,6 +2,8 @@
 
 namespace App\WhatsApp;
 
+use App\Models\Subscriber;
+use App\Support\SubscriberStatus;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -30,9 +32,9 @@ class LocalWhisperTranscriber implements Transcriber
     {
         $phrases = 'فعلته سبع أيام، فعلته شهر، دفع خمسة وثلاثين ألف، سجل دين على، دين ثانوي، دين أولي، مناقلة، امسح دين، '
             .'شريت كيبل متر، راوتر، بعت راوتر، الديون الثانوية، المتأخرين، مبيعات اليوم، يجب التفعيل.';
-        $names = \App\Models\Subscriber::query()
+        $names = Subscriber::query()
             ->whereHas('accounts', fn ($a) => $a->whereHas('debts', fn ($d) => $d->whereIn('status', ['open', 'partial']))
-                ->orWhereRaw(\App\Support\SubscriberStatus::ENDS.' between ? and ?', [now()->subDays(3), now()->addDays(7)]))
+                ->orWhereRaw(SubscriberStatus::ENDS.' between ? and ?', [now()->subDays(3), now()->addDays(7)]))
             ->latest('updated_at')->limit(25)->pluck('full_name')->implode('، ');
 
         return mb_substr(trim($phrases.' '.CustomPatterns::words().' '.$names), 0, 600);

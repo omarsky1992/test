@@ -7,9 +7,7 @@ namespace App\WhatsApp;
  */
 final class Result
 {
-    public function __construct(public string $status, public string $reply, public array $changes = [])
-    {
-    }
+    public function __construct(public string $status, public string $reply, public array $changes = []) {}
 
     public static function done(string $reply, array $changes = []): self
     {

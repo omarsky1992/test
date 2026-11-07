@@ -318,6 +318,22 @@ class WhatsAppTest extends TestCase
         $this->assertSame(0, Debt::count());
     }
 
+    public function test_asking_for_a_subscribers_program_replies_with_the_notes_field(): void
+    {
+        $this->subscriber('محمد رمضان')->subscriber->update(['notes' => '9']);
+        $this->subscriber('علي حسين');
+
+        $this->text('برنامج محمد رمضان');
+        $this->assertSame("📱 محمد رمضان\nرقم البرنامج: 9", $this->wa->lastReply());
+
+        $this->text('تطبيق علي حسين');
+        $this->assertStringContainsString('ما مكتوب بالملاحظات', $this->wa->lastReply());
+
+        $this->text('شنو رقم برنامج محمد');
+        $this->assertStringContainsString('رقم البرنامج: 9', $this->wa->lastReply());
+        $this->assertSame(0, Debt::count());
+    }
+
     // ---- Purchases, payments, debts ----
 
     public function test_a_purchase_of_several_items_records_each_expense(): void

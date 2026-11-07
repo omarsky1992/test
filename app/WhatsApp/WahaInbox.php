@@ -12,9 +12,7 @@ use Illuminate\Support\Facades\Log;
  */
 class WahaInbox
 {
-    public function __construct(private Inbox $inbox)
-    {
-    }
+    public function __construct(private Inbox $inbox) {}
 
     public function handle(array $event): void
     {

@@ -9,9 +9,7 @@ namespace App\WhatsApp;
  */
 class CommandInterpreter implements Interpreter
 {
-    public function __construct(private RuleInterpreter $rules, private ClaudeInterpreter $ai, private CustomPatterns $custom)
-    {
-    }
+    public function __construct(private RuleInterpreter $rules, private ClaudeInterpreter $ai, private CustomPatterns $custom) {}
 
     public function interpret(string $text, ?array $previous = null): ?Command
     {
