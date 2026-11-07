@@ -3,6 +3,7 @@
 namespace App\WhatsApp;
 
 use App\Models\Account;
+use App\Models\Subscriber;
 use App\Models\User;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappNumber;
@@ -204,6 +205,21 @@ class Inbox
             return null;
         }
         $command = Command::fromArray($before);
+        // «تقصد فلان؟» → «نعم» (one name offered) or the number of the name: the same command on that subscriber.
+        $offered = array_values((array) ($previous->result['suggest'] ?? []));
+        if ($offered !== []) {
+            $answer = RuleInterpreter::clean($text);
+            $pick = match (true) {
+                count($offered) === 1 && (bool) preg_match('/^(?:نعم|اي|ايه|ايي|ايوه|اكيد|صح|صحيح|هيه|هو|تمام|اوك|ok|yes)$/iu', $answer) => $offered[0],
+                ctype_digit($answer) && isset($offered[(int) $answer - 1]) => $offered[(int) $answer - 1],
+                default => null,
+            };
+            if ($pick !== null && ($subscriber = Subscriber::find($pick))) {
+                $command->subscriber = $subscriber->full_name;
+
+                return $command;
+            }
+        }
         if ($command->intent === 'activate' && $command->days === null && ($days = RuleInterpreter::days($text)) !== null) {
             $command->days = $days;
 

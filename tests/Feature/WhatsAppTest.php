@@ -334,6 +334,42 @@ class WhatsAppTest extends TestCase
         $this->assertSame(0, Debt::count());
     }
 
+    public function test_a_name_written_with_other_spaces_is_the_same_subscriber(): void
+    {
+        $this->subscriber('زيد ذو الفقار')->subscriber->update(['notes' => '6']);
+
+        $this->text('برنامج زيد ذوالفقار');
+        $this->assertSame("📱 زيد ذو الفقار\nرقم البرنامج: 6", $this->wa->lastReply());
+    }
+
+    public function test_a_close_name_is_offered_and_yes_answers_it(): void
+    {
+        $this->subscriber('مرتضى كاظم جبار')->subscriber->update(['notes' => '9']);
+
+        $this->text('برنامج مرتضي كاضم');
+        $this->assertStringContainsString('تقصد «مرتضى كاظم جبار»؟', $this->wa->lastReply());
+        $this->assertStringContainsString('ارسل نعم', $this->wa->lastReply());
+
+        $this->text('نعم');
+        $this->assertSame("📱 مرتضى كاظم جبار\nرقم البرنامج: 9", $this->wa->lastReply());
+    }
+
+    public function test_several_close_names_are_numbered_and_the_number_answers(): void
+    {
+        $this->subscriber('حسين علي كريم')->subscriber->update(['notes' => '6']);
+        $this->subscriber('حسين علي كريم جاسم')->subscriber->update(['notes' => '9']);
+
+        $this->text('برنامج حسن علي كرم');
+        $reply = $this->wa->lastReply();
+        $this->assertStringContainsString('1. ', $reply);
+        $this->assertStringContainsString('ارسل رقم الاسم', $reply);
+
+        $second = trim(explode('2. ', $reply)[1] ?? '');
+        $second = explode("\n", $second)[0];
+        $this->text('2');
+        $this->assertStringContainsString('📱 '.$second, $this->wa->lastReply());
+    }
+
     // ---- Purchases, payments, debts ----
 
     public function test_a_purchase_of_several_items_records_each_expense(): void

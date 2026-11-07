@@ -55,7 +55,22 @@ class CommandExecutor
         private Audit $audit,
     ) {}
 
+    /** @var list<int> subscribers offered by «تقصد…؟» in this command, for a «نعم» or a number in reply */
+    private array $suggested = [];
+
     public function execute(Command $command, User $user, string $messageId): Result
+    {
+        $this->suggested = [];
+        $result = $this->run($command, $user, $messageId);
+        // «تقصد فلان؟»: kept with the question, so «نعم» (or the name's number) finishes the same command.
+        if ($this->suggested !== [] && $result->status !== 'denied') {
+            return new Result('clarify', $result->reply, ['suggest' => $this->suggested]);
+        }
+
+        return $result;
+    }
+
+    private function run(Command $command, User $user, string $messageId): Result
     {
         try {
             return match ($command->intent) {
@@ -537,9 +552,16 @@ class CommandExecutor
         $found = $this->lookup($term);
         // Spoken «فعلت لمحمد»: the «ل» (for) sticks to the name.
         if (is_string($found) && str_starts_with($found, 'ما لقيت') && mb_substr($term, 0, 1) === 'ل' && mb_strlen($term) > 3) {
+            $offered = $this->suggested;
+            $this->suggested = [];
             $again = $this->lookup(mb_substr($term, 1));
+            if (is_string($again) && str_starts_with($again, 'ما لقيت')) {
+                $this->suggested = $offered;
 
-            return is_string($again) && str_starts_with($again, 'ما لقيت') ? $found : $again;
+                return $found;
+            }
+
+            return $again;
         }
 
         return $found;
@@ -554,6 +576,11 @@ class CommandExecutor
             $subscribers = $exact->count() === 1 ? $exact : $subscribers;
         }
         if ($subscribers->isEmpty()) {
+            // The same name with the spaces written differently: «ذوالفقار» = «ذو الفقار», «عبدالله» = «عبد الله».
+            $subscribers = Subscriber::query()->whereRaw("replace(name_search, ' ', '') = ?", [str_replace(' ', '', Arabic::normalize($term))])
+                ->with(['accounts' => fn ($q) => $q->where('status', '<>', AccountStatus::Closed)])->limit(6)->get();
+        }
+        if ($subscribers->isEmpty()) {
             // A misheard or misspelt name: the closest names by letter similarity (pg_trgm).
             $name = Arabic::normalize($term);
             $close = Subscriber::query()->select('subscribers.*')->selectRaw('similarity(name_search, ?) as score', [$name])
@@ -564,10 +591,15 @@ class CommandExecutor
             // Clearly one person: use it (the reply names them in full). Otherwise ask.
             if ($best && $best->score >= 0.55 && (! $second || $best->score - $second->score >= 0.15)) {
                 $subscribers = collect([$best]);
-            } elseif ($close->isNotEmpty()) {
-                $list = $close->map(fn (Subscriber $s) => "• {$s->full_name}")->implode("\n");
+            } elseif ($close->count() === 1) {
+                $this->suggested = [$best->id];
 
-                return "ما لقيت «{$term}» بالضبط. تقصد:\n{$list}\nاكتب الاسم الصحيح.";
+                return "ما لقيت «{$term}» بالضبط. تقصد «{$best->full_name}»؟\nارسل نعم، أو اكتب الاسم الصحيح.";
+            } elseif ($close->isNotEmpty()) {
+                $this->suggested = $close->pluck('id')->all();
+                $list = $close->values()->map(fn (Subscriber $s, int $i) => ($i + 1).". {$s->full_name}")->implode("\n");
+
+                return "ما لقيت «{$term}» بالضبط. تقصد:\n{$list}\nارسل رقم الاسم، أو اكتب الاسم الصحيح.";
             } else {
                 return "ما لقيت مشترك باسم «{$term}». اكتب الاسم الكامل أو رقم الهاتف أو اليوزر.";
             }
