@@ -106,6 +106,7 @@ class Permissions
         'photos.view' => ['مشاهدة صورة بيت المشترك', true],
         'photos.add' => ['إضافة صورة لبيت المشترك', true],
         'photos.delete' => ['حذف أو استبدال صورة البيت', false],
+        'routes.measure' => ['قياس مسار الكيبل على الخريطة', true],
     ];
 
     /** The sections of «إدارة صلاحيات الموظفين»: label => permission names in that section. */
@@ -113,7 +114,7 @@ class Permissions
         'لوحة التحكم والتقارير' => ['dashboard.view', 'reports.view', 'reports.rotation', 'employees.view', 'audit.view'],
         'المشتركون' => ['subscribers.view', 'subscribers.create', 'subscribers.update', 'subscribers.archive', 'accounts.view', 'accounts.create', 'accounts.update', 'accounts.view_secret', 'accounts.close', 'devices.manage'],
         'وضع المشترك والقائمة السوداء' => ['notes.view', 'notes.create', 'notes.close', 'notes.delete', 'blacklist.view', 'blacklist.manage'],
-        'مواقع المشتركين وصور بيوتهم' => ['locations.view', 'locations.create', 'locations.update', 'locations.delete', 'locations.directions', 'photos.view', 'photos.add', 'photos.delete'],
+        'مواقع المشتركين وصور بيوتهم' => ['locations.view', 'locations.create', 'locations.update', 'locations.delete', 'locations.directions', 'photos.view', 'photos.add', 'photos.delete', 'routes.measure'],
         'التفعيل والتجديد' => ['activations.view', 'activations.create', 'activations.edit_start', 'activations.override_price', 'activations.void', 'activations.mark_done', 'activations.recent', 'reminders.activation', 'follow_ups.view', 'follow_ups.create'],
         'الديون والتحصيل' => ['debts.view', 'debts.create_manual', 'debts.create_opening', 'debts.void', 'transfers.view', 'transfers.create', 'payments.view', 'payments.create', 'payments.backdate', 'payments.void', 'payments.change_box', 'receipts.print'],
         'المشتريات والمبيعات' => ['expenses.view', 'expenses.create', 'expenses.void', 'sales.view', 'sales.create', 'sales.void', 'periods.view', 'periods.close'],

@@ -4,13 +4,17 @@ namespace App\Filament\Widgets;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtStatus;
+use App\Enums\MoneyAccountKind;
 use App\Filament\Actions\NoteActions;
 use App\Models\AccountRenewal;
 use App\Models\Debt;
+use App\Models\MoneyAccount;
+use App\Services\EmployeeFinance;
 use App\Services\RecentActivationService;
 use App\Support\Money;
 use App\Support\SubscriberFlags;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
@@ -43,6 +47,25 @@ class RecentlyActivated extends TableWidget
         return RecentActivationService::receipts($renewal)
             ->map(fn ($p) => ($p->creator?->name ?? '—').' '.Money::format((int) $p->amount).' ('.$p->received_at->setTimezone(config('app.timezone'))->format('m/d').')')
             ->implode(' · ');
+    }
+
+    /** Boxes that can receive the cash: cash boxes, electronic cards, and employees' custodies. */
+    public static function boxes(): array
+    {
+        $boxes = MoneyAccount::where('is_active', true)->whereIn('kind', [MoneyAccountKind::Cash, MoneyAccountKind::Electronic])->orderBy('name')->pluck('name', 'id')->all();
+        $custody = MoneyAccount::where('is_active', true)->where('kind', MoneyAccountKind::Custody)
+            ->when(! auth()->user()->can('employees.view'), fn ($q) => $q->where('user_id', auth()->id()))
+            ->orderBy('name')->pluck('name', 'id')->all();
+
+        return $boxes + $custody;
+    }
+
+    /** The current user's own custody when they collect to it, so a technician's cash lands there by default. */
+    public static function defaultBox(): ?int
+    {
+        $user = auth()->user();
+
+        return $user?->collects_to_custody ? app(EmployeeFinance::class)->custodyAccount($user)->id : null;
     }
 
     public function table(Table $table): Table
@@ -102,13 +125,21 @@ class RecentlyActivated extends TableWidget
                         Notification::make()->success()->title('تمت المناقلة إلى الديون الأولية')->send();
                     }),
                 Action::make('cash')->label('نقد')->icon(Heroicon::OutlinedBanknotes)->color('success')->button()
-                    ->requiresConfirmation()
                     ->modalHeading(fn (AccountRenewal $r) => 'تسجيل تفعيل '.$r->subscriber?->full_name.' نقداً')
-                    ->modalDescription(fn (AccountRenewal $r) => 'يبقى المشترك فعّالاً بدون دين.'.((int) $r->received > 0 ? ' مستلم منه: '.self::receivers($r) : ''))
+                    ->modalDescription(fn (AccountRenewal $r) => ((int) $r->secondary_balance > 0
+                        ? 'يُسدَّد دينه الثانوي ('.Money::format((int) $r->secondary_balance).') نقداً ويُسجَّل في الصندوق المختار، ويبقى فعّالاً بدون دين.'
+                        : 'يبقى المشترك فعّالاً بدون دين.').((int) $r->received > 0 ? ' مستلم منه: '.self::receivers($r) : ''))
+                    // Only when he has an unpaid secondary debt: where the cash landed (an employee's custody or a card).
+                    ->schema(fn (AccountRenewal $r) => (int) $r->secondary_balance > 0 ? [
+                        Select::make('money_account_id')->label('الصندوق المستلِم')->required()->native(false)->searchable()
+                            ->options(fn () => self::boxes())->default(fn () => self::defaultBox()),
+                    ] : [])
                     ->modalSubmitActionLabel('نقد')
-                    ->action(function (AccountRenewal $record) {
-                        app(RecentActivationService::class)->asCash($record);
-                        Notification::make()->success()->title('سُجّل نقداً: فعّال بدون دين')->send();
+                    ->action(function (AccountRenewal $record, array $data) {
+                        $box = filled($data['money_account_id'] ?? null) ? MoneyAccount::find($data['money_account_id']) : null;
+                        $renewal = app(RecentActivationService::class)->asCash($record, $box);
+                        Notification::make()->success()->title($box ? 'سُجّل نقداً وسُدّد الدين الثانوي' : 'سُجّل نقداً: فعّال بدون دين')
+                            ->body($box?->name)->send();
                     }),
             ]);
     }

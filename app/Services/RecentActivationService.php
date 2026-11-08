@@ -6,10 +6,14 @@ use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\DocumentStatus;
+use App\Enums\MoneyAccountKind;
+use App\Enums\PaymentMethod;
+use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Debt;
+use App\Models\MoneyAccount;
 use App\Models\Payment;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
@@ -25,7 +29,7 @@ use Illuminate\Support\Facades\DB;
  */
 class RecentActivationService
 {
-    public function __construct(private DebtService $debts, private Audit $audit) {}
+    public function __construct(private DebtService $debts, private PaymentService $payments, private Audit $audit) {}
 
     public static function pending(): Builder
     {
@@ -108,14 +112,52 @@ class RecentActivationService
         });
     }
 
-    public function asCash(AccountRenewal $renewal): AccountRenewal
+    /**
+     * «نقد»: the subscriber paid cash for this activation. When he has an unpaid secondary debt, that
+     * cash settles it into the chosen box (an employee's custody or a card like Super Key) through a
+     * normal receipt — exactly like paying a secondary debt — and he stays active with no debt. The
+     * «يجب التفعيل» list is not opened, since the full activation is already on the company site
+     * (`ActivationDueService::open` sees the far end date and skips it). With no secondary debt, «نقد»
+     * records no money, just marks him active with no debt.
+     */
+    public function asCash(AccountRenewal $renewal, ?MoneyAccount $box = null): AccountRenewal
     {
         $this->authorize();
 
-        return DB::transaction(function () use ($renewal) {
+        return DB::transaction(function () use ($renewal, $box) {
             $renewal = $this->lockPending($renewal);
-            $renewal->update(['decision' => 'cash', 'decided_at' => now(), 'decided_by' => Auth::id()]);
-            $this->audit->log('renewal.decided', $renewal, ['decision' => null], ['decision' => 'cash'], 'المفعّل حديثاً: نقد – فعّال بدون دين', $renewal->subscriber_id);
+            $account = Account::findOrFail($renewal->account_id);
+            $debts = self::secondaryDebts($account->id)->get();
+            $payment = null;
+            if ($debts->isNotEmpty()) {
+                if (! Auth::user()->can('payments.create')) {
+                    throw new AuthorizationException('ليست لديك صلاحية تسجيل القبض.');
+                }
+                if ($box === null || ! $box->is_active) {
+                    throw new BusinessRuleException('اختر الصندوق الذي استلمت فيه المبلغ (عهدة الموظف أو البطاقة).');
+                }
+                $total = (int) $debts->sum('balance');
+                $category = $box->kind === MoneyAccountKind::Electronic ? PaymentMethod::Electronic : PaymentMethod::Cash;
+                $payment = $this->payments->record(
+                    $account,
+                    amount: $total,
+                    method: $category,
+                    moneyAccount: $box,
+                    type: PaymentType::DebtPayment,
+                    debtIds: $debts->pluck('id')->all(),
+                    notes: "تفعيل {$renewal->new_days} يوم من موقع الشركة (المفعّل حديثاً) – نقد",
+                );
+            }
+            $renewal->update([
+                'decision' => 'cash', 'decided_at' => now(), 'decided_by' => Auth::id(),
+                'decision_debt_id' => $debts->first()?->id,
+            ]);
+            $this->audit->log('renewal.decided', $renewal, ['decision' => null], array_filter([
+                'decision' => 'cash',
+                'receipt' => $payment?->receipt_number,
+                'amount' => $payment ? (int) $payment->amount : null,
+                'box' => $box?->name,
+            ], fn ($v) => $v !== null), $payment ? 'المفعّل حديثاً: نقد – تسديد الدين الثانوي' : 'المفعّل حديثاً: نقد – فعّال بدون دين', $renewal->subscriber_id);
 
             return $renewal;
         });

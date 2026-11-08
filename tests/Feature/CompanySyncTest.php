@@ -14,6 +14,10 @@ use App\Imports\SpreadsheetReader;
 use App\Imports\SubscriberImporter;
 use App\Models\Account;
 use App\Models\AccountRenewal;
+use App\Models\Payment;
+use App\Services\TreasuryService;
+use App\Enums\DebtStatus;
+use App\Models\ActivationDue;
 use App\Models\AuditLog;
 use App\Models\Debt;
 use App\Models\DebtTransfer;
@@ -647,6 +651,61 @@ class CompanySyncTest extends TestCase
         $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
         $this->assertSame('transfer', $renewal->fresh()->decision);
         $this->assertSame(1, DebtTransfer::count());
+    }
+
+    public function test_cash_with_a_secondary_debt_settles_it_into_the_chosen_box(): void
+    {
+        // A 7-day activation left a secondary debt; later a 30-day full activation with nothing paid.
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
+        $this->sync();
+        $this->travel(8)->days();
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $secondary = Debt::sole();
+        $this->assertSame(35000, $secondary->balance);
+        $renewal = RecentActivationService::pending()->sole();
+
+        Livewire::test(RecentlyActivated::class)
+            ->callTableAction('cash', $renewal, data: ['money_account_id' => $this->cash()->id])
+            ->assertHasNoTableActionErrors()
+            ->assertCountTableRecords(0);
+
+        // The secondary debt is paid, the money is in the chosen box, nothing moved to the primary debts.
+        $this->assertSame(DebtStatus::Paid, $secondary->fresh()->status);
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_SECONDARY));
+        $this->assertSame(0, $this->balanceOf(Ledger::AR_PRIMARY));
+        $this->assertSame(35000, app(TreasuryService::class)->balance($this->cash()));
+        $payment = Payment::sole();
+        $this->assertSame([35000, PaymentType::DebtPayment], [(int) $payment->amount, $payment->payment_type]);
+        $renewal->refresh();
+        $this->assertSame('cash', $renewal->decision);
+        $this->assertSame($secondary->id, $renewal->decision_debt_id);
+        // Already activated on the site, so «يجب التفعيل» is NOT opened.
+        $this->assertSame(0, ActivationDue::where('status', 'pending')->count());
+        // Stays «فعّال بدون دين».
+        $ids = fn (string $f) => SubscriberStatus::apply(SubscriberStatus::base(), $f)->pluck('accounts.id')->all();
+        $this->assertSame([Account::sole()->id], $ids('active'));
+        $this->assertSame([], $ids('active_primary'));
+        $this->assertSame([], $ids('active_secondary'));
+    }
+
+    public function test_cash_with_a_secondary_debt_needs_a_box(): void
+    {
+        $this->site->set($this->siteRecord(['ends_at' => '2026-09-01T10:00:00Z', 'status' => 'Expired']));
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(7)]));
+        $this->sync();
+        $this->travel(8)->days();
+        $this->sync();
+        $this->site->set($this->siteRecord(['ends_at' => $this->endsIn(30)]));
+        $this->sync();
+        $renewal = RecentActivationService::pending()->sole();
+
+        $this->expectException(BusinessRuleException::class);
+        app(RecentActivationService::class)->asCash($renewal); // no box, with a secondary debt
     }
 
     public function test_transfer_is_offered_only_with_an_unpaid_secondary_debt(): void
