@@ -16,7 +16,7 @@ class RouteMeasureTest extends TestCase
         $this->actingAs($user);
 
         $this->assertTrue(RouteMeasure::canAccess());
-        $this->get(RouteMeasure::getUrl())->assertOk()->assertSee('قياس المسار')->assertSee('نقطة من موقعي');
+        $this->get(RouteMeasure::getUrl())->assertOk()->assertSee('قياس المسار')->assertSee('نقطة دقيقة من موقعي')->assertSee('تتبّع المسار مشياً')->assertSee('subsGeoDistance', false);
     }
 
     public function test_without_the_permission_it_is_closed(): void
