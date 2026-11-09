@@ -4,7 +4,7 @@
      added along it, a walked track, or a point inserted on any segment); distances use the WGS84
      ellipsoid. It reads and writes nothing in the system. --}}
 <x-filament-panels::page>
-    <div x-data="routeMeasure()" x-init="init()" style="display:flex;flex-direction:column;gap:16px" dir="rtl">
+    <div x-data="routeMeasure()" style="display:flex;flex-direction:column;gap:16px" dir="rtl">
 
         <x-filament::section>
             <p style="font-size:14px;line-height:1.9;margin:0 0 12px">
@@ -82,7 +82,7 @@
                 </div>
             </div>
 
-            <div x-ref="map" wire:ignore style="height:380px;border-radius:12px;margin-top:12px;background:#e5e7eb;z-index:0"></div>
+            <div data-route-map wire:ignore style="height:380px;border-radius:12px;margin-top:12px;background:#e5e7eb;z-index:0"></div>
             <p style="font-size:12.5px;color:var(--subs-muted);margin:6px 0 0">
                 الإضافة بالضغط على الخريطة تشتغل لما تقرّب كفاية (مستوى 17 أو أكثر) حتى تكون النقطة دقيقة. الدائرة حول كل نقطة GPS = هامش دقتها.
             </p>
@@ -216,7 +216,11 @@
 
                 createMap() {
                     const L = window.L;
-                    this.map = L.map(this.$refs.map, { zoomControl: true, maxZoom: 22 }).setView([33.3152, 44.3661], 6);
+                    // Found by attribute, not $refs: the Filament section around it has its own Alpine scope, which hides refs.
+                    if (this.map) return;
+                    const el = this.$root.querySelector('[data-route-map]');
+                    if (!el) { this.say('تعذّر عرض الخريطة.', 'error'); return; }
+                    this.map = L.map(el, { zoomControl: true, maxZoom: 22 }).setView([33.3152, 44.3661], 6);
                     // Zoom past the tiles' own detail (19) so a point can be placed to the centimetre.
                     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         maxZoom: 22, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap',
