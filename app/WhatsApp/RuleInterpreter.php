@@ -68,6 +68,14 @@ class RuleInterpreter implements Interpreter
         if ($command?->subscriber !== null) {
             $command->subscriber = trim(preg_replace('/^بخصوص\s+/u', '', $command->subscriber));
         }
+        // The program code is kept exactly as typed; clean() lowercases, so take it from the original text.
+        if ($command?->intent === 'set_app') {
+            $words = preg_split('/\s+/u', trim($text)) ?: [];
+            $last = end($words);
+            if (is_string($last) && preg_match('#^[A-Za-z0-9][A-Za-z0-9._/\-]*$#', $last)) {
+                $command->text = $last;
+            }
+        }
 
         return $command;
     }
@@ -84,9 +92,20 @@ class RuleInterpreter implements Interpreter
         if (preg_match('/^(?:امسح|احذف|الغي|شيل)\s+(?:دين|ديون)\s+(.+)$/u', $t, $m)) {
             return new Command('void_debt', subscriber: $m[1]);
         }
-        // «برنامج محمد» / «تطبيق محمد» / «رقم برنامج محمد»: the subscriber's «ملاحظات» field.
+        // «وضع محمد» / «تفاصيل محمد» / «معلومات محمد» / «بيانات محمد»: the subscriber's whole profile.
+        if (preg_match('/^(?:وضع|وضعيه|حاله|تفاصيل|معلومات|بيانات|كشف|بروفايل)\s+(?:عن\s+|بخصوص\s+)?(.+)$/u', $t, $m)) {
+            return new Command('query', subscriber: $m[1], query: 'subscriber_info');
+        }
+        // «برنامج محمد F15» sets the program in the notes; «برنامج محمد» (no value) shows it.
         if (preg_match('/^(?:شنو\s+|شني\s+|شكو\s+)?(?:رقم\s+)?(?:ال)?(?:برنامج|تطبيق|برامج)\s+(?:بخصوص\s+|مال\s+|ل)?(.+)$/u', $t, $m)) {
-            return new Command('query', subscriber: $m[1], query: 'subscriber_app');
+            $words = preg_split('/\s+/u', trim($m[1])) ?: [];
+            $last = end($words);
+            // A trailing code (latin letters/digits, e.g. F15 or 9) is the program value; the rest is the name.
+            if (count($words) > 1 && is_string($last) && preg_match('#^[A-Za-z0-9][A-Za-z0-9._/\-]*$#', $last)) {
+                return new Command('set_app', subscriber: implode(' ', array_slice($words, 0, -1)), text: $last);
+            }
+
+            return new Command('query', subscriber: trim($m[1]), query: 'subscriber_app');
         }
         // «شكد دين محمد» / «كم دين محمد»
         if (preg_match('/^(?:شكد|كم|شقد)\s+(?:دين|ديون|عليه\s+دين)\s+(.+)$/u', $t, $m)) {

@@ -7,13 +7,13 @@ namespace App\WhatsApp;
  */
 final class Command
 {
-    public const INTENTS = ['activate', 'payment', 'purchase', 'sale', 'add_debt', 'transfer', 'void_debt', 'query', 'clarify', 'unknown'];
+    public const INTENTS = ['activate', 'payment', 'purchase', 'sale', 'add_debt', 'transfer', 'void_debt', 'set_app', 'query', 'clarify', 'unknown'];
 
     public const BUCKETS = ['primary', 'secondary'];
 
     public const QUERIES = [
         'secondary_debts', 'primary_debts', 'late', 'activated_today', 'sales_today',
-        'purchases_today', 'custody', 'advances', 'subscriber_debt', 'must_activate', 'subscriber_app',
+        'purchases_today', 'custody', 'advances', 'subscriber_debt', 'must_activate', 'subscriber_app', 'subscriber_info',
     ];
 
     /**
@@ -29,6 +29,7 @@ final class Command
         public ?string $question = null,
         public ?string $bucket = null,
         public bool $onCredit = false,
+        public ?string $text = null,
     ) {
         if ($this->bucket !== null && ! in_array($this->bucket, self::BUCKETS, true)) {
             $this->bucket = null;
@@ -60,6 +61,7 @@ final class Command
             question: filled($data['question'] ?? null) ? (string) $data['question'] : null,
             bucket: filled($data['bucket'] ?? null) ? (string) $data['bucket'] : null,
             onCredit: (bool) ($data['on_credit'] ?? false),
+            text: filled($data['text'] ?? null) ? trim((string) $data['text']) : null,
         );
     }
 
@@ -75,6 +77,7 @@ final class Command
             'question' => $this->question,
             'bucket' => $this->bucket,
             'on_credit' => $this->onCredit ?: null,
+            'text' => $this->text,
         ], fn ($v) => $v !== null);
     }
 }

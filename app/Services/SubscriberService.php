@@ -117,6 +117,32 @@ class SubscriberService
         return $account;
     }
 
+    /**
+     * «برنامج فلان F15»: records the program/app in the subscriber's «ملاحظات» (the `notes` column,
+     * what «رقم البرنامج» reads). A new value is appended beside the old one, never replacing it.
+     */
+    public function setProgram(Subscriber $subscriber, string $value): Subscriber
+    {
+        if (! Auth::user()?->can('subscribers.update')) {
+            throw new AuthorizationException('لا تملك صلاحية تعديل المشترك.');
+        }
+        $value = trim(preg_replace('/\s+/u', ' ', $value));
+        if ($value === '') {
+            throw new BusinessRuleException('اكتب رقم البرنامج بعد الاسم.');
+        }
+        $current = trim((string) ($subscriber->getAttributes()['notes'] ?? ''));
+        // Keep the old value; add the new one beside it (skip an exact duplicate).
+        $parts = array_values(array_filter(array_map('trim', preg_split('/\s*\+\s*/u', $current) ?: [])));
+        if (! in_array($value, $parts, true)) {
+            $parts[] = $value;
+        }
+        $original = $subscriber->getAttributes();
+        $subscriber->update(['notes' => implode(' + ', $parts), 'updated_by' => Auth::id()]);
+        $this->audit->changes('subscriber.updated', $subscriber, $original, 'تسجيل برنامج المشترك (واتساب)', $subscriber->id);
+
+        return $subscriber;
+    }
+
     public function revealSecret(Account $account): ?string
     {
         // Re-checked here, not only on the button: revealing a stored password is sensitive.

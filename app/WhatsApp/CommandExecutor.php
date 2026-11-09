@@ -14,6 +14,7 @@ use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Activation;
 use App\Models\ActivationDue;
+use App\Models\BlacklistEntry;
 use App\Models\Debt;
 use App\Models\DeviceType;
 use App\Models\EmployeeAdvance;
@@ -21,6 +22,7 @@ use App\Models\Expense;
 use App\Models\ExpenseCategory;
 use App\Models\MoneyAccount;
 use App\Models\Subscriber;
+use App\Models\SubscriberNote;
 use App\Models\User;
 use App\Services\ActivationDueService;
 use App\Services\Audit;
@@ -30,9 +32,11 @@ use App\Services\PaymentService;
 use App\Services\RenewalService;
 use App\Services\ReportService;
 use App\Services\Settings;
+use App\Services\SubscriberService;
 use App\Services\TreasuryService;
 use App\Support\Arabic;
 use App\Support\Money;
+use App\Support\OpticalSignal;
 use App\Support\SubscriberStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
@@ -81,6 +85,7 @@ class CommandExecutor
                 'transfer' => $this->transfer($command, $user),
                 'sale' => $this->sale($command, $user),
                 'void_debt' => $this->voidDebt($command, $user),
+                'set_app' => $this->setApp($command, $user),
                 'query' => $this->query($command, $user),
                 'clarify' => Result::clarify($command->question ?? 'ما فهمت الطلب تماماً، وضّحه أكثر.'),
                 default => Result::clarify($command->question ?? self::help()),
@@ -412,7 +417,7 @@ class CommandExecutor
             'custody', 'advances' => 'employees.view',
             'sales_today', 'purchases_today', 'activated_today' => 'reports.view',
             'must_activate' => 'accounts.view',
-            'subscriber_app' => 'subscribers.view',
+            'subscriber_app', 'subscriber_info' => 'subscribers.view',
             default => 'debts.view',
         };
         if (! $user->can($permission)) {
@@ -467,10 +472,100 @@ class CommandExecutor
                 return $open->isEmpty() ? "✅ {$name} ما عليه دين." : "{$name} عليه ".Money::format((int) $open->sum('balance'))."\n".$open->map(fn (Debt $d) => "• {$d->bucket->getLabel()}: ".Money::format($d->balance, false))->implode("\n");
             })(),
             'subscriber_app' => $this->program($c->subscriber),
+            'subscriber_info' => $this->profile($c->subscriber),
             default => self::help(),
         };
 
         return Result::done($reply, ['query' => $c->query]);
+    }
+
+    /**
+     * «برنامج فلان F15»: records the program/app in the subscriber's «ملاحظات», added beside the old
+     * value, never erasing it. Resolves the subscriber the same way as a payment (one match, else asks).
+     */
+    private function setApp(Command $c, User $user): Result
+    {
+        if (! $user->can('subscribers.update')) {
+            return Result::denied();
+        }
+        if ($c->subscriber === null || $c->text === null || trim($c->text) === '') {
+            return Result::clarify('اكتب: برنامج الاسم ثم رقم البرنامج. مثال: برنامج محمد F15');
+        }
+        $account = $this->findAccount($c->subscriber);
+        if (is_string($account)) {
+            return Result::clarify($account);
+        }
+        $subscriber = app(SubscriberService::class)->setProgram($account->subscriber, $c->text);
+        $notes = trim((string) ($subscriber->getAttributes()['notes'] ?? ''));
+
+        return Result::done("✅ سُجّل برنامج {$subscriber->full_name}.\nرقم البرنامج الآن: {$notes}", [
+            'subscriber_id' => $subscriber->id, 'program' => $c->text,
+        ]);
+    }
+
+    /** «وضع فلان»: the subscriber's whole profile — numbers, program, and every account's details. */
+    private function profile(?string $term): string
+    {
+        if ($term === null || trim($term) === '') {
+            return 'وضع منو تريد تعرف؟';
+        }
+        $account = $this->findAccount($term);
+        if (is_string($account)) {
+            return $account;
+        }
+        $subscriber = $account->subscriber->loadMissing(['accounts' => fn ($q) => $q->where('status', '<>', AccountStatus::Closed)->orderBy('id'), 'accounts.currentPlan']);
+        $notes = trim((string) ($subscriber->getAttributes()['notes'] ?? ''));
+
+        $lines = ['👤 '.$subscriber->full_name];
+        $phones = array_values(array_filter([$subscriber->phone, $subscriber->alt_phone]));
+        if ($phones !== []) {
+            $lines[] = '📱 '.implode(' · ', $phones);
+        }
+        $lines[] = '🔢 رقم البرنامج: '.($notes !== '' ? $notes : '—');
+        if (filled($subscriber->code)) {
+            $lines[] = '🏷️ الكود: '.$subscriber->code;
+        }
+        if (filled($subscriber->address)) {
+            $lines[] = '📍 '.$subscriber->address;
+        }
+
+        foreach ($subscriber->accounts as $acc) {
+            $ends = SubscriberStatus::endsAt($acc);
+            $primary = (int) Debt::where('account_id', $acc->id)->where('bucket', DebtBucket::Primary)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
+            $secondary = (int) Debt::where('account_id', $acc->id)->where('bucket', DebtBucket::Secondary)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
+            $parts = ['📶 '.($acc->username ?: '—')];
+            if ($acc->currentPlan) {
+                $parts[] = $acc->currentPlan->name_ar ?? $acc->currentPlan->code;
+            }
+            $parts[] = $acc->status->getLabel();
+            $detail = ["\n".implode(' · ', $parts)];
+            if ($ends) {
+                $detail[] = 'ينتهي: '.$ends->setTimezone(config('app.timezone'))->format('Y/m/d');
+            }
+            if (filled($acc->fat_code) || filled($acc->port_number)) {
+                $detail[] = 'الفات/البورت: '.($acc->fat_code ?: '—').' / '.($acc->port_number ?: '—');
+            }
+            if (filled($acc->zone_code)) {
+                $detail[] = 'المنطقة: '.$acc->zone_code;
+            }
+            if ($label = OpticalSignal::label($acc)) {
+                $detail[] = 'القدرة: '.$label;
+            }
+            if ($primary > 0 || $secondary > 0) {
+                $detail[] = 'ديون: أولي '.Money::format($primary, false).' · ثانوي '.Money::format($secondary, false);
+            }
+            $lines[] = implode("\n  ", $detail);
+        }
+
+        $openNotes = SubscriberNote::where('subscriber_id', $subscriber->id)->where('status', 'active')->count();
+        if ($openNotes > 0) {
+            $lines[] = "⚠️ ملاحظات مفتوحة: {$openNotes}";
+        }
+        if (BlacklistEntry::where('subscriber_id', $subscriber->id)->whereNull('removed_at')->exists()) {
+            $lines[] = '⛔ ضمن القائمة السوداء';
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

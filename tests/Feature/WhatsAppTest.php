@@ -334,6 +334,45 @@ class WhatsAppTest extends TestCase
         $this->assertSame(0, Debt::count());
     }
 
+    public function test_setting_a_program_appends_to_the_notes_and_keeps_the_old(): void
+    {
+        $account = $this->subscriber('مصطفى علي');
+        $account->subscriber->update(['notes' => 'F10']);
+
+        $this->text('برنامج مصطفى علي F15');
+        $this->assertStringContainsString('رقم البرنامج الآن: F10 + F15', $this->wa->lastReply());
+        $this->assertSame('F10 + F15', $account->subscriber->fresh()->getAttributes()['notes']);
+
+        // Reading it back returns both; an exact duplicate is not added twice.
+        $this->text('برنامج مصطفى علي');
+        $this->assertStringContainsString('رقم البرنامج: F10 + F15', $this->wa->lastReply());
+        $this->text('برنامج مصطفى علي F15');
+        $this->assertSame('F10 + F15', $account->subscriber->fresh()->getAttributes()['notes']);
+    }
+
+    public function test_setting_a_program_on_an_empty_notes(): void
+    {
+        $account = $this->subscriber('زينب حسن');
+        $this->text('برنامج زينب حسن 9');
+        $this->assertSame('9', $account->subscriber->fresh()->getAttributes()['notes']);
+    }
+
+    public function test_the_whole_profile_is_shown(): void
+    {
+        $account = $this->subscriber('علياء كامل');
+        $account->subscriber->update(['notes' => 'F15', 'alt_phone' => '07809990001']);
+        $phone = $account->subscriber->phone;
+
+        $this->text('وضع علياء كامل');
+        $reply = $this->wa->lastReply();
+        $this->assertStringContainsString('علياء كامل', $reply);
+        $this->assertStringContainsString($phone, $reply);
+        $this->assertStringContainsString('07809990001', $reply);
+        $this->assertStringContainsString('رقم البرنامج: F15', $reply);
+        $this->assertStringContainsString($account->username, $reply);
+        $this->assertSame(0, Debt::count());
+    }
+
     public function test_a_name_written_with_other_spaces_is_the_same_subscriber(): void
     {
         $this->subscriber('زيد ذو الفقار')->subscriber->update(['notes' => '6']);
@@ -770,7 +809,7 @@ class WhatsAppTest extends TestCase
 
         $this->assertSame('claude-opus-5-5', $request['model']);
         $this->assertSame('json_schema', $request['outputConfig']['format']['type']);
-        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit'], $request['outputConfig']['format']['schema']['required']);
+        $this->assertSame(['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit', 'text'], $request['outputConfig']['format']['schema']['required']);
         $this->assertSame('default', $request['fallbacks']);
         $this->assertSame(['server-side-fallback-2026-07-01'], $request['betas']);
         $this->assertStringContainsString('كم يوم؟', $request['messages'][0]['content']);

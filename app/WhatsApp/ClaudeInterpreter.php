@@ -32,12 +32,15 @@ class ClaudeInterpreter implements Interpreter
         - add_debt: record a new debt on a subscriber ("سجل دين على محمد 25 الف", "محمد عليه 20 الف دين أولي"). An activation on a primary debt ("فعلت محمد شهر دين أولي") is add_debt with bucket primary and days set (30 when not said); amount may then be null (the plan price).
           subscriber and amount; bucket = "secondary" only if ثانوي is said, otherwise "primary".
         - void_debt: delete/cancel a subscriber's debt ("امسح دين محمد"). subscriber; amount only if stated.
+        - set_app: record a subscriber's program/app ("برنامج محمد F15", "تطبيق محمد رقم 9"): subscriber and the
+          program code in "text" (e.g. "F15", "9"); it is appended to his notes beside the old one.
         - query: a question. query = secondary_debts (الديون الثانوية), primary_debts (الديون الأولية),
           late (المتأخرين), activated_today (المفعلين اليوم), sales_today (مبيعات اليوم),
           purchases_today (مشتريات/مصاريف اليوم), custody (عهد الموظفين), advances (سلف الموظفين),
           subscriber_debt (how much a given subscriber owes; also set subscriber), must_activate (يجب التفعيل: paid their
           secondary debt and wait for the full activation), subscriber_app (which program/app a given subscriber
-          uses, "برنامج محمد", "تطبيق محمد": the number written in his notes; also set subscriber).
+          uses, "برنامج محمد" with NO code: the number written in his notes; also set subscriber),
+          subscriber_info (كل تفاصيل المشترك، "وضع محمد", "تفاصيل محمد", "معلومات محمد": full profile; also set subscriber).
         - clarify: a command whose required detail is missing or ambiguous (activation without days, payment
           without amount, purchase item without a price). Put one short question in Iraqi Arabic in "question".
         - unknown: anything else (greetings, unrelated text). Put a short Iraqi Arabic reply in "question"
@@ -134,8 +137,9 @@ class ClaudeInterpreter implements Interpreter
                 'question' => $nullable(['type' => 'string']),
                 'bucket' => $nullable(['type' => 'string', 'enum' => Command::BUCKETS]),
                 'on_credit' => $nullable(['type' => 'boolean']),
+                'text' => $nullable(['type' => 'string']),
             ],
-            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit'],
+            'required' => ['intent', 'subscriber', 'days', 'amount', 'items', 'query', 'question', 'bucket', 'on_credit', 'text'],
             'additionalProperties' => false,
         ];
     }
