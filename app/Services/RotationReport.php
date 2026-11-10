@@ -13,8 +13,10 @@ use Illuminate\Support\Str;
 
 /**
  * «تقرير الدوّار»: the money that turns in the business, added up: primary debts, what is on the cards,
- * the employees' custody and advances, and «الربح والخسارة» (since the last «تصفير», as on the dashboard), plus the cash
- * and the company page balance when entered by hand. A report only: it records and moves nothing.
+ * the employees' custody and advances, plus the cash and the company page balance when entered by hand.
+ * «الربح والخسارة» (since the last «تصفير», as on the dashboard) is not part of that total: it moves the
+ * «مقدار الدوّار» (a profit raises what the total should be, a loss lowers it), and the total is compared
+ * with that. A report only: it records and moves nothing.
  */
 class RotationReport
 {
@@ -23,7 +25,7 @@ class RotationReport
     /**
      * $target: «مقدار الدوّار», what the total should be; the difference says شكد نقص أو زيادة.
      *
-     * @return array{lines: array<int, array{label: string, amount: int}>, total: int, target: ?int, difference: ?int}
+     * @return array{lines: array<int, array{label: string, amount: int}>, total: int, profit: int, target: ?int, adjusted_target: ?int, difference: ?int}
      */
     public function compute(?int $cash = null, ?int $pageBalance = null, ?int $target = null): array
     {
@@ -36,8 +38,8 @@ class RotationReport
             ['label' => 'عهد الموظفين', 'amount' => (int) MoneyAccount::where('kind', MoneyAccountKind::Custody)->get()->sum(fn (MoneyAccount $m) => $this->treasury->balance($m))],
             // What the employees still owe on their advances: money of the business out with them.
             ['label' => 'سلف الموظفين', 'amount' => $this->ledger->balance(Ledger::EMPLOYEE_ADVANCES)],
-            ['label' => 'الربح والخسارة', 'amount' => $sales - $purchases],
         ];
+        $profit = $sales - $purchases;
         if ($cash !== null) {
             $lines[] = ['label' => 'الكاش', 'amount' => $cash];
         }
@@ -47,7 +49,10 @@ class RotationReport
 
         $total = array_sum(array_column($lines, 'amount'));
 
-        return ['lines' => $lines, 'total' => $total, 'target' => $target, 'difference' => $target !== null ? $total - $target : null];
+        // The profit (or loss, negative) is added to the target, not to the total.
+        $adjusted = $target !== null ? $target + $profit : null;
+
+        return ['lines' => $lines, 'total' => $total, 'profit' => $profit, 'target' => $target, 'adjusted_target' => $adjusted, 'difference' => $adjusted !== null ? $total - $adjusted : null];
     }
 
     /** «نقص 10,000» / «زيادة 20,000» / «مطابق», or null without a target. */
@@ -69,7 +74,10 @@ class RotationReport
 
         return '📊 تقرير الدوّار – '.CarbonImmutable::now()->setTimezone(config('app.timezone'))->format('Y/m/d H:i')
             ."\n".implode("\n", $rows)."\n————\nالمجموع: ".Money::format($report['total'])
-            .($report['target'] !== null ? "\nمقدار الدوّار: ".Money::format($report['target'])."\nالنتيجة: ".self::differenceLabel($report) : '');
+            ."\nالربح والخسارة: ".Money::format($report['profit'])
+            .($report['target'] !== null ? "\nمقدار الدوّار: ".Money::format($report['target'])
+                ."\nمقدار الدوّار مع الربح والخسارة: ".Money::format($report['adjusted_target'])
+                ."\nالنتيجة: ".self::differenceLabel($report) : '');
     }
 
     /**
@@ -88,7 +96,7 @@ class RotationReport
         foreach ($numbers as $number) {
             $queued += $this->outbox->queue($number->phone, $text, 'alert_report', "report:rotation:{$batch}:{$number->id}") ? 1 : 0;
         }
-        $this->audit->log('report.rotation_sent', 'reports', null, ['total' => $report['total'], 'target' => $report['target'], 'difference' => $report['difference'], 'lines' => $report['lines'], 'numbers' => $numbers->pluck('id')->all()]);
+        $this->audit->log('report.rotation_sent', 'reports', null, ['total' => $report['total'], 'profit' => $report['profit'], 'target' => $report['target'], 'adjusted_target' => $report['adjusted_target'], 'difference' => $report['difference'], 'lines' => $report['lines'], 'numbers' => $numbers->pluck('id')->all()]);
 
         return $queued;
     }

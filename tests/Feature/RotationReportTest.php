@@ -40,31 +40,42 @@ class RotationReportTest extends TestCase
         $treasury->recordDeviceSale(DeviceType::where('key', 'card')->firstOrFail(), 'كارت', 7000, 1, null, $this->cash());
     }
 
-    public function test_it_adds_debts_cards_custody_profit_and_the_typed_cash_and_page_balance(): void
+    public function test_it_adds_debts_cards_custody_and_the_typed_cash_and_page_balance_but_not_the_profit(): void
     {
         $this->setUpMoney();
         $report = app(RotationReport::class)->compute();
-        $this->assertSame(['الديون الأولية', 'رصيد البطاقات', 'عهد الموظفين', 'سلف الموظفين', 'الربح والخسارة'], array_column($report['lines'], 'label'));
-        $this->assertSame([50000, 30000, 20000, 15000, 2000], array_column($report['lines'], 'amount'));
-        $this->assertSame(117000, $report['total']);
+        $this->assertSame(['الديون الأولية', 'رصيد البطاقات', 'عهد الموظفين', 'سلف الموظفين'], array_column($report['lines'], 'label'));
+        $this->assertSame([50000, 30000, 20000, 15000], array_column($report['lines'], 'amount'));
+        $this->assertSame(115000, $report['total']);
+        $this->assertSame(2000, $report['profit']);
 
         Livewire::test(RotationReportPage::class)
-            ->assertSee('117,000')
+            ->assertSee('115,000')->assertSee('يُضاف إلى مقدار الدوّار')
             ->set('cash', '٢٥٠٠٠٠')->set('pageBalance', '79,471')
             ->assertSee('الكاش')->assertSee('رصيد الصفحة')
-            ->assertSee('446,471');
+            ->assertSee('444,471');
     }
 
     public function test_the_target_shows_the_shortfall_or_the_surplus_and_is_kept(): void
     {
-        $this->setUpMoney(); // 117,000
-        Livewire::test(RotationReportPage::class)->set('target', '127000')->assertSee('نقص 10,000 د.ع');
-        Livewire::test(RotationReportPage::class)->assertSet('target', '127000')->set('target', '97,000')->assertSee('زيادة 20,000 د.ع');
-        Livewire::test(RotationReportPage::class)->set('target', '117000')->assertSee('مطابق');
+        $this->setUpMoney(); // total 115,000; profit 2,000 goes on the target
+        Livewire::test(RotationReportPage::class)->set('target', '127000')->assertSee('129,000')->assertSee('نقص 14,000 د.ع');
+        Livewire::test(RotationReportPage::class)->assertSet('target', '127000')->set('target', '97,000')->assertSee('زيادة 16,000 د.ع');
+        Livewire::test(RotationReportPage::class)->set('target', '113000')->assertSee('مطابق');
 
         $report = app(RotationReport::class)->compute(target: 127000);
-        $this->assertSame(-10000, $report['difference']);
-        $this->assertStringContainsString("مقدار الدوّار: 127,000 د.ع\nالنتيجة: نقص 10,000 د.ع", app(RotationReport::class)->text($report));
+        $this->assertSame([129000, -14000], [$report['adjusted_target'], $report['difference']]);
+        $this->assertStringContainsString("مقدار الدوّار: 127,000 د.ع\nمقدار الدوّار مع الربح والخسارة: 129,000 د.ع\nالنتيجة: نقص 14,000 د.ع", app(RotationReport::class)->text($report));
+    }
+
+    public function test_a_loss_lowers_the_target(): void
+    {
+        $this->setUpMoney();
+        app(TreasuryService::class)->recordExpense(ExpenseCategory::first(), 'مواد', 12000, $this->cash()); // profit 2,000 → loss 10,000
+        $report = app(RotationReport::class)->compute(target: 120000);
+        $this->assertSame(-10000, $report['profit']);
+        $this->assertSame([110000, 5000], [$report['adjusted_target'], $report['difference']]);
+        $this->assertSame('زيادة 5,000 د.ع', RotationReport::differenceLabel($report));
     }
 
     public function test_it_is_sent_to_the_chosen_numbers_and_needs_its_permission(): void
@@ -80,7 +91,8 @@ class RotationReportTest extends TestCase
         $this->assertSame([$ali->phone, 'alert_report'], [$sent->to_phone, $sent->kind]);
         $this->assertStringContainsString('📊 تقرير الدوّار', $sent->body);
         $this->assertStringContainsString('الكاش: 1,000', $sent->body);
-        $this->assertStringContainsString('المجموع: 118,000', $sent->body);
+        $this->assertStringContainsString('المجموع: 116,000', $sent->body);
+        $this->assertStringContainsString('الربح والخسارة: 2,000', $sent->body);
 
         // None chosen: every authorized number.
         Livewire::test(RotationReportPage::class)->callAction('sendWhatsapp', data: ['numbers' => []]);

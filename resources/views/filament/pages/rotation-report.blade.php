@@ -41,12 +41,25 @@
                         <td style="padding:9px 6px;border-top:1px solid var(--subs-subtle);text-align:left;font-weight:700" dir="ltr">{{ Money::format($report['target']) }}</td>
                     </tr>
                     <tr>
+                        <td style="padding:9px 6px">{{ $report['profit'] < 0 ? '− الخسارة' : '+ الربح' }} <span style="font-size:12.5px;color:var(--subs-muted)">(الربح والخسارة)</span></td>
+                        <td style="padding:9px 6px;text-align:left;font-weight:700;{{ $report['profit'] < 0 ? 'color:var(--subs-red)' : '' }}" dir="ltr">{{ Money::format($report['profit']) }}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:9px 6px;border-bottom:1px solid var(--subs-subtle);font-weight:700">مقدار الدوّار مع الربح والخسارة</td>
+                        <td data-test="rotation-adjusted" style="padding:9px 6px;border-bottom:1px solid var(--subs-subtle);text-align:left;font-weight:800" dir="ltr">{{ Money::format($report['adjusted_target']) }}</td>
+                    </tr>
+                    <tr>
                         <td style="padding:12px 6px;font-weight:800;font-size:17px">النتيجة</td>
                         <td data-test="rotation-difference" style="padding:12px 6px;text-align:left;font-weight:800;font-size:19px;color:{{ $d < 0 ? 'var(--subs-red)' : ($d > 0 ? 'var(--subs-amber)' : 'var(--subs-green)') }}">{{ \App\Services\RotationReport::differenceLabel($report) }}</td>
+                    </tr>
+                @else
+                    <tr>
+                        <td style="padding:9px 6px;border-top:1px solid var(--subs-subtle)">الربح والخسارة <span style="font-size:12.5px;color:var(--subs-muted)">(يُضاف إلى مقدار الدوّار)</span></td>
+                        <td style="padding:9px 6px;border-top:1px solid var(--subs-subtle);text-align:left;font-weight:700;{{ $report['profit'] < 0 ? 'color:var(--subs-red)' : '' }}" dir="ltr">{{ Money::format($report['profit']) }}</td>
                     </tr>
                 @endif
             </tbody>
         </table>
-        <p style="font-size:12.5px;color:var(--subs-muted);margin:8px 0 0">الربح والخسارة منذ آخر تصفير (المبيعات − المشتريات)، كما في الرئيسية. الأرقام لحظية عند فتح الصفحة.</p>
+        <p style="font-size:12.5px;color:var(--subs-muted);margin:8px 0 0">الربح والخسارة منذ آخر تصفير (المبيعات − المشتريات)، كما في الرئيسية: لا يدخل في المجموع، يُضاف إلى مقدار الدوّار (والخسارة تُطرح منه) ثم يُقارن المجموع به. الأرقام لحظية عند فتح الصفحة.</p>
     </x-filament::section>
 </x-filament-panels::page>

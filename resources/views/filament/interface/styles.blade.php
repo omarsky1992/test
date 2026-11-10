@@ -35,4 +35,15 @@
     .fi-ta-row.subs-has-note > td:first-child { box-shadow: inset -4px 0 0 var(--note-bd); }
     .subs-has-note.subs-card, .subs-note-box { background: var(--note-bg) !important; border-color: var(--note-bd) !important; border-width: 2px !important; }
     [data-test=save]:disabled, [data-test=gps]:disabled { opacity: .5; cursor: not-allowed; }
+    /* Computer (sidebar beside the page): the right-most scrollbar scrolls the menu, the middle one (between
+       menu and page) scrolls the page. The menu scrolls with its bar on its right edge (direction ltr, content
+       back to rtl); the page scrolls inside its own column, whose bar sits on its right edge, next to the menu. */
+    @media (min-width: 1024px) {
+        html:has(.fi-layout), body:has(.fi-layout) { height: 100%; overflow: hidden; }
+        .fi-layout { height: 100vh; }
+        .fi-main-ctn { height: 100vh; overflow-y: auto; direction: ltr; }
+        .fi-main-ctn > * { direction: rtl; }
+        .fi-sidebar-nav { direction: ltr; }
+        .fi-sidebar-nav > * { direction: rtl; }
+    }
 </style>
