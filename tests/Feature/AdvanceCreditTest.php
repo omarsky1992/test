@@ -94,4 +94,17 @@ class AdvanceCreditTest extends TestCase
         $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.applied')->where('source', 'system')->exists());
         $this->artisan('credits:settle')->expectsOutput('No account has credit beside a debt.');
     }
+
+    public function test_the_accounts_holding_advance_credit_are_counted(): void
+    {
+        $this->artisan('credits:list')->expectsOutput('No account has advance credit.')->assertSuccessful();
+
+        app(PaymentService::class)->record($this->account('علي'), 30000, moneyAccount: $this->cash(), type: PaymentType::Advance);
+        app(PaymentService::class)->record($this->account('حسن'), 5000, moneyAccount: $this->cash(), type: PaymentType::Advance);
+
+        $this->artisan('credits:list')
+            ->expectsOutputToContain('credit 30,000')
+            ->expectsOutputToContain('Accounts with advance credit: 2 · total 35,000 IQD.')
+            ->assertSuccessful();
+    }
 }

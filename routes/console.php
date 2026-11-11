@@ -1,18 +1,23 @@
 <?php
 
+use App\Models\Account;
+use App\Models\Debt;
+use App\Models\LedgerEntry;
 use App\Models\SyncRun;
-use App\Services\PaymentService;
 use App\Models\User;
+use App\Platform\ClientBackups;
 use App\Platform\Php;
 use App\Platform\PlatformAdmin;
 use App\Platform\PlatformAudit;
-use App\Platform\ClientBackups;
 use App\Platform\PlatformInstaller;
 use App\Platform\SubscriptionAlerts;
 use App\Platform\Tenant;
-use App\Platform\TenantStats;
 use App\Platform\TenantManager;
+use App\Platform\TenantStats;
+use App\Services\Audit;
 use App\Services\BackupService;
+use App\Services\Ledger;
+use App\Services\PaymentService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
 use App\Sync\FtthApiClient;
@@ -25,14 +30,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Process\Pool;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Facades\Schema;
 
 // Accounts that show advance credit beside an unpaid debt (from before advances paid debts): lists
 // them; with --apply the credit pays those debts through the normal ledger posting (nothing edited).
 Artisan::command('credits:settle {--apply : Use the credit to pay the debts}', function (PaymentService $payments) {
-    $accounts = \App\Models\Account::whereHas('debts', fn ($q) => $q->whereIn('status', ['open', 'partial'])->where('balance', '>', 0))->with('subscriber')->get()
+    $accounts = Account::whereHas('debts', fn ($q) => $q->whereIn('status', ['open', 'partial'])->where('balance', '>', 0))->with('subscriber')->get()
         ->filter(fn ($account) => $payments->creditBalance($account) > 0)->values();
     if ($accounts->isEmpty()) {
         $this->info('No account has credit beside a debt.');
@@ -43,7 +48,7 @@ Artisan::command('credits:settle {--apply : Use the credit to pay the debts}', f
     foreach ($accounts as $account) {
         $credit = $payments->creditBalance($account);
         $due = (int) $account->debts()->whereIn('status', ['open', 'partial'])->sum('balance');
-        $used = $this->option('apply') ? app(\App\Services\Audit::class)->withSource('system', fn () => $payments->settleFromCredit($account)) : min($credit, $due);
+        $used = $this->option('apply') ? app(Audit::class)->withSource('system', fn () => $payments->settleFromCredit($account)) : min($credit, $due);
         $total += $used;
         $this->line(sprintf('%s (%s): credit %s, debts %s → %s %s', $account->subscriber?->full_name, $account->username, number_format($credit), number_format($due), $this->option('apply') ? 'paid' : 'would pay', number_format($used)));
     }
@@ -51,6 +56,31 @@ Artisan::command('credits:settle {--apply : Use the credit to pay the debts}', f
 
     return 0;
 })->purpose('List (or settle with --apply) accounts that have advance credit beside an unpaid debt');
+
+// How many accounts hold advance credit («رصيد مقدم») and how much: a reading only, nothing changes.
+Artisan::command('credits:list {--all : Print every account, not only the first 50}', function (Ledger $ledger) {
+    $rows = LedgerEntry::where('ledger_account_id', $ledger->accountId(Ledger::CUSTOMER_CREDIT))
+        ->whereNotNull('account_id')->groupBy('account_id')
+        ->selectRaw('account_id, sum(credit - debit) as credit')->havingRaw('sum(credit - debit) > 0')
+        ->orderByDesc('credit')->get();
+    if ($rows->isEmpty()) {
+        $this->info('No account has advance credit.');
+
+        return 0;
+    }
+    $accounts = Account::with('subscriber:id,full_name')->whereIn('id', $rows->pluck('account_id'))->get()->keyBy('id');
+    foreach ($this->option('all') ? $rows : $rows->take(50) as $row) {
+        $account = $accounts->get($row->account_id);
+        $debt = (int) Debt::where('account_id', $row->account_id)->whereIn('status', ['open', 'partial'])->sum('balance');
+        $this->line(sprintf('%s (%s): credit %s%s', $account?->subscriber?->full_name ?? '?', $account?->username ?? $row->account_id, number_format((int) $row->credit), $debt > 0 ? ', unpaid debts '.number_format($debt) : ''));
+    }
+    if (! $this->option('all') && $rows->count() > 50) {
+        $this->line('… and '.($rows->count() - 50).' more (run with --all).');
+    }
+    $this->info('Accounts with advance credit: '.$rows->count().' · total '.number_format((int) $rows->sum('credit')).' IQD.');
+
+    return 0;
+})->purpose('Count and list the accounts that hold advance credit (read only)');
 
 // Sets up the platform (SaaS) database and registers this system as client 1; safe on every start.
 Artisan::command('platform:install', function (PlatformInstaller $installer) {
