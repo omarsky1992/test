@@ -77,8 +77,13 @@
             <span>{{ Money::format($allocation->amount, false) }}</span>
         </div>
     @empty
-        <div class="row"><span>دفع مقدم يُضاف إلى رصيد الحساب</span><span>{{ Money::format($payment->amount, false) }}</span></div>
+        @if ((int) $payment->activation_amount === 0)
+            <div class="row"><span>دفع مقدم يُضاف إلى رصيد الحساب</span><span>{{ Money::format($payment->amount, false) }}</span></div>
+        @endif
     @endforelse
+    @if ((int) $payment->activation_amount > 0)
+        <div class="row"><span>تفعيل نقدي</span><span>{{ Money::format((int) $payment->activation_amount, false) }}</span></div>
+    @endif
     @foreach ($transfers as $transfer)
         <div class="row"><span>نقل الباقي إلى الديون الأولية ({{ $transfer->number }})</span><span>{{ Money::format($transfer->amount, false) }}</span></div>
     @endforeach

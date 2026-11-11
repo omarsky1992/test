@@ -27,7 +27,7 @@ class AuditDetails
     /** Field names written by the services, in Arabic. */
     public const KEYS = [
         'number' => 'الرقم', 'receipt' => 'رقم السند', 'amount' => 'المبلغ', 'total' => 'الإجمالي', 'type' => 'النوع',
-        'methods' => 'طريقة الدفع', 'method' => 'طريقة الدفع', 'allocations' => 'سدّد الديون', 'credit' => 'رصيد مقدم',
+        'methods' => 'طريقة الدفع', 'method' => 'طريقة الدفع', 'allocations' => 'سدّد الديون', 'credit' => 'رصيد مقدم', 'activation' => 'تفعيل نقدي',
         'money_account' => 'الصندوق', 'from' => 'من', 'to' => 'إلى', 'into' => 'إلى الصندوق', 'box' => 'الصندوق',
         'debt' => 'الدين', 'bucket' => 'نوع الدين', 'source' => 'المصدر', 'renewal' => 'التجديد', 'kind' => 'النوع',
         'plan' => 'الفئة', 'starts_at' => 'من', 'ends_at' => 'إلى', 'final_price' => 'السعر', 'days_added' => 'أيام مضافة',
@@ -41,10 +41,10 @@ class AuditDetails
     ];
 
     /** Fields that hold whole dinars. */
-    private const MONEY = ['amount', 'total', 'credit', 'final_price', 'custody', 'price', 'balance', 'opening_balance', 'company_amount'];
+    private const MONEY = ['amount', 'total', 'credit', 'activation', 'final_price', 'custody', 'price', 'balance', 'opening_balance', 'company_amount'];
 
     private const VALUES = [
-        'type' => ['debt_payment' => 'تسديد دين', 'advance' => 'دفع مقدم'],
+        'type' => ['debt_payment' => 'تسديد دين', 'activation' => 'تفعيل نقدي', 'advance' => 'دفع مقدم'],
         'bucket' => ['primary' => 'دين أولي', 'secondary' => 'دين ثانوي'],
         'source' => ['activation' => 'تفعيل', 'manual' => 'يدوي', 'opening' => 'افتتاحي', 'device_sale' => 'بيع جهاز', 'renewal' => 'تجديد تلقائي'],
         'kind' => ['partial_7' => '7 أيام', 'full_30' => '30 يوم'],

@@ -37,9 +37,11 @@ class PaymentService
     ) {}
 
     /**
-     * Records a receipt. Debt payments go to the chosen debts in order, else oldest first; an advance
-     * («دفع مقدم») first pays any open debt (primary or secondary, oldest first), so an account never
-     * shows credit beside a debt; anything left over becomes advance credit on the account. A 7-day debt paid in full completes its
+     * Records a receipt. Debt payments go to the chosen debts in order, else oldest first; a cash
+     * activation («تفعيل نقدي») first pays any open debt (primary or secondary, oldest first). Anything
+     * left over is the cash price of an activation (`payments.activation_amount`, credited to
+     * RENEWALS_CLEARING), never advance credit: no receipt creates credit any more, except the old
+     * `Advance` type kept for the balances that already exist. A 7-day debt paid in full completes its
      * activation; with $transferRemainder, a 7-day debt left partly unpaid moves to primary debts.
      *
      * The money can arrive through several payment methods at once ($lines); the single-method
@@ -116,7 +118,14 @@ class PaymentService
 
             $plan = $this->allocationPlan($account, $amount, $type === PaymentType::DebtPayment ? $debtIds : null);
             $allocated = array_sum(array_column($plan, 'amount'));
-            $credit = $amount - $allocated;
+            // What is left after the debts is the cash price of an activation («تفعيل نقدي»), never advance
+            // credit: the subscriber is activated on the company site as soon as the money is taken. Only an
+            // old-style advance (no screen records one any more) is still kept as credit.
+            $credit = $type === PaymentType::Advance ? $amount - $allocated : 0;
+            $activation = $amount - $allocated - $credit;
+            if ($activation > 0) {
+                $payment->update(['activation_amount' => $activation]);
+            }
 
             $tag = ['subscriber_id' => $account->subscriber_id, 'account_id' => $account->id];
             $entries = [];
@@ -127,6 +136,8 @@ class PaymentService
                 $entries[] = ['account' => $this->activations->arCode($row['debt']->bucket), 'credit' => $row['amount'], ...$tag, 'debt_id' => $row['debt']->id];
             }
             $entries[] = ['account' => Ledger::CUSTOMER_CREDIT, 'credit' => $credit, ...$tag];
+            // The same account a renewal's debt is charged against: an activation paid at once.
+            $entries[] = ['account' => Ledger::RENEWALS_CLEARING, 'credit' => $activation, ...$tag];
             $txn = $this->ledger->post('payment', $receivedAt, $entries, $payment, "سند قبض {$payment->receipt_number}", $account->branch_id);
             $payment->update(['txn_id' => $txn->id]);
 
@@ -141,7 +152,7 @@ class PaymentService
             $this->audit->log('payment.created', $payment, null, [
                 'receipt' => $payment->receipt_number, 'amount' => $amount, 'type' => $type->value,
                 'methods' => array_map(fn ($l) => [$l['method']->name_ar => $l['amount']], $lines),
-                'allocations' => array_map(fn ($r) => [$r['debt']->number => $r['amount']], $plan), 'credit' => $credit,
+                'allocations' => array_map(fn ($r) => [$r['debt']->number => $r['amount']], $plan), 'credit' => $credit, 'activation' => $activation,
             ], subscriberId: $account->subscriber_id);
 
             // The subscriber is told only once the payment is committed; a rollback sends nothing.
@@ -406,9 +417,13 @@ class PaymentService
             foreach ($allocations as $allocation) {
                 $lines[] = ['account' => $this->activations->arCode($allocation->debt->bucket), 'debit' => $allocation->amount, ...$tag, 'debt_id' => $allocation->debt_id];
             }
-            $lines[] = ['account' => Ledger::CUSTOMER_CREDIT, 'debit' => $payment->amount - $allocated, ...$tag];
+            // The part recorded as a cash activation goes back where it was credited; only the rest was credit.
+            $activation = (int) $payment->activation_amount;
+            $credit = $payment->amount - $allocated - $activation;
+            $lines[] = ['account' => Ledger::RENEWALS_CLEARING, 'debit' => $activation, ...$tag];
+            $lines[] = ['account' => Ledger::CUSTOMER_CREDIT, 'debit' => $credit, ...$tag];
 
-            if ($payment->amount - $allocated > $this->creditBalance($payment->account)) {
+            if ($credit > $this->creditBalance($payment->account)) {
                 throw new BusinessRuleException('الرصيد المقدم من هذا السند مستخدم. لا يمكن إلغاؤه.');
             }
 
@@ -438,7 +453,8 @@ class PaymentService
     private function paymentsWithUnusedCredit(Account $account): Collection
     {
         return Payment::where('account_id', $account->id)->where('status', DocumentStatus::Posted)->orderBy('received_at')->get()
-            ->map(fn (Payment $p) => [$p, $p->amount - (int) $p->allocations()->where('is_reversed', false)->sum('amount')])
+            // The part recorded as a cash activation is spent: it is not credit.
+            ->map(fn (Payment $p) => [$p, $p->amount - (int) $p->activation_amount - (int) $p->allocations()->where('is_reversed', false)->sum('amount')])
             ->filter(fn (array $row) => $row[1] > 0)
             ->values();
     }

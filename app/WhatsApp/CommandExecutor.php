@@ -194,7 +194,9 @@ class CommandExecutor
         $left = (int) Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])->sum('balance');
 
         return Result::done(
-            '✅ قبض '.Money::format($c->amount)." من {$account->subscriber->full_name}\nسند {$payment->receipt_number}\nالمتبقي عليه: ".Money::format($left),
+            '✅ قبض '.Money::format($c->amount)." من {$account->subscriber->full_name}\nسند {$payment->receipt_number}"
+                .((int) $payment->activation_amount > 0 ? "\nتفعيل نقدي: ".Money::format((int) $payment->activation_amount) : '')
+                ."\nالمتبقي عليه: ".Money::format($left),
             ['payment' => $payment->receipt_number, 'amount' => $c->amount, 'account_id' => $account->id, 'box' => $box->name, 'remaining' => $left],
         );
     }

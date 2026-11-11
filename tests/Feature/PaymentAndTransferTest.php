@@ -14,10 +14,12 @@ use App\Enums\PaymentType;
 use App\Enums\Settlement;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Debt;
+use App\Models\Payment;
 use App\Services\ActivationService;
 use App\Services\DebtService;
 use App\Services\Ledger;
 use App\Services\PaymentService;
+use App\Services\TreasuryService;
 use Tests\TestCase;
 
 class PaymentAndTransferTest extends TestCase
@@ -74,7 +76,7 @@ class PaymentAndTransferTest extends TestCase
         $this->assertSame('R-2026-000001', $payment->receipt_number);
     }
 
-    public function test_payment_goes_to_the_oldest_debt_first_and_the_rest_becomes_credit(): void
+    public function test_payment_goes_to_the_oldest_debt_first_and_the_rest_is_a_cash_activation(): void
     {
         $account = $this->account();
         $debts = app(DebtService::class);
@@ -85,7 +87,49 @@ class PaymentAndTransferTest extends TestCase
 
         $this->assertSame(DebtStatus::Paid, $old->fresh()->status);
         $this->assertSame(DebtStatus::Paid, $new->fresh()->status);
-        $this->assertSame(10000, $this->payments()->creditBalance($account));
+        // The 10,000 beyond the debts is the price of an activation, never advance credit.
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+        $this->assertSame(10000, (int) Payment::sole()->activation_amount);
+        $this->assertSame(40000, app(TreasuryService::class)->balance($this->cash()));
+    }
+
+    public function test_money_from_a_subscriber_without_a_debt_is_a_cash_activation_not_credit(): void
+    {
+        $account = $this->account();
+        $payment = $this->payments()->record($account, 35000, PaymentMethod::Cash, $this->cash(), PaymentType::Activation);
+
+        $this->assertSame([35000, 35000], [(int) $payment->amount, (int) $payment->fresh()->activation_amount]);
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+        $this->assertSame(-35000, $this->balanceOf(Ledger::RENEWALS_CLEARING));
+        $this->assertSame(35000, app(TreasuryService::class)->balance($this->cash()));
+
+        // A debt recorded later is not paid from that money: it was the activation's price.
+        $debt = app(DebtService::class)->create($account, 20000);
+        $this->assertSame(20000, $debt->fresh()->balance);
+        $this->assertSame(0, $this->payments()->settleFromCredit($account));
+
+        // Voiding the receipt takes the money back out of the box and leaves nothing behind.
+        $this->payments()->void($payment->fresh(), 'تجربة');
+        $this->assertSame(0, app(TreasuryService::class)->balance($this->cash()));
+        $this->assertSame(0, $this->balanceOf(Ledger::RENEWALS_CLEARING));
+    }
+
+    public function test_a_cash_activation_pays_the_open_debts_first(): void
+    {
+        $account = $this->account();
+        $debt = app(DebtService::class)->create($account, 20000);
+
+        $payment = $this->payments()->record($account, 35000, PaymentMethod::Cash, $this->cash(), PaymentType::Activation);
+
+        $this->assertSame(DebtStatus::Paid, $debt->fresh()->status);
+        $this->assertSame(15000, (int) $payment->fresh()->activation_amount);
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+    }
+
+    public function test_the_payment_form_offers_a_cash_activation_and_no_advance(): void
+    {
+        $this->assertSame(['debt_payment', 'activation'], array_keys(PaymentType::current()));
+        $this->assertSame('تفعيل نقدي', PaymentType::Activation->getLabel());
     }
 
     public function test_advance_credit_pays_a_later_activation(): void

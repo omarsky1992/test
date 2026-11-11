@@ -176,7 +176,7 @@ class Operations
                 Hidden::make('idempotency_key'),
                 self::accountField()->hidden(self::accountOf($record) !== null),
                 Grid::make(2)->schema([
-                    ToggleButtons::make('payment_type')->label('نوع القبض')->options(Options::of(PaymentType::class))->inline()->required()->live(),
+                    ToggleButtons::make('payment_type')->label('نوع القبض')->options(PaymentType::current())->inline()->required()->live(),
                     DateTimePicker::make('received_at')
                         ->label('وقت القبض')
                         ->seconds(false)
@@ -219,7 +219,7 @@ class Operations
                     ]),
                 CheckboxList::make('debt_ids')
                     ->label('الديون المفتوحة')
-                    ->helperText('بدون اختيار يُسدَّد الأقدم أولاً، والزيادة تصير رصيداً مقدماً.')
+                    ->helperText('بدون اختيار يُسدَّد الأقدم أولاً، والزيادة تُسجَّل تفعيلاً نقدياً.')
                     ->options(fn (Get $get) => self::openDebtOptions($get('account_id')))
                     ->visible(fn (Get $get) => $get('payment_type') === PaymentType::DebtPayment->value)
                     ->live(),
@@ -648,8 +648,8 @@ class Operations
         if (! $account || $amount <= 0) {
             return null;
         }
-        // An advance pays the open debts first (oldest first); only the rest becomes credit.
-        $advance = $get('payment_type') === PaymentType::Advance->value;
+        // A cash activation pays the open debts first (oldest first); the rest is the activation's price.
+        $advance = $get('payment_type') === PaymentType::Activation->value;
         try {
             $plan = app(PaymentService::class)->allocationPlan($account, $amount, $advance ? null : (array_map('intval', $get('debt_ids') ?? []) ?: null));
         } catch (BusinessRuleException $e) {
@@ -664,11 +664,11 @@ class Operations
         }, $plan);
         $credit = $amount - array_sum(array_column($plan, 'amount'));
         if ($credit > 0) {
-            $lines[] = 'رصيد مقدم: '.Money::format($credit);
+            $lines[] = 'تفعيل نقدي: '.Money::format($credit);
         }
 
         if ($advance && $plan === []) {
-            return new HtmlString('يُضاف <b>'.Money::format($amount).'</b> رصيداً مقدماً على الحساب.');
+            return new HtmlString('يُسجَّل <b>'.Money::format($amount).'</b> تفعيلاً نقدياً (بدون رصيد مقدم).');
         }
 
         return new HtmlString('<b>معاينة التوزيع</b>'.($advance ? ' (يُسدَّد الدين أولاً)' : '').'<br>'.implode('<br>', $lines));

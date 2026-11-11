@@ -5,17 +5,20 @@ namespace Tests\Feature;
 use App\Enums\ActivationKind;
 use App\Enums\DebtBucket;
 use App\Enums\DebtStatus;
+use App\Enums\PaymentMethod;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Resources\Activations\Pages\ListActivations;
 use App\Filament\Resources\Debts\Pages\ListDebts;
 use App\Filament\Resources\FollowUps\Pages\ListFollowUps;
 use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Filament\Resources\Subscribers\Pages\CreateSubscriber;
-use App\Models\Account;
 use App\Models\Payment;
+use App\Models\PaymentMethodType;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\ActivationService;
+use App\Services\DebtService;
+use App\Services\PaymentService;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -45,7 +48,7 @@ class PanelTest extends TestCase
     {
         $account = $this->account();
         $activation = app(ActivationService::class)->activate($account, $this->plan(), ActivationKind::Partial7);
-        $payment = app(\App\Services\PaymentService::class)->record($account, 35000, \App\Enums\PaymentMethod::Cash, $this->cash());
+        $payment = app(PaymentService::class)->record($account, 35000, PaymentMethod::Cash, $this->cash());
 
         $this->get("/subscribers/{$account->subscriber_id}")->assertOk()->assertSee($account->subscriber->full_name);
         $this->get(route('receipts.show', $payment))->assertOk()
@@ -108,7 +111,7 @@ class PanelTest extends TestCase
             ->callAction('newPayment', data: [
                 'account_id' => $account->id,
                 'payment_type' => 'debt_payment',
-                'lines' => [['method_id' => \App\Models\PaymentMethodType::where('code', 'cash')->value('id'), 'money_account_id' => $this->cash()->id, 'amount' => 20000]],
+                'lines' => [['method_id' => PaymentMethodType::where('code', 'cash')->value('id'), 'money_account_id' => $this->cash()->id, 'amount' => 20000]],
                 'transfer_remainder' => true,
             ])
             ->assertHasNoActionErrors();
@@ -116,6 +119,34 @@ class PanelTest extends TestCase
         $debt->refresh();
         $this->assertSame(DebtBucket::Primary, $debt->bucket);
         $this->assertSame(25000, $debt->balance);
+        $this->assertSame(1, Payment::count());
+    }
+
+    public function test_the_payment_form_records_a_cash_activation_and_shows_it_on_the_receipt(): void
+    {
+        $account = $this->account();
+
+        Livewire::test(ListPayments::class)
+            ->callAction('newPayment', data: [
+                'account_id' => $account->id,
+                'payment_type' => 'activation',
+                'lines' => [['method_id' => PaymentMethodType::where('code', 'cash')->value('id'), 'money_account_id' => $this->cash()->id, 'amount' => 35000]],
+            ])
+            ->assertHasNoActionErrors();
+
+        $payment = Payment::sole();
+        $this->assertSame(['activation', 35000], [$payment->payment_type->value, (int) $payment->activation_amount]);
+        $this->assertSame(0, app(PaymentService::class)->creditBalance($account));
+        $this->get(route('receipts.show', $payment))->assertOk()->assertSee('تفعيل نقدي')->assertDontSee('دفع مقدم يُضاف');
+
+        // The old advance type is not offered by the form.
+        Livewire::test(ListPayments::class)
+            ->callAction('newPayment', data: [
+                'account_id' => $account->id,
+                'payment_type' => 'advance',
+                'lines' => [['method_id' => PaymentMethodType::where('code', 'cash')->value('id'), 'money_account_id' => $this->cash()->id, 'amount' => 1000]],
+            ])
+            ->assertHasActionErrors(['payment_type']);
         $this->assertSame(1, Payment::count());
     }
 
@@ -137,8 +168,8 @@ class PanelTest extends TestCase
     public function test_business_errors_show_as_notifications_not_crashes(): void
     {
         $account = $this->account();
-        $debt = app(\App\Services\DebtService::class)->create($account, 10000);
-        app(\App\Services\PaymentService::class)->record($account, 5000, \App\Enums\PaymentMethod::Cash, $this->cash());
+        $debt = app(DebtService::class)->create($account, 10000);
+        app(PaymentService::class)->record($account, 5000, PaymentMethod::Cash, $this->cash());
 
         Livewire::test(ListDebts::class, ['activeTab' => 'primary'])
             ->callTableAction('voidDebt', $debt, data: ['reason' => 'خطأ'])
