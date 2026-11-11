@@ -38,7 +38,7 @@ class AuditLogResource extends Resource
         'account.created' => 'إنشاء حساب', 'account.updated' => 'تعديل حساب', 'account.secret_viewed' => 'إظهار باسورد',
         'activation.created' => 'تفعيل', 'activation.completed' => 'إكمال +23 يوم', 'activation.start_edited' => 'تعديل وقت التفعيل', 'activation.voided' => 'إلغاء تفعيل',
         'debt.created' => 'إنشاء دين', 'debt.voided' => 'حذف دين', 'transfer.created' => 'مناقلة',
-        'payment.created' => 'قبض', 'payment.voided' => 'إلغاء سند', 'credit.applied' => 'استخدام رصيد مقدم', 'receipt.viewed' => 'عرض سند',
+        'payment.created' => 'قبض', 'payment.voided' => 'إلغاء سند', 'credit.applied' => 'استخدام رصيد مقدم', 'credit.cleared' => 'حذف رصيد مقدم', 'receipt.viewed' => 'عرض سند',
         'follow_up.created' => 'نتيجة اتصال', 'expense.created' => 'مصروف', 'expense.voided' => 'إلغاء مصروف',
         'fund_transfer.created' => 'تحويل بين الصناديق', 'settlement.created' => 'راجع الشركة', 'settlement.distributed' => 'تقسيم الراجع',
         'money_account.created' => 'صندوق جديد', 'money_account.opening_balance' => 'رصيد ابتدائي',

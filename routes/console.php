@@ -82,6 +82,31 @@ Artisan::command('credits:list {--all : Print every account, not only the first 
     return 0;
 })->purpose('Count and list the accounts that hold advance credit (read only)');
 
+// Removes the old advance credit from the accounts: each becomes a cash activation (one ledger
+// posting per account). Lists what it would do; --apply does it. Boxes, custody and debts do not change.
+Artisan::command('credits:clear {--apply : Clear the credit}', function (PaymentService $payments) {
+    $credits = $payments->creditAccounts();
+    if ($credits->isEmpty()) {
+        $this->info('No account has advance credit.');
+
+        return 0;
+    }
+    if (! $this->option('apply')) {
+        $this->info('Would clear '.number_format($credits->sum()).' IQD of advance credit on '.$credits->count().' accounts (run with --apply). Boxes and debts do not change.');
+
+        return 0;
+    }
+    $cleared = 0;
+    app(Audit::class)->withSource('system', function () use ($credits, $payments, &$cleared) {
+        foreach (Account::whereIn('id', $credits->keys())->get() as $account) {
+            $cleared += $payments->clearCredit($account, 'حذف الأرصدة المقدمة القديمة');
+        }
+    });
+    $this->info('Cleared '.number_format($cleared).' IQD of advance credit on '.$credits->count().' accounts. Left: '.number_format($payments->creditAccounts()->sum()).' IQD.');
+
+    return 0;
+})->purpose('Turn the old advance credit into cash activations (list, or do it with --apply)');
+
 // Sets up the platform (SaaS) database and registers this system as client 1; safe on every start.
 Artisan::command('platform:install', function (PlatformInstaller $installer) {
     $result = $installer->install();

@@ -13,6 +13,7 @@ use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\Debt;
+use App\Models\LedgerEntry;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -258,6 +259,61 @@ class PaymentService
         }
 
         return $plan;
+    }
+
+    /**
+     * Accounts that still hold old advance credit: account id => amount, largest first.
+     *
+     * @return Collection<int, int>
+     */
+    public function creditAccounts(): Collection
+    {
+        return LedgerEntry::where('ledger_account_id', $this->ledger->accountId(Ledger::CUSTOMER_CREDIT))
+            ->whereNotNull('account_id')->groupBy('account_id')
+            ->selectRaw('account_id, sum(credit - debit) as credit')->havingRaw('sum(credit - debit) > 0')
+            ->orderByDesc('credit')->pluck('credit', 'account_id')->map(fn ($v) => (int) $v);
+    }
+
+    /**
+     * «حذف الرصيد المقدم»: the old advance credit of an account becomes what it really was, the cash
+     * price of an activation already given. One posting moves it from CUSTOMER_CREDIT to
+     * RENEWALS_CLEARING (where a cash activation is credited); no box, custody, debt or receipt amount
+     * changes. Open debts are paid from the credit first, as always. The receipts that carried the
+     * credit remember it as their activation part, so a later void still balances. Admin only.
+     */
+    public function clearCredit(Account $account, ?string $reason = null): int
+    {
+        // A signed-in user must be the admin; the server command (no user) is the owner's own.
+        if (Auth::user() !== null && ! Auth::user()->isAdmin()) {
+            throw new AuthorizationException('حذف الرصيد المقدم للمدير فقط.');
+        }
+
+        return DB::transaction(function () use ($account, $reason) {
+            $account = Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
+            $this->settleFromCredit($account);
+            $credit = $this->creditBalance($account);
+            if ($credit <= 0) {
+                return 0;
+            }
+            $tag = ['subscriber_id' => $account->subscriber_id, 'account_id' => $account->id];
+            $this->ledger->post('credit_cleared', CarbonImmutable::now(), [
+                ['account' => Ledger::CUSTOMER_CREDIT, 'debit' => $credit, ...$tag],
+                ['account' => Ledger::RENEWALS_CLEARING, 'credit' => $credit, ...$tag],
+            ], $account, 'حذف الرصيد المقدم (تحويله إلى تفعيل نقدي)', $account->branch_id);
+
+            $left = $credit;
+            foreach ($this->paymentsWithUnusedCredit($account) as [$payment, $unused]) {
+                $take = min($left, $unused);
+                $payment->update(['activation_amount' => (int) $payment->activation_amount + $take]);
+                $left -= $take;
+                if ($left === 0) {
+                    break;
+                }
+            }
+            $this->audit->log('credit.cleared', $account, ['credit' => $credit], ['credit' => 0, 'activation' => $credit], $reason, $account->subscriber_id);
+
+            return $credit;
+        });
     }
 
     /**

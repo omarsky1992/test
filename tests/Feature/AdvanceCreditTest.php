@@ -7,13 +7,18 @@ use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
+use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Models\Debt;
+use App\Models\User;
 use App\Services\DebtService;
 use App\Services\Ledger;
 use App\Services\PaymentService;
 use App\Services\RenewalService;
+use App\Services\TreasuryService;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 /** An account never shows advance credit beside an unpaid debt: the credit always pays it. */
@@ -106,5 +111,68 @@ class AdvanceCreditTest extends TestCase
             ->expectsOutputToContain('credit 30,000')
             ->expectsOutputToContain('Accounts with advance credit: 2 · total 35,000 IQD.')
             ->assertSuccessful();
+    }
+
+    public function test_old_advance_credit_is_cleared_without_touching_boxes_or_debts(): void
+    {
+        $payments = app(PaymentService::class);
+        $treasury = app(TreasuryService::class);
+        $ali = $this->account('علي');
+        $hasan = $this->account('حسن');
+        $old = $payments->record($ali, 30000, moneyAccount: $this->cash(), type: PaymentType::Advance);
+        $payments->record($hasan, 5000, moneyAccount: $this->cash(), type: PaymentType::Advance);
+        $debt = app(DebtService::class)->create($this->account('كرار'), 20000, DebtBucket::Primary);
+        $box = $treasury->balance($this->cash());
+
+        $this->artisan('credits:clear')->expectsOutputToContain('Would clear 35,000 IQD of advance credit on 2 accounts')->assertSuccessful();
+        $this->assertSame(30000, $payments->creditBalance($ali));
+
+        Livewire::test(ListPayments::class)
+            ->assertActionVisible('clearCredits')
+            ->callAction('clearCredits', data: ['confirm' => 'غلط'])->assertHasActionErrors(['confirm']);
+        $this->assertSame(30000, $payments->creditBalance($ali));
+        Livewire::test(ListPayments::class)
+            ->callAction('clearCredits', data: ['confirm' => 'حذف'])->assertHasNoActionErrors()->assertNotified();
+
+        $this->assertSame([0, 0], [$payments->creditBalance($ali), $payments->creditBalance($hasan)]);
+        $this->assertSame(0, $this->balanceOf(Ledger::CUSTOMER_CREDIT));
+        $this->assertSame(-35000, $this->balanceOf(Ledger::RENEWALS_CLEARING));
+        // Boxes and other subscribers' debts are exactly as they were.
+        $this->assertSame($box, $treasury->balance($this->cash()));
+        $this->assertSame(20000, $debt->fresh()->balance);
+        $this->assertSame(30000, (int) $old->fresh()->activation_amount);
+        $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.cleared')->count() === 2);
+
+        // A debt recorded afterwards is not paid from the cleared money, and the old receipt can still be voided.
+        $later = app(DebtService::class)->create($ali, 10000, DebtBucket::Primary);
+        $this->assertSame(10000, $later->fresh()->balance);
+        $payments->void($old->fresh(), 'تجربة');
+        $this->assertSame($box - 30000, $treasury->balance($this->cash()));
+        $this->assertSame(0, $this->balanceOf(Ledger::CUSTOMER_CREDIT));
+
+        // Nothing left: the button goes away and the command says so.
+        Livewire::test(ListPayments::class)->assertActionHidden('clearCredits');
+        $this->artisan('credits:clear', ['--apply' => true])->expectsOutput('No account has advance credit.');
+    }
+
+    public function test_clearing_the_credit_is_for_the_admin_only(): void
+    {
+        $payments = app(PaymentService::class);
+        $account = $this->account('علي');
+        $payments->record($account, 30000, moneyAccount: $this->cash(), type: PaymentType::Advance);
+
+        $employee = User::factory()->create(['branch_id' => $this->admin->branch_id]);
+        $employee->assignRole('employee');
+        $this->actingAs($employee);
+        try {
+            $payments->clearCredit($account);
+            $this->fail('An employee cleared advance credit.');
+        } catch (AuthorizationException) {
+        }
+        $this->actingAs($this->admin);
+        $this->assertSame(30000, $payments->creditBalance($account));
+
+        $this->artisan('credits:clear', ['--apply' => true])->expectsOutputToContain('Cleared 30,000 IQD')->assertSuccessful();
+        $this->assertSame(0, $payments->creditBalance($account));
     }
 }
