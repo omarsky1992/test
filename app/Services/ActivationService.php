@@ -159,10 +159,8 @@ class ActivationService
                     debtIds: [$debt->id],
                     notes: "تسديد التفعيل {$activation->number}",
                 );
-            } else {
-                // Credit already on the account pays the new debt (also when «دين» was chosen).
-                app(PaymentService::class)->settleFromCredit($account);
             }
+            // Old advance credit never pays a new debt: the owner activates as soon as he is paid.
             app(Notifier::class)->activation($activation);
 
             return $activation->fresh();

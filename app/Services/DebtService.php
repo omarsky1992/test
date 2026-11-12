@@ -26,8 +26,7 @@ class DebtService
         private Sequencer $sequencer,
         private Audit $audit,
         private ActivationService $activations,
-    ) {
-    }
+    ) {}
 
     /**
      * A debt entered by hand: a manual charge (installation fee…) or an opening debt from before the system.
@@ -75,7 +74,6 @@ class DebtService
             $this->audit->log('debt.created', $debt, null, [
                 'number' => $debt->number, 'amount' => $amount, 'bucket' => $bucket->value, 'source' => $source->value,
             ], subscriberId: $account->subscriber_id);
-            app(PaymentService::class)->settleFromCredit($account); // advance credit pays it
 
             return $debt->fresh();
         });

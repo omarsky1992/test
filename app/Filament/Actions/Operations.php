@@ -108,7 +108,7 @@ class Operations
                         ->disabled(fn () => ! auth()->user()->can('activations.edit_start')),
                     ToggleButtons::make('settlement')
                         ->label('التسوية')
-                        ->options([Settlement::Debt->value => 'آجل (دين أولي)', Settlement::Paid->value => 'مدفوع الآن', Settlement::Credit->value => 'من الرصيد المقدم'])
+                        ->options([Settlement::Debt->value => 'آجل (دين أولي)', Settlement::Paid->value => 'مدفوع الآن'])
                         ->inline()
                         ->visible(fn (Get $get) => $get('kind') === ActivationKind::Full30->value)
                         ->live(),

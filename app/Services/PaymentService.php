@@ -12,7 +12,9 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
+use App\Models\ActivationPeriod;
 use App\Models\Debt;
+use App\Models\FinancialTransaction;
 use App\Models\LedgerEntry;
 use App\Models\MoneyAccount;
 use App\Models\Payment;
@@ -278,7 +280,7 @@ class PaymentService
      * «حذف الرصيد المقدم»: the old advance credit of an account becomes what it really was, the cash
      * price of an activation already given. One posting moves it from CUSTOMER_CREDIT to
      * RENEWALS_CLEARING (where a cash activation is credited); no box, custody, debt or receipt amount
-     * changes. Open debts are paid from the credit first, as always. The receipts that carried the
+     * changes, and no debt is paid from it (a debt stays owed). The receipts that carried the
      * credit remember it as their activation part, so a later void still balances. Admin only.
      */
     public function clearCredit(Account $account, ?string $reason = null): int
@@ -290,7 +292,6 @@ class PaymentService
 
         return DB::transaction(function () use ($account, $reason) {
             $account = Account::whereKey($account->id)->lockForUpdate()->firstOrFail();
-            $this->settleFromCredit($account);
             $credit = $this->creditBalance($account);
             if ($credit <= 0) {
                 return 0;
@@ -317,67 +318,62 @@ class PaymentService
     }
 
     /**
-     * The account's advance credit pays its open debts, oldest first (called whenever a debt is
-     * added), so credit and a debt never stand side by side. Returns the amount used.
+     * The credit applications (old advance credit paying a debt) still standing, oldest first:
+     * transactions of type `credit_application` on that debt with no reversal.
+     *
+     * @return Collection<int, FinancialTransaction>
      */
-    public function settleFromCredit(Account $account): int
+    public function creditApplications(Debt $debt): Collection
     {
-        $used = 0;
-        if ($this->creditBalance($account) <= 0) {
-            return 0;
-        }
-        $open = Debt::where('account_id', $account->id)->whereIn('status', [DebtStatus::Open, DebtStatus::Partial])
-            ->where('balance', '>', 0)->orderBy('debt_date')->orderBy('id')->get();
-        foreach ($open as $debt) {
-            $applied = $this->applyCredit($account, $debt);
-            $used += $applied;
-            if ($applied === 0 || $this->creditBalance($account) <= 0) {
-                break;
-            }
-        }
-
-        return $used;
+        return FinancialTransaction::where('txn_type', 'credit_application')
+            ->where('source_type', $debt->getMorphClass())->where('source_id', $debt->id)
+            ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('financial_transactions as r')->whereColumn('r.reverses_txn_id', 'financial_transactions.id'))
+            ->orderBy('id')->get();
     }
 
     /**
-     * Uses the account's advance credit to pay a debt, oldest advance first.
+     * «إرجاع الدين»: a debt that old advance credit paid without the owner wanting it is owed again.
+     * Each credit application is reversed (a reversal posting, nothing edited), its allocations are
+     * marked reversed and the debt reopens by as much; the credit that comes back is then cleared into
+     * a cash activation (`clearCredit`). Refused when that payment completed a short activation.
+     * Admin only. Returns the amount owed again.
      */
-    public function applyCredit(Account $account, Debt $debt, ?int $amount = null): int
+    public function undoCreditApplications(Debt $debt, ?string $reason = null): int
     {
-        return DB::transaction(function () use ($account, $debt, $amount) {
-            $now = CarbonImmutable::now();
+        if (Auth::user() !== null && ! Auth::user()->isAdmin()) {
+            throw new AuthorizationException('إرجاع الدين للمدير فقط.');
+        }
+
+        return DB::transaction(function () use ($debt, $reason) {
             $debt = Debt::whereKey($debt->id)->lockForUpdate()->firstOrFail();
-            $available = $this->creditBalance($account);
-            $amount = min($amount ?? PHP_INT_MAX, $available, $debt->balance);
-            if ($amount <= 0) {
+            $txns = $this->creditApplications($debt);
+            if ($txns->isEmpty()) {
                 return 0;
             }
-
-            $tag = ['subscriber_id' => $account->subscriber_id, 'account_id' => $account->id];
-            $txn = $this->ledger->post('credit_application', $now, [
-                ['account' => Ledger::CUSTOMER_CREDIT, 'debit' => $amount, ...$tag],
-                ['account' => $this->activations->arCode($debt->bucket), 'credit' => $amount, ...$tag, 'debt_id' => $debt->id],
-            ], $debt, "استخدام الرصيد المقدم للدين {$debt->number}", $account->branch_id);
-
-            $left = $amount;
-            foreach ($this->paymentsWithUnusedCredit($account) as [$payment, $unused]) {
-                $take = min($left, $unused);
-                PaymentAllocation::create(['payment_id' => $payment->id, 'debt_id' => $debt->id, 'amount' => $take, 'txn_id' => $txn->id, 'created_by' => Auth::id()]);
-                $left -= $take;
-                if ($left === 0) {
-                    break;
+            if (ActivationPeriod::where('source_type', 'credit')->whereIn('source_id', $txns->pluck('id'))->exists()) {
+                throw new BusinessRuleException("تسديد الدين {$debt->number} من الرصيد أكمل تفعيلاً. لا يُرجع تلقائياً.");
+            }
+            $now = CarbonImmutable::now();
+            $owed = 0;
+            foreach ($txns as $txn) {
+                $allocations = PaymentAllocation::where('txn_id', $txn->id)->where('debt_id', $debt->id)->where('is_reversed', false)->get();
+                $amount = (int) $allocations->sum('amount');
+                $this->ledger->reverse($txn, $now, "إرجاع الدين {$debt->number}: إلغاء تسديده من الرصيد المقدم");
+                foreach ($allocations as $allocation) {
+                    $allocation->update(['is_reversed' => true]);
                 }
+                if ($amount > 0) {
+                    $this->applyToDebt($debt, -$amount);
+                    $debt->refresh();
+                }
+                $owed += $amount;
             }
-            $this->applyToDebt($debt, $amount);
+            $this->audit->log('credit.unapplied', $debt, ['paid' => $owed], [
+                'number' => $debt->number, 'amount' => $owed, 'balance' => $debt->balance,
+            ], $reason, $debt->subscriber_id);
+            $this->clearCredit(Account::findOrFail($debt->account_id), 'إرجاع الدين '.$debt->number);
 
-            $this->audit->log('credit.applied', $debt, null, ['amount' => $amount], subscriberId: $account->subscriber_id);
-
-            $debt->refresh();
-            if ($debt->status === DebtStatus::Paid && $debt->activation?->completion_status === CompletionStatus::Pending) {
-                $this->activations->complete($debt->activation, CompletedVia::Payment, $now, 'credit', $txn->id);
-            }
-
-            return $amount;
+            return $owed;
         });
     }
 

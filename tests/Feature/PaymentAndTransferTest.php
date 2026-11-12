@@ -106,7 +106,6 @@ class PaymentAndTransferTest extends TestCase
         // A debt recorded later is not paid from that money: it was the activation's price.
         $debt = app(DebtService::class)->create($account, 20000);
         $this->assertSame(20000, $debt->fresh()->balance);
-        $this->assertSame(0, $this->payments()->settleFromCredit($account));
 
         // Voiding the receipt takes the money back out of the box and leaves nothing behind.
         $this->payments()->void($payment->fresh(), 'تجربة');
@@ -132,15 +131,15 @@ class PaymentAndTransferTest extends TestCase
         $this->assertSame('تفعيل نقدي', PaymentType::Activation->getLabel());
     }
 
-    public function test_advance_credit_pays_a_later_activation(): void
+    public function test_old_advance_credit_never_pays_a_later_activation(): void
     {
         $account = $this->account();
         $this->payments()->record($account, 50000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
 
-        $activation = app(ActivationService::class)->activate($account, $this->plan('plus'), ActivationKind::Full30, settlement: Settlement::Credit);
+        $activation = app(ActivationService::class)->activate($account, $this->plan('plus'), ActivationKind::Full30, settlement: Settlement::Debt);
 
-        $this->assertSame(DebtStatus::Paid, $activation->debt->status);
-        $this->assertSame(5000, $this->payments()->creditBalance($account));
+        $this->assertSame(DebtStatus::Open, $activation->debt->status);
+        $this->assertSame(50000, $this->payments()->creditBalance($account));
     }
 
     public function test_repeated_submission_with_the_same_key_creates_one_receipt(): void

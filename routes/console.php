@@ -1,8 +1,11 @@
 <?php
 
+use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\Debt;
+use App\Models\FinancialTransaction;
 use App\Models\LedgerEntry;
+use App\Models\PaymentAllocation;
 use App\Models\SyncRun;
 use App\Models\User;
 use App\Platform\ClientBackups;
@@ -34,28 +37,39 @@ use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Schema;
 
-// Accounts that show advance credit beside an unpaid debt (from before advances paid debts): lists
-// them; with --apply the credit pays those debts through the normal ledger posting (nothing edited).
-Artisan::command('credits:settle {--apply : Use the credit to pay the debts}', function (PaymentService $payments) {
-    $accounts = Account::whereHas('debts', fn ($q) => $q->whereIn('status', ['open', 'partial'])->where('balance', '>', 0))->with('subscriber')->get()
-        ->filter(fn ($account) => $payments->creditBalance($account) > 0)->values();
-    if ($accounts->isEmpty()) {
-        $this->info('No account has credit beside a debt.');
+// Debts that old advance credit paid on its own (a `credit_application` with no reversal): lists them
+// from a date; with --apply each is owed again and the credit becomes a cash activation (audited).
+Artisan::command('credits:undo {--since= : Only applications from this date (Y-m-d)} {--apply : Owe the debts again}', function (PaymentService $payments) {
+    $query = FinancialTransaction::where('txn_type', 'credit_application')->where('source_type', (new Debt)->getMorphClass())
+        ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('financial_transactions as r')->whereColumn('r.reverses_txn_id', 'financial_transactions.id'));
+    if ($this->option('since')) {
+        $query->where('occurred_at', '>=', CarbonImmutable::parse($this->option('since'), config('app.timezone'))->startOfDay());
+    }
+    $debts = Debt::with('subscriber:id,full_name')->whereIn('id', $query->pluck('source_id')->unique())->orderBy('id')->get();
+    if ($debts->isEmpty()) {
+        $this->info('No debt was paid from advance credit.');
 
         return 0;
     }
     $total = 0;
-    foreach ($accounts as $account) {
-        $credit = $payments->creditBalance($account);
-        $due = (int) $account->debts()->whereIn('status', ['open', 'partial'])->sum('balance');
-        $used = $this->option('apply') ? app(Audit::class)->withSource('system', fn () => $payments->settleFromCredit($account)) : min($credit, $due);
-        $total += $used;
-        $this->line(sprintf('%s (%s): credit %s, debts %s → %s %s', $account->subscriber?->full_name, $account->username, number_format($credit), number_format($due), $this->option('apply') ? 'paid' : 'would pay', number_format($used)));
+    foreach ($debts as $debt) {
+        $amount = (int) PaymentAllocation::whereIn('txn_id', $payments->creditApplications($debt)->pluck('id'))->where('is_reversed', false)->sum('amount');
+        $note = '';
+        if ($this->option('apply')) {
+            try {
+                $amount = app(Audit::class)->withSource('system', fn () => $payments->undoCreditApplications($debt, 'credits:undo'));
+            } catch (BusinessRuleException $e) {
+                $note = ' (skipped: '.$e->getMessage().')';
+                $amount = 0;
+            }
+        }
+        $total += $amount;
+        $this->line(sprintf('%s · %s: %s %s%s', $debt->subscriber?->full_name, $debt->number, $this->option('apply') ? 'owed again' : 'paid from credit', number_format($amount), $note));
     }
-    $this->info(($this->option('apply') ? 'Paid from credit: ' : 'Would pay from credit (run with --apply): ').number_format($total).' IQD on '.$accounts->count().' accounts.');
+    $this->info(($this->option('apply') ? 'Owed again: ' : 'Paid from credit (run with --apply to owe them again): ').number_format($total).' IQD on '.$debts->count().' debts.');
 
     return 0;
-})->purpose('List (or settle with --apply) accounts that have advance credit beside an unpaid debt');
+})->purpose('List (or undo with --apply) debts that old advance credit paid');
 
 // How many accounts hold advance credit («رصيد مقدم») and how much: a reading only, nothing changes.
 Artisan::command('credits:list {--all : Print every account, not only the first 50}', function (Ledger $ledger) {

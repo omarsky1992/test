@@ -37,11 +37,11 @@ class AuditDetails
         'muted' => 'إيقاف الرسائل', 'notify_alt_phone' => 'الرسائل إلى الرقم الثاني', 'price' => 'السعر', 'decision' => 'القرار',
         'days' => 'الأيام', 'old' => 'السابق', 'new' => 'الجديد', 'code' => 'الكود', 'denomination' => 'الفئة', 'count' => 'العدد',
         'external_ends_at' => 'تاريخ الانتهاء', 'notes' => 'ملاحظات', 'title' => 'العنوان', 'body' => 'النص', 'text' => 'النص',
-        'command' => 'الأمر', 'payment_source' => 'نوع الدفع', 'balance' => 'الرصيد', 'opening_balance' => 'الرصيد الابتدائي',
+        'command' => 'الأمر', 'payment_source' => 'نوع الدفع', 'balance' => 'الرصيد', 'opening_balance' => 'الرصيد الابتدائي', 'paid' => 'كان مسدداً من الرصيد',
     ];
 
     /** Fields that hold whole dinars. */
-    private const MONEY = ['amount', 'total', 'credit', 'activation', 'final_price', 'custody', 'price', 'balance', 'opening_balance', 'company_amount'];
+    private const MONEY = ['amount', 'total', 'credit', 'activation', 'final_price', 'custody', 'price', 'balance', 'opening_balance', 'company_amount', 'paid'];
 
     private const VALUES = [
         'type' => ['debt_payment' => 'تسديد دين', 'activation' => 'تفعيل نقدي', 'advance' => 'دفع مقدم'],

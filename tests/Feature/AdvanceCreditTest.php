@@ -7,8 +7,11 @@ use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
+use App\Filament\Resources\Debts\Pages\ListDebts;
 use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Models\Debt;
+use App\Models\Payment;
+use App\Models\PaymentAllocation;
 use App\Models\User;
 use App\Services\DebtService;
 use App\Services\Ledger;
@@ -21,7 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
-/** An account never shows advance credit beside an unpaid debt: the credit always pays it. */
+/** Old advance credit: an explicit receipt pays open debts first, but credit never pays a later debt on its own. */
 class AdvanceCreditTest extends TestCase
 {
     private function payments(): PaymentService
@@ -58,46 +61,95 @@ class AdvanceCreditTest extends TestCase
         $this->assertSame(0, $this->payments()->creditBalance($account));
     }
 
-    public function test_a_new_debt_is_paid_from_the_credit_already_there(): void
+    public function test_old_credit_never_pays_a_new_debt(): void
     {
         $account = $this->account();
         $this->payments()->record($account, 50000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
-        $this->assertSame(50000, $this->payments()->creditBalance($account));
 
         // A manual primary debt…
         $debt = app(DebtService::class)->create($account, 20000, DebtBucket::Primary, DebtSource::Manual);
-        $this->assertSame([DebtStatus::Paid, 30000], [$debt->status, $this->payments()->creditBalance($account)]);
+        $this->assertSame([DebtStatus::Open, 50000], [$debt->fresh()->status, $this->payments()->creditBalance($account)]);
 
-        // …and a secondary debt found by the company sync (bigger than what is left).
+        // …and a secondary debt found by the company sync stay owed.
         $account->update(['current_plan_id' => $this->plan()->id, 'external_ends_at' => now()->subDay(), 'company_days_left' => 0]);
         $renewal = app(RenewalService::class)->record($account->fresh(), 0, 7, now()->subDay()->toImmutable(), now()->addDays(7)->toImmutable());
         $renewalDebt = Debt::find($renewal->debt_id);
-        $this->assertSame(0, $this->payments()->creditBalance($account));
-        $this->assertSame($renewalDebt->original_amount - 30000, $renewalDebt->balance);
+        $this->assertSame($renewalDebt->original_amount, $renewalDebt->balance);
+        $this->assertSame(50000, $this->payments()->creditBalance($account));
+        $this->assertFalse(DB::table('financial_transactions')->where('txn_type', 'credit_application')->exists());
     }
 
-    public function test_existing_accounts_with_both_are_listed_then_settled_on_request(): void
+    /** As the old code did: credit already on the account paid a new debt on its own. */
+    private function oldCreditApplication(Payment $payment, Debt $debt, int $amount): void
+    {
+        $tag = ['subscriber_id' => $debt->subscriber_id, 'account_id' => $debt->account_id];
+        $txn = app(Ledger::class)->post('credit_application', CarbonImmutable::now(), [
+            ['account' => Ledger::CUSTOMER_CREDIT, 'debit' => $amount, ...$tag],
+            ['account' => Ledger::AR_PRIMARY, 'credit' => $amount, ...$tag, 'debt_id' => $debt->id],
+        ], $debt, 'old credit application', $debt->branch_id);
+        PaymentAllocation::create(['payment_id' => $payment->id, 'debt_id' => $debt->id, 'amount' => $amount, 'txn_id' => $txn->id]);
+        $debt->update(['paid_amount' => $amount, 'balance' => $debt->original_amount - $amount, 'status' => $amount >= $debt->original_amount ? DebtStatus::Paid : DebtStatus::Partial]);
+    }
+
+    public function test_a_debt_paid_from_old_credit_is_owed_again_from_the_debts_table(): void
+    {
+        $treasury = app(TreasuryService::class);
+        $account = $this->account('صادق');
+        $payment = $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
+        $debt = app(DebtService::class)->create($account, 35000, DebtBucket::Primary, DebtSource::Manual);
+        $this->oldCreditApplication($payment, $debt, 35000);
+        $box = $treasury->balance($this->cash());
+        $this->assertSame([DebtStatus::Paid, 5000], [$debt->fresh()->status, $this->payments()->creditBalance($account)]);
+
+        Livewire::test(ListDebts::class)->set('activeTab', 'all')
+            ->assertTableActionVisible('undoCredit', $debt)
+            ->callTableAction('undoCredit', $debt, data: ['reason' => 'تجربة'])->assertHasNoTableActionErrors()->assertNotified();
+
+        $debt->refresh();
+        $this->assertSame([DebtStatus::Open, 35000], [$debt->status, $debt->balance]);
+        $this->assertSame(35000, $this->balanceOf(Ledger::AR_PRIMARY, $account->id));
+        // All the credit (the 35,000 returned and the 5,000 left) is now a cash activation; no box moved.
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+        $this->assertSame(40000, (int) $payment->fresh()->activation_amount);
+        $this->assertSame($box, $treasury->balance($this->cash()));
+        $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.unapplied')->exists());
+
+        // Done once: the button goes away, and voiding the old receipt still balances.
+        Livewire::test(ListDebts::class)->set('activeTab', 'all')->assertTableActionHidden('undoCredit', $debt);
+        $this->payments()->void($payment->fresh(), 'تجربة');
+        $this->assertSame([0, 0], [$this->balanceOf(Ledger::CUSTOMER_CREDIT), $this->balanceOf(Ledger::RENEWALS_CLEARING)]);
+        $this->assertSame(35000, $debt->fresh()->balance);
+    }
+
+    public function test_the_undo_command_lists_then_owes_the_debts_again(): void
     {
         $account = $this->account();
-        // As before this change: credit and a debt side by side (posted directly, the old way).
-        $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
-        $debt = Debt::create([
-            'number' => 'D-OLD-1', 'account_id' => $account->id, 'subscriber_id' => $account->subscriber_id, 'branch_id' => $account->branch_id,
-            'source' => DebtSource::Manual, 'bucket' => DebtBucket::Primary, 'original_amount' => 25000, 'paid_amount' => 0, 'balance' => 25000,
-            'debt_date' => now(), 'status' => DebtStatus::Open,
-        ]);
-        app(Ledger::class)->post('manual_debt', CarbonImmutable::now(), [
-            ['account' => Ledger::AR_PRIMARY, 'debit' => 25000, 'subscriber_id' => $account->subscriber_id, 'account_id' => $account->id, 'debt_id' => $debt->id],
-            ['account' => Ledger::REV_OTHER, 'credit' => 25000],
-        ], $debt, 'old debt', $account->branch_id);
+        $payment = $this->payments()->record($account, 30000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
+        $debt = app(DebtService::class)->create($account, 20000, DebtBucket::Primary, DebtSource::Manual);
+        $this->oldCreditApplication($payment, $debt, 20000);
 
-        $this->artisan('credits:settle')->expectsOutputToContain('would pay 25,000')->assertSuccessful();
-        $this->assertSame(DebtStatus::Open, $debt->fresh()->status, 'a dry run changes nothing');
+        $this->artisan('credits:undo', ['--since' => now()->format('Y-m-d')])->expectsOutputToContain('paid from credit 20,000')->assertSuccessful();
+        $this->assertSame(DebtStatus::Paid, $debt->fresh()->status, 'a dry run changes nothing');
+        $this->artisan('credits:undo', ['--since' => now()->addDay()->format('Y-m-d')])->expectsOutput('No debt was paid from advance credit.');
 
-        $this->artisan('credits:settle', ['--apply' => true])->expectsOutputToContain('paid 25,000')->assertSuccessful();
-        $this->assertSame([DebtStatus::Paid, 15000], [$debt->fresh()->status, $this->payments()->creditBalance($account)]);
-        $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.applied')->where('source', 'system')->exists());
-        $this->artisan('credits:settle')->expectsOutput('No account has credit beside a debt.');
+        $this->artisan('credits:undo', ['--apply' => true])->expectsOutputToContain('owed again 20,000')->assertSuccessful();
+        $this->assertSame([DebtStatus::Open, 0], [$debt->fresh()->status, $this->payments()->creditBalance($account)]);
+        $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.unapplied')->where('source', 'system')->exists());
+        $this->artisan('credits:undo')->expectsOutput('No debt was paid from advance credit.');
+    }
+
+    public function test_undoing_is_for_the_admin_only(): void
+    {
+        $account = $this->account();
+        $payment = $this->payments()->record($account, 30000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
+        $debt = app(DebtService::class)->create($account, 20000, DebtBucket::Primary, DebtSource::Manual);
+        $this->oldCreditApplication($payment, $debt, 20000);
+
+        $employee = User::factory()->create(['branch_id' => $this->admin->branch_id]);
+        $employee->assignRole('employee');
+        $this->actingAs($employee);
+        $this->expectException(AuthorizationException::class);
+        $this->payments()->undoCreditApplications($debt);
     }
 
     public function test_the_accounts_holding_advance_credit_are_counted(): void
@@ -122,6 +174,7 @@ class AdvanceCreditTest extends TestCase
         $old = $payments->record($ali, 30000, moneyAccount: $this->cash(), type: PaymentType::Advance);
         $payments->record($hasan, 5000, moneyAccount: $this->cash(), type: PaymentType::Advance);
         $debt = app(DebtService::class)->create($this->account('كرار'), 20000, DebtBucket::Primary);
+        $hasanDebt = app(DebtService::class)->create($hasan, 3000, DebtBucket::Primary); // beside his credit: stays owed
         $box = $treasury->balance($this->cash());
 
         $this->artisan('credits:clear')->expectsOutputToContain('Would clear 35,000 IQD of advance credit on 2 accounts')->assertSuccessful();
@@ -139,7 +192,7 @@ class AdvanceCreditTest extends TestCase
         $this->assertSame(-35000, $this->balanceOf(Ledger::RENEWALS_CLEARING));
         // Boxes and other subscribers' debts are exactly as they were.
         $this->assertSame($box, $treasury->balance($this->cash()));
-        $this->assertSame(20000, $debt->fresh()->balance);
+        $this->assertSame([20000, 3000], [$debt->fresh()->balance, $hasanDebt->fresh()->balance]);
         $this->assertSame(30000, (int) $old->fresh()->activation_amount);
         $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.cleared')->count() === 2);
 
