@@ -28,7 +28,7 @@
             @endif
         </div>
         <div style="flex:1;min-width:0">
-            <div style="font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ $a->subscriber?->full_name }}@if (($flags = \App\Support\SubscriberFlags::badges($a->subscriber_id)) !== '') <a href="{{ \App\Support\SubscriberFlags::notesUrl($a->subscriber_id) }}" title="{{ \App\Support\SubscriberFlags::tooltip($a->subscriber_id) }}" style="text-decoration:none">{{ $flags }}</a>@endif</div>
+            <div style="font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">@if ($a->subscriber_id && auth()->user()?->can('subscribers.view'))<a href="{{ \App\Filament\Resources\Subscribers\SubscriberResource::getUrl('view', ['record' => $a->subscriber_id]) }}" class="subs-card-name" style="color:inherit;text-decoration:none" title="معلومات المشترك">{{ $a->subscriber?->full_name }}</a>@else{{ $a->subscriber?->full_name }}@endif @if (($flags = \App\Support\SubscriberFlags::badges($a->subscriber_id)) !== '') <a href="{{ \App\Support\SubscriberFlags::notesUrl($a->subscriber_id) }}" title="{{ \App\Support\SubscriberFlags::tooltip($a->subscriber_id) }}" style="text-decoration:none">{{ $flags }}</a>@endif</div>
             <div style="font-size:12px;color:var(--subs-muted)"><span dir="ltr">{{ $a->username }}</span>@if ($phone) · <span dir="ltr">{{ $phone }}</span>@endif</div>
         </div>
     </div>

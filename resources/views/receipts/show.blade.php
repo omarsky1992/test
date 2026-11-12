@@ -71,16 +71,12 @@
     </div>
 
     <h2>تفاصيل العملية</h2>
-    @forelse ($payment->allocations->where('is_reversed', false) as $allocation)
+    @foreach ($payment->allocations->where('is_reversed', false) as $allocation)
         <div class="row">
             <span>تسديد الدين {{ $allocation->debt->number }}@if ($allocation->debt->activation) (تفعيل {{ $allocation->debt->activation->kind->getLabel() }})@endif</span>
             <span>{{ Money::format($allocation->amount, false) }}</span>
         </div>
-    @empty
-        @if ((int) $payment->activation_amount === 0)
-            <div class="row"><span>دفع مقدم يُضاف إلى رصيد الحساب</span><span>{{ Money::format($payment->amount, false) }}</span></div>
-        @endif
-    @endforelse
+    @endforeach
     @if ((int) $payment->activation_amount > 0)
         <div class="row"><span>تفعيل نقدي</span><span>{{ Money::format((int) $payment->activation_amount, false) }}</span></div>
     @endif

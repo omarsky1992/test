@@ -15,6 +15,7 @@ use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Resources\HandoverRequests\Pages\ListHandoverRequests;
 use App\Filament\Resources\MessageTemplates\Pages\ManageMessageTemplates;
 use App\Filament\Resources\SubscriberCards\Pages\ListSubscriberCards;
+use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Account;
 use App\Models\ActivationDue;
 use App\Models\AuditLog;
@@ -146,6 +147,15 @@ class EmployeeUiTest extends TestCase
         $stranger = User::factory()->create(['branch_id' => $this->admin->branch_id]);
         $this->actingAs($stranger);
         Livewire::test(EmployeeHome::class)->call('markDone', $account->id)->assertForbidden();
+    }
+
+    public function test_the_name_on_a_debt_card_opens_the_subscriber(): void
+    {
+        $account = $this->renewed();
+        $this->actingAs($this->employee());
+
+        Livewire::test(ListSubscriberCards::class, ['activeTab' => 'secondary'])
+            ->assertSeeHtml('href="'.e(SubscriberResource::getUrl('view', ['record' => $account->subscriber_id])).'" class="subs-card-name"');
     }
 
     public function test_the_secondary_debt_can_be_moved_to_primary_from_the_employee_interface(): void

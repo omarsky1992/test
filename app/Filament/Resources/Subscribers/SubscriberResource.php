@@ -11,7 +11,6 @@ use App\Filament\Resources\Subscribers\Pages\ListSubscribers;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
 use App\Models\Account;
 use App\Models\Subscriber;
-use App\Services\PaymentService;
 use App\Support\Arabic;
 use App\Support\Money;
 use App\Support\OpticalSignal;
@@ -136,10 +135,9 @@ class SubscriberResource extends Resource
             Section::make('موقع المشترك')->compact()
                 ->visible(fn () => collect(['locations.view', 'locations.create', 'photos.view'])->contains(fn ($p) => auth()->user()->can($p)))
                 ->schema([ViewEntry::make('location')->hiddenLabel()->view('filament.locations.summary')]),
-            Grid::make(3)->schema([
+            Grid::make(2)->schema([
                 TextEntry::make('secondary_total')->label('دين ثانوي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Secondary)))->color('warning')->weight('bold'),
                 TextEntry::make('primary_total')->label('دين أولي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Primary)))->color('info')->weight('bold'),
-                TextEntry::make('credit_total')->label('رصيد مقدم')->state(fn (Subscriber $r) => Money::format($r->accounts->sum(fn ($a) => app(PaymentService::class)->creditBalance($a))))->weight('bold'),
             ]),
         ]);
     }

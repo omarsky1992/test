@@ -12,7 +12,6 @@ use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Debt;
 use App\Services\DebtService;
-use App\Services\PaymentService;
 use App\Support\Money;
 use App\Support\Options;
 use App\Support\SubscriberFlags;
@@ -97,32 +96,8 @@ class DebtResource extends Resource
             ->recordActions([
                 Operations::pay()->visible(fn (Debt $r) => in_array($r->status, [DebtStatus::Open, DebtStatus::Partial], true)),
                 Operations::transfer(),
-                ActionGroup::make([Operations::voidDebt(), self::undoCreditAction()]),
+                ActionGroup::make([Operations::voidDebt()]),
             ]);
-    }
-
-    /**
-     * «إرجاع الدين المسدد من الرصيد المقدم» (admin): a debt old advance credit paid on its own is owed
-     * again; the credit becomes a cash activation (`PaymentService::undoCreditApplications`).
-     */
-    public static function undoCreditAction(): Action
-    {
-        return Action::make('undoCredit')
-            ->label('إرجاع الدين المسدد من الرصيد المقدم')
-            ->icon(Heroicon::OutlinedArrowUturnLeft)
-            ->color('warning')
-            ->visible(fn (Debt $r) => auth()->user()?->isAdmin() && app(PaymentService::class)->creditApplications($r)->isNotEmpty())
-            ->requiresConfirmation()
-            ->modalDescription('يرجع الدين مفتوحاً بقيد عكسي، والرصيد المقدم الذي سدّده يتحوّل إلى تفعيل نقدي. لا يتغير أي صندوق.')
-            ->schema([Textarea::make('reason')->label('السبب')->default('سُدد من الرصيد المقدم بالخطأ')])
-            ->action(function (Debt $record, array $data) {
-                try {
-                    $owed = app(PaymentService::class)->undoCreditApplications($record, $data['reason'] ?? null);
-                    Notification::make()->success()->title('رجع الدين '.$record->number.': '.Money::format($owed))->send();
-                } catch (BusinessRuleException $e) {
-                    Notification::make()->danger()->title($e->getMessage())->send();
-                }
-            });
     }
 
     public static function manualDebtAction(?Account $account = null): Action

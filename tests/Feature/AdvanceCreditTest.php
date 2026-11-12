@@ -7,9 +7,6 @@ use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
-use App\Filament\Resources\CreditApplications\Pages\ListCreditApplications;
-use App\Filament\Resources\Debts\Pages\ListDebts;
-use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Models\Debt;
 use App\Models\Payment;
 use App\Models\PaymentAllocation;
@@ -22,7 +19,6 @@ use App\Services\TreasuryService;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
-use Livewire\Livewire;
 use Tests\TestCase;
 
 /** Old advance credit: an explicit receipt pays open debts first, but credit never pays a later debt on its own. */
@@ -92,7 +88,7 @@ class AdvanceCreditTest extends TestCase
         $debt->update(['paid_amount' => $amount, 'balance' => $debt->original_amount - $amount, 'status' => $amount >= $debt->original_amount ? DebtStatus::Paid : DebtStatus::Partial]);
     }
 
-    public function test_a_debt_paid_from_old_credit_is_owed_again_from_the_debts_table(): void
+    public function test_a_debt_paid_from_old_credit_is_owed_again(): void
     {
         $treasury = app(TreasuryService::class);
         $account = $this->account('صادق');
@@ -102,9 +98,7 @@ class AdvanceCreditTest extends TestCase
         $box = $treasury->balance($this->cash());
         $this->assertSame([DebtStatus::Paid, 5000], [$debt->fresh()->status, $this->payments()->creditBalance($account)]);
 
-        Livewire::test(ListDebts::class)->set('activeTab', 'all')
-            ->assertTableActionVisible('undoCredit', $debt)
-            ->callTableAction('undoCredit', $debt, data: ['reason' => 'تجربة'])->assertHasNoTableActionErrors()->assertNotified();
+        $this->assertSame(35000, $this->payments()->undoCreditApplications($debt, 'تجربة'));
 
         $debt->refresh();
         $this->assertSame([DebtStatus::Open, 35000], [$debt->status, $debt->balance]);
@@ -115,43 +109,36 @@ class AdvanceCreditTest extends TestCase
         $this->assertSame($box, $treasury->balance($this->cash()));
         $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.unapplied')->exists());
 
-        // Done once: the button goes away, and voiding the old receipt still balances.
-        Livewire::test(ListDebts::class)->set('activeTab', 'all')->assertTableActionHidden('undoCredit', $debt);
+        // Done once, and voiding the old receipt still balances.
+        $this->assertSame(0, $this->payments()->undoCreditApplications($debt));
         $this->payments()->void($payment->fresh(), 'تجربة');
         $this->assertSame([0, 0], [$this->balanceOf(Ledger::CUSTOMER_CREDIT), $this->balanceOf(Ledger::RENEWALS_CLEARING)]);
         $this->assertSame(35000, $debt->fresh()->balance);
     }
 
-    public function test_the_credit_applications_page_shows_the_dates_and_owes_the_debt_again(): void
+    public function test_the_advance_credit_is_gone_from_the_screens(): void
     {
         $account = $this->account('صادق');
-        $payment = $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance, receivedAt: CarbonImmutable::now()->subDays(40));
-        $debt = app(DebtService::class)->create($account, 35000, DebtBucket::Primary, DebtSource::Manual);
-        $this->oldCreditApplication($payment, $debt, 35000);
-        $allocation = PaymentAllocation::where('debt_id', $debt->id)->sole();
+        $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
 
-        $this->get('/credit-applications')->assertOk()->assertSee('صادق')->assertSee($debt->number)->assertSee('40 يوم');
-
-        Livewire::test(ListCreditApplications::class)
-            ->assertCanSeeTableRecords([$allocation])
-            ->callTableAction('undo', $allocation, data: ['reason' => 'تجربة'])->assertHasNoTableActionErrors()->assertNotified();
-        $this->assertSame([DebtStatus::Open, 35000], [$debt->fresh()->status, $debt->fresh()->balance]);
-        $this->assertSame(0, $this->payments()->creditBalance($account));
-
-        $this->assertTrue($allocation->fresh()->is_reversed);
-        // It leaves the default list (not undone yet) and shows under «تم الإرجاع» without the button.
-        Livewire::test(ListCreditApplications::class)->assertCanNotSeeTableRecords([$allocation])
-            ->filterTable('is_reversed', '1')->assertCanSeeTableRecords([$allocation])->assertTableActionHidden('undo', $allocation);
+        $this->get('/credit-applications')->assertNotFound();
+        $this->get('/subscribers/'.$account->subscriber_id)->assertOk()->assertDontSee('رصيد مقدم');
+        $this->get('/payments')->assertOk()->assertDontSee('حذف الأرصدة المقدمة');
     }
 
-    public function test_the_credit_applications_page_is_for_the_admin_only(): void
+    public function test_the_migration_clears_whatever_credit_is_left(): void
     {
-        $employee = User::factory()->create();
-        $employee->assignRole('employee');
-        $this->actingAs($employee);
+        $account = $this->account();
+        $payment = $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
+        $debt = app(DebtService::class)->create($account, 15000, DebtBucket::Primary);
+        $box = app(TreasuryService::class)->balance($this->cash());
 
-        $this->get('/subscribers')->assertOk();
-        $this->get('/credit-applications')->assertForbidden();
+        (require database_path('migrations/2026_11_12_000450_clear_remaining_advance_credit.php'))->up();
+
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+        $this->assertSame(40000, (int) $payment->fresh()->activation_amount);
+        $this->assertSame([15000, $box], [$debt->fresh()->balance, app(TreasuryService::class)->balance($this->cash())]);
+        $this->assertTrue(DB::table('audit_logs')->where('action', 'credit.cleared')->where('source', 'system')->exists());
     }
 
     public function test_the_undo_command_lists_then_owes_the_debts_again(): void
@@ -213,12 +200,7 @@ class AdvanceCreditTest extends TestCase
         $this->artisan('credits:clear')->expectsOutputToContain('Would clear 35,000 IQD of advance credit on 2 accounts')->assertSuccessful();
         $this->assertSame(30000, $payments->creditBalance($ali));
 
-        Livewire::test(ListPayments::class)
-            ->assertActionVisible('clearCredits')
-            ->callAction('clearCredits', data: ['confirm' => 'غلط'])->assertHasActionErrors(['confirm']);
-        $this->assertSame(30000, $payments->creditBalance($ali));
-        Livewire::test(ListPayments::class)
-            ->callAction('clearCredits', data: ['confirm' => 'حذف'])->assertHasNoActionErrors()->assertNotified();
+        $this->artisan('credits:clear', ['--apply' => true])->expectsOutputToContain('Cleared 35,000 IQD')->assertSuccessful();
 
         $this->assertSame([0, 0], [$payments->creditBalance($ali), $payments->creditBalance($hasan)]);
         $this->assertSame(0, $this->balanceOf(Ledger::CUSTOMER_CREDIT));
@@ -236,8 +218,7 @@ class AdvanceCreditTest extends TestCase
         $this->assertSame($box - 30000, $treasury->balance($this->cash()));
         $this->assertSame(0, $this->balanceOf(Ledger::CUSTOMER_CREDIT));
 
-        // Nothing left: the button goes away and the command says so.
-        Livewire::test(ListPayments::class)->assertActionHidden('clearCredits');
+        // Nothing left: the command says so.
         $this->artisan('credits:clear', ['--apply' => true])->expectsOutput('No account has advance credit.');
     }
 
