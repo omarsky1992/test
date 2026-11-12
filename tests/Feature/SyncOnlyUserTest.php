@@ -44,7 +44,7 @@ class SyncOnlyUserTest extends TestCase
         // It never signs in: without the user's own panel session it waits.
         $this->assertStringContainsString('بانتظار تسجيل الدخول', $script);
         $this->assertStringNotContainsString('password', strtolower($script));
-        $this->assertStringContainsString('"version": "1.4.1"', BrowserScripts::manifest('https://subs.example'));
+        $this->assertStringContainsString('"version": "1.5.0"', BrowserScripts::manifest('https://subs.example'));
     }
 
     public function test_a_page_left_open_gets_a_fresh_token(): void

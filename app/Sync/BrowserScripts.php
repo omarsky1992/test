@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.4.1',
+            'version' => '1.5.0',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -88,6 +88,35 @@ const subsToken = () => {
     return exp && exp * 1000 > Date.now() + 30000 ? t : null;
   } catch (e) { return null; }
 };
+// Reads a whole paged list of the panel, every page, without missing or repeating one:
+// - starts at page 0 (a zero-based list begins there; on a one-based one page 0 repeats page 1),
+//   and items are kept once each by their id, so a repeated page adds nothing;
+// - the total is read under any of the names a list may use, and when there is none the list ends
+//   at an empty page, a page shorter than the others, or (from page 2) a page with nothing new;
+// - a list that refuses page 0 simply starts at 1.
+const subsAllPages = async (get, path, progress) => {
+  const sep = path.includes('?') ? '&' : '?';
+  const keyOf = (o) => (o && (o.id ?? o.self?.id)) != null ? String(o.id ?? o.self.id) : JSON.stringify(o);
+  const totalOf = (b) => { for (const k of ['totalCount', 'total', 'totalItems', 'totalRecords', 'count']) { const v = b && b[k]; if (typeof v === 'number' && isFinite(v)) return v; } return null; };
+  const seen = new Set(), items = [];
+  let total = null, longest = 0;
+  for (let page = 0; page < 1000; page++) {
+    let body;
+    try { body = await get(path + sep + 'pageSize=100&pageNumber=' + page); }
+    catch (e) { if (page === 0 && !/جلسة/.test(e.message)) continue; throw e; }
+    const got = Array.isArray(body && body.items) ? body.items : (Array.isArray(body) ? body : []);
+    total = totalOf(body) ?? total;
+    let fresh = 0;
+    for (const it of got) { const k = keyOf(it); if (!seen.has(k)) { seen.add(k); items.push(it); fresh++; } }
+    progress && progress(items.length, total);
+    if (!got.length) break;
+    if (total !== null && items.length >= total) break;
+    if (page >= 2 && fresh === 0) break;
+    if (total === null && longest && got.length < longest) break;
+    longest = Math.max(longest, got.length);
+  }
+  return { items, total };
+};
 // What both runs share: the progress box, messages to the system window, and GET requests with the panel's current token.
 const subsConnect = (target, title) => {
   const box = subsBox();
@@ -116,16 +145,11 @@ const subsConnect = (target, title) => {
 async function subsSync(target, ready) {
   const { box, say, send, get } = subsConnect(target, 'مزامنة المشتركين');
   const all = async (path, label) => {
-    let items = [], page = 1, total = 0;
-    do {
-      const body = await get(path + (path.includes('?') ? '&' : '?') + 'pageSize=100&pageNumber=' + page);
-      const got = Array.isArray(body.items) ? body.items : [];
-      items = items.concat(got); total = body.totalCount || 0; page++;
-      say(label + ' ' + items.length + ' من ' + total);
-      if (!got.length) break;
-    } while (items.length < total && page < 1000);
-    return items;
+    const r = await subsAllPages(get, path, (n, total) => say(label + ' ' + n + (total ? ' من ' + total : '')));
+    lists[path.split('?')[0]] = r.total;
+    return r.items;
   };
+  const lists = {};
   const pick = (o, keys) => { const r = {}; for (const k of keys) if (o && o[k] !== undefined) r[k] = o[k]; return r; };
 
   const customers = (await all('/api/customers', 'جلب المشتركين')).map((c) => pick(c, ['id', 'self', 'displayValue', 'name', 'primaryPhone']));
@@ -145,9 +169,11 @@ async function subsSync(target, ready) {
   if (!subscriptions) throw lastError;
   subscriptions = subscriptions.map((s) => pick(s, ['id', 'self', 'username', 'status', 'services', 'bundle', 'bundleId', 'zone', 'expires', 'expiresAt', 'customer', 'deviceDetails']));
 
+  // How many the site says it has, so the system can warn when fewer arrived.
+  const siteTotal = lists['/api/subscriptions'] ?? null;
   say('إرسال ' + subscriptions.length + ' اشتراك للنظام…');
   await ready;
-  const plan = await send({ type: 'plan', customers, subscriptions });
+  const plan = await send({ type: 'plan', customers, subscriptions, site_total: siteTotal });
 
   const ids = plan.needs || [], details = {};
   let next = 0, done = 0;
@@ -193,7 +219,7 @@ async function subsSync(target, ready) {
   } catch (e) { wallet = null; }
 
   say('حفظ في النظام…');
-  const result = await send({ type: 'run', customers, subscriptions, details, wallet });
+  const result = await send({ type: 'run', customers, subscriptions, details, wallet, site_total: siteTotal });
   box.textContent = 'مزامنة المشتركين: تمت ✓ ' + result.summary;
   box.style.background = '#15803d';
   return result;

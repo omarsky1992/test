@@ -89,11 +89,11 @@ class BrowserSyncTest extends TestCase
 
         $this->postJson('/sync/browser/run', $lists)->assertOk()->assertJsonPath('status', 'success');
         $this->assertSame([300, 300], [Subscriber::count(), Account::count()]);
-        $this->assertSame(0, \App\Models\Debt::count(), 'importing records no debt');
+        $this->assertSame(0, Debt::count(), 'importing records no debt');
 
         // From then on: the usual page and the usual limit.
         $this->get('/company-sync')->assertOk()->assertDontSee('id="subs-import-start"', false);
-        \Illuminate\Support\Facades\Cache::flush();
+        Cache::flush();
         $this->assertCount(200, $this->postJson('/sync/browser/plan', $lists)->assertOk()->json('needs'));
     }
 
@@ -130,6 +130,27 @@ class BrowserSyncTest extends TestCase
         $this->postJson('/sync/browser/run', ['customers' => [], 'subscriptions' => []])
             ->assertUnprocessable()->assertJsonPath('message', 'لم يصل أي اشتراك من موقع الشركة.');
         $this->assertSame(0, SyncRun::count());
+    }
+
+    public function test_the_summary_warns_when_fewer_subscriptions_arrived_than_the_site_has(): void
+    {
+        $this->postJson('/sync/browser/run', [...$this->lists(), 'site_total' => 5])
+            ->assertOk()->assertJsonPath('status', 'success')
+            ->assertJson(fn ($json) => $json->where('summary', fn ($s) => str_contains($s, 'وصل 1 من أصل 5'))->etc());
+        $this->assertSame(5, SyncRun::latest('id')->first()->stats['site_total']);
+
+        $this->postJson('/sync/browser/run', [...$this->lists(), 'site_total' => 1])
+            ->assertOk()->assertJson(fn ($json) => $json->where('summary', fn ($s) => str_contains($s, 'كل اشتراكات الموقع (1)') && ! str_contains($s, '⚠️'))->etc());
+    }
+
+    public function test_every_sync_opens_the_whole_subscriptions_list(): void
+    {
+        $this->get('/company-sync')->assertOk()
+            ->assertDontSee('filterBy=Active', false)
+            ->assertSee("const list = 'https://admin.ftth.iq/subscriptions';", false);
+        $script = BrowserScripts::contentScript('https://subs.example', 'admin');
+        $this->assertStringContainsString('const subsAllPages', $script);
+        $this->assertStringContainsString('site_total: siteTotal', $script);
     }
 
     public function test_only_users_allowed_to_sync_can_use_it(): void
@@ -297,7 +318,7 @@ class BrowserSyncTest extends TestCase
         $this->get(CompanySyncPage::getUrl())->assertOk()->assertSee('قراءة القدرة المستلمة')->assertSee('subs-ont-start', escape: false);
         $js = BrowserScripts::contentScript('https://subs.example', 'app');
         $this->assertStringContainsString("type: 'ont_plan'", $js);
-        $this->assertStringContainsString("send({ type: 'run', customers, subscriptions, details, wallet })", $js, 'the activations sync sends no device readings');
+        $this->assertStringContainsString("send({ type: 'run', customers, subscriptions, details, wallet, site_total: siteTotal })", $js, 'the activations sync sends no device readings');
 
         $user = User::factory()->create(['branch_id' => $this->admin->branch_id]);
         $user->assignRole('employee');

@@ -38,7 +38,7 @@ window.subsReceiver = function ({ onStatus, onDone, onHello, onAuto }) {
         const url = { plan: 'plan', run: 'run', ont_plan: 'ont-plan', ont_run: 'ont' }[data.type];
         onStatus(data.type === 'plan' ? `وصلت ${data.subscriptions.length} اشتراك. جارٍ التحقق…` : (data.type === 'ont_plan' ? 'جارٍ تحديد الأجهزة…' : 'جارٍ الحفظ في النظام…'), '');
         try {
-            const response = await post(`/sync/browser/${url}`, ontRun ? { ont: data.ont || {} } : { customers: data.customers, subscriptions: data.subscriptions, details: data.details || {}, wallet: data.wallet || null });
+            const response = await post(`/sync/browser/${url}`, ontRun ? { ont: data.ont || {} } : { customers: data.customers, subscriptions: data.subscriptions, details: data.details || {}, wallet: data.wallet || null, site_total: data.site_total ?? null });
             const body = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(body.summary || body.message || `رمز ${response.status}`);
             if (data.type === 'plan') {

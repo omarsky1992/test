@@ -85,8 +85,15 @@ class BrowserSyncController extends Controller
             ? $walletLog->apply(array_slice($wallet['items'], 0, 2000)) : null;
 
         $s = $run->stats ?? [];
+        // How many the site said it has: a shortfall is shown, so a missed page never goes unnoticed.
+        $siteTotal = is_numeric($request->input('site_total')) ? (int) $request->input('site_total') : null;
+        if ($siteTotal !== null) {
+            $run->update(['stats' => [...$s, 'site_total' => $siteTotal]]);
+        }
+        $short = $siteTotal !== null && $s['received'] < $siteTotal
+            ? "⚠️ وصل {$s['received']} من أصل {$siteTotal} اشتراك بموقع الشركة. أعد المزامنة، وإذا تكرر النقص بلّغ عنه · " : '';
         $summary = $run->status === 'success'
-            ? "{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
+            ? $short.($siteTotal !== null && ! $short ? "كل اشتراكات الموقع ({$siteTotal}) · " : '')."{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
                 .($paid !== null
                     ? " · حركات المحفظة: {$paid['matched']} تجديد عُرف نوع دفعه (Card {$paid['card']}، Wallet {$paid['wallet']})"
                     : ' · لم تُقرأ حركات المحفظة: افتح صفحة المحفظة بموقع الشركة مرة وحدة والإضافة منصّبة، ثم أعد المزامنة')

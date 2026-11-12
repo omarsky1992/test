@@ -63,7 +63,7 @@
             </p>
         </div>
         <p style="font-size:13px;color:var(--subs-muted);margin:0">
-            يفتح تبويب الاشتراكات الفعّالة في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
+            يفتح تبويب كل الاشتراكات (الفعّالة والمنتهية) في موقع الشركة. إذا لم تكن مسجّلاً يطلب الموقع تسجيل الدخول، ثم تبدأ المزامنة وحدها وتظهر النتيجة هنا.
             آخر مزامنة: <span dir="ltr">{{ $lastBrowser?->started_at->format('Y/m/d H:i') ?? '—' }}</span>
         </p>
 
@@ -84,7 +84,7 @@
             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:6px">
                 <a href="{{ $bookmarklet }}" onclick="event.preventDefault(); alert('اسحب هذا الزر إلى شريط الإشارات، ثم اضغطه وأنت في صفحة الاشتراكات في موقع الشركة.')"
                    style="display:inline-flex;padding:8px 14px;border-radius:10px;background:#0f766e;color:#fff;font-weight:700;text-decoration:none;cursor:grab">⟳ مزامنة المشتركين</a>
-                <span style="font-size:13px;color:var(--subs-muted)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions?filterBy=Active مسجّلاً ثم اضغطه.</span>
+                <span style="font-size:13px;color:var(--subs-muted)">اسحبه إلى شريط الإشارات (Ctrl+Shift+B لإظهاره)، وافتح admin.ftth.iq/subscriptions مسجّلاً ثم اضغطه.</span>
             </div>
         </details>
     </x-filament::section>
@@ -126,13 +126,13 @@
             const stop = e.target.closest && e.target.closest('#subs-auto-stop');
             if (start) {
                 const minutes = document.getElementById('subs-auto-minutes')?.value || '30';
-                const tab = window.open('https://admin.ftth.iq/subscriptions?filterBy=Active#subs-auto-' + minutes, 'ftth_auto');
+                const tab = window.open('https://admin.ftth.iq/subscriptions#subs-auto-' + minutes, 'ftth_auto');
                 if (!tab) { autoShow('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.'); return; }
                 try { sessionStorage.setItem(AUTO, minutes); } catch (err) {}
                 heard = false;
                 autoShow('جارٍ فتح موقع الشركة… سجّل الدخول إذا طُلب منك.');
                 clearTimeout(watchdog);
-                watchdog = setTimeout(() => { if (!heard) autoShow('لم تستجب الإضافة. نزّل الإضافة الجديدة (1.4.1) وبدّلها، ثم أعد المحاولة.'); }, 30000);
+                watchdog = setTimeout(() => { if (!heard) autoShow('لم تستجب الإضافة. نزّل الإضافة الجديدة (1.5.0) وبدّلها، ثم أعد المحاولة.'); }, 30000);
             }
             if (stop) {
                 // The panel tab by its name; a blank tab means it was already closed.
@@ -152,8 +152,8 @@
             heard = false;
             // The readings have their own button and run, so they never slow the activations sync.
             const mode = button.id === 'subs-ont-start' ? 'subs-ont' : 'subs-sync';
-            // The first import reads the whole list (active and ended), not only the active subscriptions.
-            const list = button.id === 'subs-import-start' ? 'https://admin.ftth.iq/subscriptions' : 'https://admin.ftth.iq/subscriptions?filterBy=Active';
+            // Every sync reads the whole list (active and ended), so no subscriber is left out.
+            const list = 'https://admin.ftth.iq/subscriptions';
             const tab = window.open(list + '#' + mode, 'ftth_sync');
             if (!tab) { set('اسمح بالنوافذ المنبثقة لهذا النظام ثم اضغط مرة ثانية.', 'bad'); return; }
             set('جارٍ فتح موقع الشركة…', '');
