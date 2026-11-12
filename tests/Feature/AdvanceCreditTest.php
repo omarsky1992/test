@@ -7,6 +7,7 @@ use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
+use App\Filament\Resources\CreditApplications\Pages\ListCreditApplications;
 use App\Filament\Resources\Debts\Pages\ListDebts;
 use App\Filament\Resources\Payments\Pages\ListPayments;
 use App\Models\Debt;
@@ -119,6 +120,38 @@ class AdvanceCreditTest extends TestCase
         $this->payments()->void($payment->fresh(), 'تجربة');
         $this->assertSame([0, 0], [$this->balanceOf(Ledger::CUSTOMER_CREDIT), $this->balanceOf(Ledger::RENEWALS_CLEARING)]);
         $this->assertSame(35000, $debt->fresh()->balance);
+    }
+
+    public function test_the_credit_applications_page_shows_the_dates_and_owes_the_debt_again(): void
+    {
+        $account = $this->account('صادق');
+        $payment = $this->payments()->record($account, 40000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance, receivedAt: CarbonImmutable::now()->subDays(40));
+        $debt = app(DebtService::class)->create($account, 35000, DebtBucket::Primary, DebtSource::Manual);
+        $this->oldCreditApplication($payment, $debt, 35000);
+        $allocation = PaymentAllocation::where('debt_id', $debt->id)->sole();
+
+        $this->get('/credit-applications')->assertOk()->assertSee('صادق')->assertSee($debt->number)->assertSee('40 يوم');
+
+        Livewire::test(ListCreditApplications::class)
+            ->assertCanSeeTableRecords([$allocation])
+            ->callTableAction('undo', $allocation, data: ['reason' => 'تجربة'])->assertHasNoTableActionErrors()->assertNotified();
+        $this->assertSame([DebtStatus::Open, 35000], [$debt->fresh()->status, $debt->fresh()->balance]);
+        $this->assertSame(0, $this->payments()->creditBalance($account));
+
+        $this->assertTrue($allocation->fresh()->is_reversed);
+        // It leaves the default list (not undone yet) and shows under «تم الإرجاع» without the button.
+        Livewire::test(ListCreditApplications::class)->assertCanNotSeeTableRecords([$allocation])
+            ->filterTable('is_reversed', '1')->assertCanSeeTableRecords([$allocation])->assertTableActionHidden('undo', $allocation);
+    }
+
+    public function test_the_credit_applications_page_is_for_the_admin_only(): void
+    {
+        $employee = User::factory()->create();
+        $employee->assignRole('employee');
+        $this->actingAs($employee);
+
+        $this->get('/subscribers')->assertOk();
+        $this->get('/credit-applications')->assertForbidden();
     }
 
     public function test_the_undo_command_lists_then_owes_the_debts_again(): void
