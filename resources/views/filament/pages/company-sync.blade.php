@@ -229,19 +229,13 @@
                                 <td style="{{ $td }}" dir="ltr">{{ $r->detected_at->format('Y/m/d H:i') }}</td>
                                 <td style="{{ $td }}"><a href="{{ \App\Filament\Resources\Subscribers\SubscriberResource::getUrl('view', ['record' => $r->subscriber_id]) }}" style="color:rgb(15 118 110);font-weight:600">{{ $r->subscriber?->full_name }}</a></td>
                                 <td style="{{ $td }}" dir="ltr">{{ $r->account?->username }}</td>
-                                <td style="{{ $td }}">{{ $r->previous_days }} ← {{ $r->new_days }}@if ($r->payment_source)<div style="font-size:12px;font-weight:700;color:{{ $r->payment_source === 'wallet' ? 'rgb(37 99 235)' : 'rgb(217 119 6)' }}">{{ \App\Models\AccountRenewal::PAYMENT_SOURCES[$r->payment_source] }}</div>@endif</td>
+                                <td style="{{ $td }}">{{ $r->previous_days }} ← {{ $r->new_days }}@if ($r->payment_source)<div style="font-size:12px;font-weight:700;color:{{ ['card' => 'rgb(217 119 6)', 'wallet_customer' => 'rgb(22 163 74)'][$r->payment_source] ?? 'rgb(37 99 235)' }}">{{ \App\Models\AccountRenewal::PAYMENT_SOURCES[$r->payment_source] ?? $r->payment_source }}</div>@endif</td>
                                 <td style="{{ $td }}">{{ $r->plan_name ?? '—' }}</td>
                                 <td style="{{ $td }}">
-                                    @if ($r->status === 'activated')
-                                        <x-filament::badge color="success">تفعيل كامل – بدون دين</x-filament::badge>
-                                        @if ($r->decision === 'debt')<div style="font-size:12px;margin-top:3px">المفعّل حديثاً: دين أولي</div>@elseif ($r->decision === 'transfer')<div style="font-size:12px;margin-top:3px">المفعّل حديثاً: مناقلة</div>@elseif ($r->decision === 'cash')<div style="font-size:12px;margin-top:3px">المفعّل حديثاً: نقد</div>@endif
-                                    @elseif ($r->status === 'test')
-                                        <x-filament::badge color="gray">تيست من المشترك – بدون دين</x-filament::badge>
-                                    @elseif ($r->debt)
-                                        {{ $r->debt->number }} · {{ Money::format($r->amount) }}
-                                    @else
-                                        <x-filament::badge color="warning">بدون دين: الفئة غير معروفة</x-filament::badge>
-                                    @endif
+                                    @php [$label, $color] = $r->outcome(); @endphp
+                                    <x-filament::badge :color="$color">{{ $label }}</x-filament::badge>
+                                    @if ($r->is_new)<div style="font-size:12px;margin-top:3px">🆕 مشترك جديد</div>@endif
+                                    @if ($r->amount && in_array($r->status, ['debt_created', 'pending_debt'], true))<div style="font-size:12px;margin-top:3px">{{ Money::format($r->amount) }}</div>@endif
                                 </td>
                             </tr>
                         @endforeach

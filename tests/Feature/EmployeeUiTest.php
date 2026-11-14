@@ -52,6 +52,7 @@ class EmployeeUiTest extends TestCase
         $ends = now()->addDays($daysLeft)->addHour();
         $account->update(['current_plan_id' => $this->plan()->id, 'external_ends_at' => $ends, 'company_days_left' => $daysLeft]);
         app(RenewalService::class)->record($account, 0, 7, null, CarbonImmutable::parse($ends));
+        $this->approveShortActivations();
 
         return $account->fresh();
     }
@@ -118,6 +119,7 @@ class EmployeeUiTest extends TestCase
         app(CompanySync::class)->run('manual');
         $account = Account::sole();
         app(RenewalService::class)->record($account, 0, 7, null, $account->external_ends_at);
+        $this->approveShortActivations();
         $this->pay($account->fresh(), 35000);
 
         // A few minutes of difference on the site is not an activation.
@@ -191,6 +193,7 @@ class EmployeeUiTest extends TestCase
         $this->travelTo(now()->addHour());
         $site->set(['status' => 'Active', 'ends_at' => now()->addDays(7)->toIso8601String()] + $record);
         app(CompanySync::class)->run('manual');
+        $this->approveShortActivations();
         $debt = Debt::sole();
         $this->assertSame([DebtBucket::Secondary, 35000], [$debt->bucket, $debt->balance]);
 

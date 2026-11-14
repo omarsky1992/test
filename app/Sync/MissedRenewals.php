@@ -73,7 +73,8 @@ class MissedRenewals
             $renewal = $this->renewals->record($item['account'], $item['old_days'], $item['days'], $item['old'], $item['new'], $item['account']->external_plan, $run, $item['at'], longestDays: RenewalService::longestDays($item['new'], $item['old']));
             if ($renewal->wasRecentlyCreated) {
                 $result['renewals']++;
-                if ($renewal->debt_id !== null) {
+                // A short activation waits in «المكتشف 7 أيام» for «نعم/لا».
+                if ($renewal->debt_id !== null || $renewal->status === 'pending_debt') {
                     $result['debts']++;
                     $result['amount'] += (int) $renewal->amount;
                 }

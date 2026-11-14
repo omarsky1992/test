@@ -7,10 +7,12 @@ use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
 use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
+use App\Enums\PaymentType;
 use App\Filament\Pages\WhatsappReminders;
 use App\Filament\Pages\WhatsappSettings;
 use App\Filament\Resources\WhatsappOutbox\Pages\ListWhatsappOutbox;
 use App\Models\Account;
+use App\Models\ActivationDue;
 use App\Models\MessageTemplate;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappOutbox;
@@ -108,6 +110,7 @@ class WhatsAppQrTest extends TestCase
         $ends = now()->addDays($days)->addHour();
         $account->update(['current_plan_id' => $this->plan()->id, 'external_ends_at' => $ends, 'company_days_left' => $days]);
         app(RenewalService::class)->record($account, 0, $days, null, CarbonImmutable::parse($ends));
+        $this->approveShortActivations();
 
         return $account->fresh();
     }
@@ -218,11 +221,11 @@ class WhatsAppQrTest extends TestCase
         app(NumberRegistry::class)->add('07702222222', $this->admin, 'المحل', alerts: true);
         $account = $this->renewed('حسن علي');
 
-        app(PaymentService::class)->record($account, 35000, PaymentMethod::Cash, $this->cash(), \App\Enums\PaymentType::Advance);
+        app(PaymentService::class)->record($account, 35000, PaymentMethod::Cash, $this->cash(), PaymentType::Advance);
 
         // The secondary debt is paid, «يجب التفعيل» opens and the staff are told, as with any debt payment.
-        $this->assertSame(\App\Enums\DebtStatus::Paid, $account->debts()->sole()->status);
-        $this->assertTrue(\App\Models\ActivationDue::where('account_id', $account->id)->where('status', 'pending')->exists());
+        $this->assertSame(DebtStatus::Paid, $account->debts()->sole()->status);
+        $this->assertTrue(ActivationDue::where('account_id', $account->id)->where('status', 'pending')->exists());
         $alert = WhatsappOutbox::where('kind', 'alert_must_activate')->sole();
         $this->assertStringContainsString('حسن علي', $alert->body);
         $this->assertSame(0, app(PaymentService::class)->creditBalance($account));

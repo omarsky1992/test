@@ -84,13 +84,14 @@ class RecentlyActivated extends TableWidget
             ->emptyStateHeading('لا يوجد مفعّلون جدد من المزامنة')
             ->columns([
                 SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
-                    ->url(fn (AccountRenewal $r) => SubscriberFlags::subscriberUrl($r->subscriber_id)), fn (AccountRenewal $r) => $r->subscriber_id),
+                    ->url(fn (AccountRenewal $r) => SubscriberFlags::subscriberUrl($r->subscriber_id))
+                    ->description(fn (AccountRenewal $r) => $r->is_new ? '🆕 مشترك جديد' : null), fn (AccountRenewal $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('الجهاز')->placeholder('—')
                     ->description(fn (AccountRenewal $r) => $r->subscriber?->phone),
                 TextColumn::make('plan_name')->label('الفئة')->placeholder('—')
                     ->description(fn (AccountRenewal $r) => $r->account?->currentPlan?->price ? Money::format((int) $r->account->currentPlan->price) : null),
                 TextColumn::make('payment_source')->label('الدفع بالموقع')->badge()->placeholder('—')
-                    ->color(fn (?string $state) => $state === 'wallet' ? 'info' : 'warning')
+                    ->color(fn (?string $state) => AccountRenewal::SOURCE_COLORS[$state] ?? 'gray')
                     ->formatStateUsing(fn (?string $state) => AccountRenewal::PAYMENT_SOURCES[$state] ?? $state),
                 TextColumn::make('new_days')->label('الأيام')->formatStateUsing(fn ($state) => "{$state} يوم"),
                 TextColumn::make('new_ends_at')->label('ينتهي')->dateTime('Y/m/d')->placeholder('—'),

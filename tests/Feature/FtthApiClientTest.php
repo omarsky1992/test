@@ -60,7 +60,7 @@ class FtthApiClientTest extends TestCase
 
         $this->assertSame([
             'customer_id' => '2825350', 'name' => 'أحمد كريم', 'phone' => '07701234567', 'plan' => 'BASIC', 'status' => 'Active',
-            'ends_at' => '2026-10-15T10:00:00Z', 'zone' => 'FBG0876-2', 'gps' => '33.31,44.36', 'username' => 'FBG876F33P08',
+            'ends_at' => '2026-10-15T10:00:00Z', 'starts_at' => null, 'zone' => 'FBG0876-2', 'gps' => '33.31,44.36', 'username' => 'FBG876F33P08',
             'serial' => 'TDTC35980DF8', 'fat' => 'FAT33', 'port' => '3', 'subscription_id' => '13525583',
         ], $records[0]);
 

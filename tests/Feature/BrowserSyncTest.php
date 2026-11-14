@@ -113,15 +113,17 @@ class BrowserSyncTest extends TestCase
         $this->assertSame('browser', SyncRun::sole()->trigger);
     }
 
-    public function test_a_renewal_seen_by_the_browser_creates_one_secondary_debt(): void
+    public function test_a_renewal_seen_by_the_browser_waits_for_yes_then_is_one_secondary_debt(): void
     {
         $this->postJson('/sync/browser/run', $this->lists('2026-09-01T10:00:00Z', 'Expired'))->assertOk();
         $renewed = $this->lists(CarbonImmutable::now()->addDays(7)->addHour()->toIso8601String());
 
-        $this->postJson('/sync/browser/run', $renewed)->assertOk();
+        $this->postJson('/sync/browser/run', $renewed)->assertOk()->assertJsonFragment(['status' => 'success']);
         $this->postJson('/sync/browser/run', $renewed)->assertOk();
 
-        $this->assertSame(1, AccountRenewal::count());
+        $this->assertSame(['pending_debt'], AccountRenewal::pluck('status')->all());
+        $this->assertSame(0, Debt::count());
+        $this->approveShortActivations();
         $this->assertSame(1, Debt::count());
     }
 
@@ -213,8 +215,10 @@ class BrowserSyncTest extends TestCase
         $this->assertSame(['card', ['13525583', 'FBG876F33P08'], 35000], [$line['source'], $line['values'], $line['amount']]);
         $this->assertSame('2026-10-21', $line['ends']->toDateString());
 
-        // A date change has no payment type; a value-added service is not the renewal.
-        $this->assertNull(WalletTransactions::parse(['id' => 1, 'type' => 'CHANGE_DATE', 'paymentMode' => null, 'subscription' => ['id' => '13525583', 'endsAt' => '2026-10-21T10:00:00Z']]));
+        // A date change has no payment type (kept only for where a renewal ends); a value-added service is not the renewal.
+        $change = WalletTransactions::parse(['id' => 1, 'type' => 'CHANGE_DATE', 'paymentMode' => null, 'subscription' => ['id' => '13525583', 'endsAt' => '2026-10-21T10:00:00Z']]);
+        $this->assertNull($change['source']);
+        $this->assertNull(WalletTransactions::parse(['id' => 2, 'type' => 'PLAN_RENEW', 'paymentMode' => null, 'subscription' => ['id' => '13525583', 'endsAt' => '2026-10-21T10:00:00Z']]));
         $this->assertNull(WalletTransactions::parse($this->walletLine('Wallet', '2026-10-21T10:00:00Z', 'VAS')));
     }
 
@@ -233,12 +237,12 @@ class BrowserSyncTest extends TestCase
 
         $response = $this->postJson('/sync/browser/run', [...$this->lists($ends), 'wallet' => $wallet])->assertOk();
 
-        $this->assertStringContainsString('1 تجديد عُرف نوع دفعه (Card 1، Wallet 0)', $response->json('summary'));
+        $this->assertStringContainsString('1 تجديد عُرف نوع دفعه (كارت 1، محفظة الوكيل 0، محفظة المشترك 0)', $response->json('summary'));
         $renewal = AccountRenewal::sole();
         $this->assertSame(['card', 35000], [$renewal->payment_source, $renewal->company_amount]);
         // Only a label: no debt, no money.
         $this->assertSame(0, Debt::count());
-        Livewire::test(RecentlyActivated::class)->assertSee('💳 Card');
+        Livewire::test(RecentlyActivated::class)->assertSee('💳 كارت');
 
         // Read again on the next sync: nothing changes, nothing doubles.
         $this->postJson('/sync/browser/run', [...$this->lists($ends), 'wallet' => $wallet])->assertOk();
@@ -260,8 +264,9 @@ class BrowserSyncTest extends TestCase
         $this->postJson('/sync/browser/run', [...$this->lists($ends->toIso8601String()), 'wallet' => ['items' => [$line]]])->assertOk();
 
         $this->assertSame('wallet', AccountRenewal::sole()->payment_source);
+        $this->approveShortActivations();
         $this->assertSame(1, Debt::count());
-        $this->get(DebtResource::getUrl('index', ['tab' => 'secondary']))->assertOk()->assertSee('👛 Wallet');
+        $this->get(DebtResource::getUrl('index', ['tab' => 'secondary']))->assertOk()->assertSee('👛 محفظة');
     }
 
     public function test_the_extension_reads_the_wallet_log_with_get_only(): void

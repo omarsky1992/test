@@ -79,10 +79,11 @@ class BrowserSyncController extends Controller
         $run = $sync->run('browser', new BrowserPayloadClient($customers, $subscriptions, $details));
         CompanySync::markDetailsChecked(array_map('strval', array_keys($details)));
 
-        // The wallet log, when the extension could read it: Card or Wallet on each renewal.
+        // The wallet log, when the extension could read it: card, the agent's or the subscriber's wallet
+        // on each renewal, and the activations of subscribers this run saw for the first time.
         $wallet = $request->input('wallet');
         $paid = $run->status === 'success' && is_array($wallet) && is_array($wallet['items'] ?? null)
-            ? $walletLog->apply(array_slice($wallet['items'], 0, 2000)) : null;
+            ? $walletLog->apply(array_slice($wallet['items'], 0, 2000), $run, (array) ($run->stats['fresh_accounts'] ?? [])) : null;
 
         $s = $run->stats ?? [];
         // How many the site said it has: a shortfall is shown, so a missed page never goes unnoticed.
@@ -93,9 +94,9 @@ class BrowserSyncController extends Controller
         $short = $siteTotal !== null && $s['received'] < $siteTotal
             ? "⚠️ وصل {$s['received']} من أصل {$siteTotal} اشتراك بموقع الشركة. أعد المزامنة، وإذا تكرر النقص بلّغ عنه · " : '';
         $summary = $run->status === 'success'
-            ? $short.($siteTotal !== null && ! $short ? "كل اشتراكات الموقع ({$siteTotal}) · " : '')."{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (ديون ثانوية {$s['debts_created']}، تفعيل كامل {$s['activations']}) · أخطاء ".count($s['errors'] ?? [])
+            ? $short.($siteTotal !== null && ! $short ? "كل اشتراكات الموقع ({$siteTotal}) · " : '')."{$s['received']} اشتراك · جديد {$s['subscribers_created']} مشترك و{$s['accounts_created']} حساب · محدَّث {$s['accounts_updated']} · تجديدات {$s['renewals']} (7 أيام بانتظار القرار ".($s['pending_debts'] ?? 0)."، تفعيل كامل {$s['activations']}، منها مشتركين جدد ".($s['new_activations'] ?? 0).') · أخطاء '.count($s['errors'] ?? [])
                 .($paid !== null
-                    ? " · حركات المحفظة: {$paid['matched']} تجديد عُرف نوع دفعه (Card {$paid['card']}، Wallet {$paid['wallet']})"
+                    ? " · حركات المحفظة: {$paid['matched']} تجديد عُرف نوع دفعه (كارت {$paid['card']}، محفظة الوكيل {$paid['wallet_partner']}، محفظة المشترك {$paid['wallet_customer']}".($paid['wallet'] ? "، محفظة {$paid['wallet']}" : '').')'.($paid['new'] ? " · مفعّلين جدد من سجل المحفظة {$paid['new']}" : '')
                     : ' · لم تُقرأ حركات المحفظة: افتح صفحة المحفظة بموقع الشركة مرة وحدة والإضافة منصّبة، ثم أعد المزامنة')
             : (string) $run->error;
 

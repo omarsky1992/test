@@ -37,7 +37,7 @@ class AuditDetails
         'muted' => 'إيقاف الرسائل', 'notify_alt_phone' => 'الرسائل إلى الرقم الثاني', 'price' => 'السعر', 'decision' => 'القرار',
         'days' => 'الأيام', 'old' => 'السابق', 'new' => 'الجديد', 'code' => 'الكود', 'denomination' => 'الفئة', 'count' => 'العدد',
         'external_ends_at' => 'تاريخ الانتهاء', 'notes' => 'ملاحظات', 'title' => 'العنوان', 'body' => 'النص', 'text' => 'النص',
-        'command' => 'الأمر', 'payment_source' => 'نوع الدفع', 'balance' => 'الرصيد', 'opening_balance' => 'الرصيد الابتدائي', 'paid' => 'كان مسدداً من الرصيد',
+        'command' => 'الأمر', 'payment_source' => 'نوع الدفع', 'balance' => 'الرصيد', 'opening_balance' => 'الرصيد الابتدائي', 'new' => 'مشترك جديد', 'company_txn' => 'رقم معاملة الشركة', 'paid' => 'كان مسدداً من الرصيد',
     ];
 
     /** Fields that hold whole dinars. */
@@ -46,6 +46,8 @@ class AuditDetails
     private const VALUES = [
         'type' => ['debt_payment' => 'تسديد دين', 'activation' => 'تفعيل نقدي', 'advance' => 'دفع مقدم'],
         'bucket' => ['primary' => 'دين أولي', 'secondary' => 'دين ثانوي'],
+        'payment_source' => ['card' => 'كارت', 'wallet_partner' => 'محفظة الوكيل', 'wallet_customer' => 'محفظة المشترك', 'wallet' => 'محفظة'],
+        'status' => ['pending_debt' => 'بانتظار نعم/لا', 'debt_created' => 'دين ثانوي', 'no_debt' => 'بدون دين', 'activated' => 'تفعيل كامل', 'test' => 'تيست'],
         'source' => ['activation' => 'تفعيل', 'manual' => 'يدوي', 'opening' => 'افتتاحي', 'device_sale' => 'بيع جهاز', 'renewal' => 'تجديد تلقائي'],
         'kind' => ['partial_7' => '7 أيام', 'full_30' => '30 يوم'],
         'settlement' => ['cash' => 'نقداً', 'debt' => 'دين'],

@@ -3,11 +3,13 @@
 namespace Tests;
 
 use App\Enums\MoneyAccountKind;
+use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
 use App\Models\MoneyAccount;
 use App\Models\ServicePlan;
 use App\Models\User;
 use App\Services\Ledger;
+use App\Services\RenewalService;
 use App\Services\SubscriberService;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -42,6 +44,24 @@ abstract class TestCase extends BaseTestCase
         );
 
         return $subscriber->accounts()->first();
+    }
+
+    /**
+     * «المكتشف 7 أيام» → «نعم» on every short activation a sync left waiting (as the admin), for tests
+     * that need the secondary debt it becomes.
+     */
+    protected function approveShortActivations(): void
+    {
+        $user = auth()->user();
+        $this->actingAs($this->admin);
+        foreach (RenewalService::pendingShort()->orderBy('id')->get() as $renewal) {
+            try {
+                app(RenewalService::class)->approveSecondary($renewal);
+            } catch (BusinessRuleException) {
+                // No price known: it stays waiting for an amount.
+            }
+        }
+        $user ? $this->actingAs($user) : auth()->logout();
     }
 
     protected function plan(string $code = 'basic'): ServicePlan

@@ -41,6 +41,8 @@ class FtthMapper
             'plan' => self::planName($item),
             'status' => self::text($item['status'] ?? null),
             'ends_at' => self::text($item['expires'] ?? $item['expiresAt'] ?? null),
+            // When the list says when the subscription started (a first sighting counts only if recent).
+            'starts_at' => self::text($item['startedAt'] ?? $item['startsAt'] ?? $item['startDate'] ?? $item['activatedAt'] ?? $item['activationDate'] ?? null),
             'zone' => self::text($item['zone'] ?? null),
             'gps' => null,
             'username' => self::text($item['username'] ?? $device['username'] ?? null),

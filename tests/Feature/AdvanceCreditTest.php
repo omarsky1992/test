@@ -70,7 +70,8 @@ class AdvanceCreditTest extends TestCase
         // …and a secondary debt found by the company sync stay owed.
         $account->update(['current_plan_id' => $this->plan()->id, 'external_ends_at' => now()->subDay(), 'company_days_left' => 0]);
         $renewal = app(RenewalService::class)->record($account->fresh(), 0, 7, now()->subDay()->toImmutable(), now()->addDays(7)->toImmutable());
-        $renewalDebt = Debt::find($renewal->debt_id);
+        $this->approveShortActivations();
+        $renewalDebt = Debt::find($renewal->fresh()->debt_id);
         $this->assertSame($renewalDebt->original_amount, $renewalDebt->balance);
         $this->assertSame(50000, $this->payments()->creditBalance($account));
         $this->assertFalse(DB::table('financial_transactions')->where('txn_type', 'credit_application')->exists());

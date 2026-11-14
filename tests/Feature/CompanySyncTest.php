@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\DebtBucket;
 use App\Enums\DebtSource;
+use App\Enums\DebtStatus;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
 use App\Exceptions\BusinessRuleException;
@@ -14,14 +15,12 @@ use App\Imports\SpreadsheetReader;
 use App\Imports\SubscriberImporter;
 use App\Models\Account;
 use App\Models\AccountRenewal;
-use App\Models\Payment;
-use App\Services\TreasuryService;
-use App\Enums\DebtStatus;
 use App\Models\ActivationDue;
 use App\Models\AuditLog;
 use App\Models\Debt;
 use App\Models\DebtTransfer;
 use App\Models\FinancialTransaction;
+use App\Models\Payment;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
 use App\Models\User;
@@ -31,6 +30,7 @@ use App\Services\PaymentService;
 use App\Services\RecentActivationService;
 use App\Services\RenewalService;
 use App\Services\Settings;
+use App\Services\TreasuryService;
 use App\Support\SubscriberStatus;
 use App\Sync\CompanyClient;
 use App\Sync\CompanySync;
@@ -55,9 +55,15 @@ class CompanySyncTest extends TestCase
         $this->app->instance(CompanyClient::class, $this->site);
     }
 
-    private function sync(): SyncRun
+    /** A sync, then «نعم» on any short activation it left waiting (unless $approve is false). */
+    private function sync(bool $approve = true): SyncRun
     {
-        return app(CompanySync::class)->run('manual');
+        $run = app(CompanySync::class)->run('manual');
+        if ($approve) {
+            $this->approveShortActivations();
+        }
+
+        return $run;
     }
 
     private function siteRecord(array $overrides = []): array
@@ -185,7 +191,7 @@ class CompanySyncTest extends TestCase
         $this->assertSame(DebtBucket::Secondary, $debt->bucket);
         $this->assertSame(35000, $debt->balance);
         $this->assertSame($debt->id, $renewal->debt_id);
-        $this->assertSame(1, $run->stats['debts_created']);
+        $this->assertSame(1, $run->stats['pending_debts']);
 
         // Secondary only: primary debts, the cash box and the company balance are unchanged.
         $this->assertSame(35000, $this->balanceOf(Ledger::AR_SECONDARY));
@@ -252,11 +258,20 @@ class CompanySyncTest extends TestCase
         $this->site->set($this->siteRecord(['plan' => 'Fiber 35', 'ends_at' => '2026-09-01T10:00:00Z']));
         $this->sync();
         $this->site->set($this->siteRecord(['plan' => 'Fiber 35', 'ends_at' => $this->endsIn(6)]));
-        $run = $this->sync();
+        $run = $this->sync(approve: false);
 
-        $this->assertSame('no_price', AccountRenewal::sole()->status);
+        // It waits for «نعم/لا» with no amount: «نعم» needs the amount typed.
+        $renewal = AccountRenewal::sole();
+        $this->assertSame(['pending_debt', null], [$renewal->status, $renewal->amount]);
         $this->assertSame(0, Debt::count());
-        $this->assertSame(1, $run->stats['renewals_without_price']);
+        $this->assertSame(1, $run->stats['pending_debts']);
+        try {
+            app(RenewalService::class)->approveSecondary($renewal);
+            $this->fail('A debt with no amount was recorded.');
+        } catch (BusinessRuleException) {
+        }
+        app(RenewalService::class)->approveSecondary($renewal, 30000);
+        $this->assertSame(30000, Debt::sole()->balance);
     }
 
     public function test_a_failing_site_marks_the_run_failed_and_changes_nothing(): void
@@ -385,7 +400,7 @@ class CompanySyncTest extends TestCase
 
         Livewire::test(CompanySyncPage::class)
             ->callAction('missedRenewals')
-            ->assertNotified('سُجّل 1 تجديد و1 دين ثانوي');
+            ->assertNotified('سُجّل 1 تجديد، و1 بانتظار «نعم/لا» بالمكتشف 7 أيام');
         $this->assertSame(1, AccountRenewal::count());
     }
 

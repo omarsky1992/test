@@ -3,6 +3,7 @@
 namespace App\Sync;
 
 use App\Models\Account;
+use App\Models\AccountRenewal;
 use App\Models\Branch;
 use App\Models\Subscriber;
 use App\Models\SyncRun;
@@ -48,6 +49,15 @@ class CompanySync
 
     private array $errors = [];
 
+    /** No account existed when the run started (a new client's first import): nothing is «new». */
+    private bool $firstImport = false;
+
+    /** @var array<int, int> accounts first seen already active, whose start the wallet log may tell */
+    private array $fresh = [];
+
+    /** How recent a first sighting's activation must be to count as one (days). */
+    public const NEW_ACTIVATION_DAYS = 3;
+
     public function __construct(
         private CompanyClient $client,
         private RenewalService $renewals,
@@ -58,8 +68,10 @@ class CompanySync
     public function run(string $trigger = 'manual', ?CompanyClient $client = null): SyncRun
     {
         $run = SyncRun::create(['trigger' => $trigger, 'status' => 'running', 'started_at' => now(), 'created_by' => Auth::id()]);
-        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'activations', 'renewals_without_price', 'self_tests', 'skipped'], 0);
+        $this->stats = array_fill_keys(['received', 'subscribers_created', 'subscribers_updated', 'accounts_created', 'accounts_updated', 'unchanged', 'renewals', 'debts_created', 'activations', 'renewals_without_price', 'self_tests', 'skipped', 'pending_debts', 'new_activations'], 0);
         $this->errors = [];
+        $this->fresh = [];
+        $this->firstImport = ! Account::query()->exists();
         $this->preload();
         $now = CarbonImmutable::now();
 
@@ -74,7 +86,7 @@ class CompanySync
                     $this->error($record, $e->getMessage());
                 }
             }
-            $run->update(['status' => 'success', 'finished_at' => now(), 'stats' => [...$this->stats, 'errors' => $this->errors]]);
+            $run->update(['status' => 'success', 'finished_at' => now(), 'stats' => [...$this->stats, 'errors' => $this->errors, 'fresh_accounts' => $this->fresh]]);
         } catch (Throwable $e) {
             $run->update(['status' => 'failed', 'finished_at' => now(), 'error' => $e->getMessage(), 'stats' => [...$this->stats, 'errors' => $this->errors]]);
         }
@@ -155,7 +167,7 @@ class CompanySync
             if ($username === null) {
                 throw new \RuntimeException('اشتراك جديد بدون اسم جهاز.');
             }
-            $this->createAccount($subscriber, $record, $now);
+            $this->createAccount($subscriber, $record, $run, $now);
 
             return;
         }
@@ -210,7 +222,7 @@ class CompanySync
         $this->audit->log('subscriber.synced', $subscriber, array_intersect_key($original, $changes), $changes, 'مزامنة من موقع الشركة', $subscriber->id, 'sync');
     }
 
-    private function createAccount(Subscriber $subscriber, array $record, CarbonImmutable $now): void
+    private function createAccount(Subscriber $subscriber, array $record, SyncRun $run, CarbonImmutable $now): void
     {
         $endsAt = CompanyData::date($record['ends_at']);
         $status = CompanyData::status($record['status']);
@@ -226,8 +238,55 @@ class CompanySync
         $account->setRelation('subscriber', $subscriber);
         $this->index($account);
         $this->stats['accounts_created']++;
-        // The first sighting is the starting point, never a renewal.
+        // The first sighting is the starting point; it counts as an activation only when it is recent.
         $this->audit->log('account.synced_new', $account, null, $this->auditable($account->getAttributes()), 'مزامنة من موقع الشركة', $subscriber->id, 'sync');
+        $this->firstSighting($account, $record, $run, $now);
+    }
+
+    /**
+     * A subscription seen for the first time already active (a new subscriber, or an account added by
+     * hand that no sync had read): an activation when it started within the last
+     * NEW_ACTIVATION_DAYS days, by the list's start date or, without one, by the wallet log
+     * (`WalletTransactions::apply`, for the accounts kept in `fresh_accounts`). Never on a first import.
+     */
+    private function firstSighting(Account $account, array $record, SyncRun $run, CarbonImmutable $now): void
+    {
+        $days = $account->company_days_left;
+        if ($this->firstImport || $days === null || $days <= 0 || $account->external_ends_at === null) {
+            return;
+        }
+        $starts = CompanyData::date($record['starts_at'] ?? null);
+        if ($starts === null) {
+            $this->fresh[] = $account->id;
+
+            return;
+        }
+        if ($starts->lessThan($now->subDays(self::NEW_ACTIVATION_DAYS))) {
+            return;
+        }
+        $renewal = $this->renewals->record(
+            $account, 0, $days, null, $account->external_ends_at, $record['plan'], $run, $now,
+            longestDays: RenewalService::longestDays($account->external_ends_at, $starts), isNew: true,
+        );
+        $this->count($renewal);
+    }
+
+    private function count(AccountRenewal $renewal): void
+    {
+        if (! $renewal->wasRecentlyCreated) {
+            return;
+        }
+        $this->stats['renewals']++;
+        if ($renewal->is_new) {
+            $this->stats['new_activations']++;
+        }
+        match (true) {
+            $renewal->debt_id !== null => $this->stats['debts_created']++,
+            $renewal->status === 'activated' => $this->stats['activations']++,
+            $renewal->status === 'test' => $this->stats['self_tests']++,
+            $renewal->status === 'pending_debt' => $this->stats['pending_debts']++,
+            default => $this->stats['renewals_without_price']++,
+        };
     }
 
     private function updateAccount(Account $account, array $record, SyncRun $run, CarbonImmutable $now): void
@@ -235,6 +294,8 @@ class CompanySync
         $endsAt = CompanyData::date($record['ends_at']);
         $status = CompanyData::status($record['status']);
         $previousEndsAt = $account->external_ends_at;
+        // An account no sync has read yet (added by hand): this is its first sighting.
+        $neverSynced = $account->company_days_left === null && $previousEndsAt === null;
         // The last sync saw 0 only if it came after the old end date: the activation started after it.
         $sawZeroAt = $account->company_days_left === 0 ? $account->company_synced_at : null;
         // The last known days, aged to now: a subscription whose saved end date has passed counts as 0
@@ -271,6 +332,12 @@ class CompanySync
             }
         }
 
+        if ($neverSynced) {
+            $this->firstSighting($account, $record, $run, $now);
+
+            return;
+        }
+
         $newDays = $fields['company_days_left'];
         // A renewal: from 0 to more than 0, or a full activation added before reaching 0.
         $early = $previousDays !== null && $newDays !== null && $this->renewals->isEarlyFullActivation($previousDays, $previousEndsAt, $endsAt);
@@ -279,15 +346,7 @@ class CompanySync
                 $account, $previousDays, $newDays, $previousEndsAt, $endsAt, $record['plan'], $run, $now,
                 longestDays: RenewalService::longestDays($endsAt, $previousEndsAt, $sawZeroAt),
             );
-            if ($renewal->wasRecentlyCreated) {
-                $this->stats['renewals']++;
-                match (true) {
-                    $renewal->debt_id !== null => $this->stats['debts_created']++,
-                    $renewal->status === 'activated' => $this->stats['activations']++,
-                    $renewal->status === 'test' => $this->stats['self_tests']++,
-                    default => $this->stats['renewals_without_price']++,
-                };
-            }
+            $this->count($renewal);
         }
     }
 

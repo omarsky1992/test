@@ -55,7 +55,7 @@ class AuditLogResource extends Resource
         'payment.box_changed' => 'تصحيح الصندوق', 'subscriber.notify_phone' => 'رقم الرسائل', 'custody.renamed' => 'تغيير اسم العهدة',
         'custody.handover_requested' => 'طلب تسليم عهدة', 'custody.handover_approved' => 'موافقة تسليم عهدة', 'custody.handover_rejected' => 'رفض تسليم عهدة',
         'fund_transfer.voided' => 'إلغاء تحويل', 'money_account.reset' => 'تصفير رصيد بطاقة', 'money_account.reset_voided' => 'إلغاء تصفير بطاقة',
-        'renewal.decided' => 'قرار المفعّل حديثاً', 'renewal.payment_source' => 'نوع دفع التجديد',
+        'renewal.decided' => 'قرار المفعّل حديثاً', 'renewal.payment_source' => 'نوع دفع التجديد', 'renewal.secondary_approved' => 'المكتشف 7 أيام: دين ثانوي', 'renewal.secondary_declined' => 'المكتشف 7 أيام: بدون دين',
         'activation_due.opened' => 'يجب التفعيل', 'activation_due.done' => 'تم التفعيل', 'activation_due.cancelled' => 'إلغاء يجب التفعيل',
         'activation_reminder.set' => 'تذكير تفعيل', 'activation_reminder.cancelled' => 'إلغاء تذكير تفعيل',
         'note.created' => 'ملاحظة جديدة', 'note.closed' => 'إغلاق ملاحظة', 'note.deleted' => 'حذف ملاحظة',

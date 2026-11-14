@@ -89,16 +89,16 @@ class CompanySyncPage extends Page
                     $names = implode('، ', array_map(fn ($f) => $f['account']->username, array_slice(array_values($short), 0, 8)));
 
                     return 'وُجد '.count($found).' تجديد طبّقته المزامنة على التواريخ ولم يُسجَّل (كان الاشتراك منتهياً وأصبح فعّالاً). '
-                        .count($short).' منها تفعيل من 4 إلى 7 أيام: يُنشأ لكل منها دين ثانوي بمجموع '.Money::format($amount)
-                        .($noPrice ? " ({$noPrice} بدون فئة معروفة: بلا دين)" : '')
+                        .count($short).' منها تفعيل من 4 إلى 7 أيام: تنزل بـ«المكتشف 7 أيام» تنتظر «نعم/لا» للدين الثانوي (بمجموع '.Money::format($amount).')'
+                        .($noPrice ? " ({$noPrice} بدون فئة معروفة: تكتب المبلغ عند «نعم»)" : '')
                         .($tests ? ". و{$tests} تيست من المشترك (أقل من 4 أيام): بدون دين" : '')
                         .($full ? ". و{$full} تفعيل كامل (أكثر من 7 أيام): يُسجَّل تفعيلاً بدون دين" : '')
                         .($names ? ". أمثلة: {$names}" : '').'. لا يتكرر شيء إذا ضغطت مرة ثانية.';
                 })
-                ->modalSubmitActionLabel('إنشاء الديون')
+                ->modalSubmitActionLabel('تسجيل التجديدات')
                 ->action(function () {
                     $r = app(MissedRenewals::class)->record();
-                    Notification::make()->success()->title("سُجّل {$r['renewals']} تجديد و{$r['debts']} دين ثانوي")
+                    Notification::make()->success()->title("سُجّل {$r['renewals']} تجديد، و{$r['debts']} بانتظار «نعم/لا» بالمكتشف 7 أيام")
                         ->body('المجموع: '.Money::format($r['amount']))->send();
                 }),
             Action::make('preview')
@@ -205,7 +205,7 @@ class CompanySyncPage extends Page
             'refreshedAt' => filled($s->get('sync.refreshed_at')) ? CarbonImmutable::parse($s->get('sync.refreshed_at')) : null,
             'last' => SyncRun::where('status', 'success')->latest('started_at')->first(),
             'runs' => SyncRun::with('creator')->latest('started_at')->limit(20)->get(),
-            'renewals' => AccountRenewal::with(['account', 'subscriber', 'debt'])->latest('detected_at')->limit(30)->get(),
+            'renewals' => AccountRenewal::with(['account', 'subscriber', 'debt', 'decisionDebt'])->latest('detected_at')->limit(30)->get(),
         ];
     }
 }

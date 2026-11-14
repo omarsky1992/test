@@ -20,6 +20,7 @@ class AccountRenewal extends Model
             'amount' => 'integer',
             'decided_at' => 'immutable_datetime',
             'company_amount' => 'integer',
+            'is_new' => 'boolean',
         ];
     }
 
@@ -43,7 +44,43 @@ class AccountRenewal extends Model
         return $this->belongsTo(Debt::class);
     }
 
-    public const PAYMENT_SOURCES = ['card' => '💳 Card', 'wallet' => '👛 Wallet'];
+    /** How the company site says it was paid (its wallet log). `wallet` is from before the owner was read. */
+    public const PAYMENT_SOURCES = [
+        'card' => '💳 كارت',
+        'wallet_partner' => '👛 محفظة الوكيل',
+        'wallet_customer' => '📱 محفظة المشترك',
+        'wallet' => '👛 محفظة',
+    ];
+
+    public const SOURCE_COLORS = ['card' => 'warning', 'wallet_partner' => 'info', 'wallet_customer' => 'success', 'wallet' => 'info'];
+
+    /** What became of it, in words, with a colour: «دين ثانوي D-12», «بانتظار القرار»… */
+    public function outcome(): array
+    {
+        return match (true) {
+            $this->status === 'pending_debt' => ['7 أيام: بانتظار نعم/لا', 'warning'],
+            $this->status === 'no_debt' => ['7 أيام: بدون دين (لا)', 'gray'],
+            $this->status === 'debt_created' => ['دين ثانوي'.($this->debt?->number ? ' '.$this->debt->number : ''), 'danger'],
+            $this->status === 'test' => ['تيست من المشترك: بدون دين', 'gray'],
+            $this->status === 'no_price' => ['بدون دين: الفئة بلا سعر', 'gray'],
+            $this->decision === 'debt' => ['دين أولي'.($this->decisionDebt?->number ? ' '.$this->decisionDebt->number : ''), 'danger'],
+            $this->decision === 'cash' => ['نقد', 'success'],
+            $this->decision === 'transfer' => ['مناقلة', 'info'],
+            $this->decision === 'earlier' => ['تفعيل كامل (قبل القائمة)', 'gray'],
+            default => ['تفعيل كامل: بانتظار القرار', 'warning'],
+        };
+    }
+
+    public const OUTCOMES = [
+        'waiting' => 'تفعيل كامل: بانتظار القرار',
+        'pending_debt' => '7 أيام: بانتظار نعم/لا',
+        'debt_created' => 'دين ثانوي',
+        'no_debt' => '7 أيام: بدون دين',
+        'primary' => 'دين أولي',
+        'cash' => 'نقد',
+        'transfer' => 'مناقلة',
+        'test' => 'تيست من المشترك',
+    ];
 
     public function decisionDebt(): BelongsTo
     {
