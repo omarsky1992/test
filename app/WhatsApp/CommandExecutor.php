@@ -10,6 +10,7 @@ use App\Enums\DocumentStatus;
 use App\Enums\MoneyAccountKind;
 use App\Enums\PaymentMethod;
 use App\Exceptions\BusinessRuleException;
+use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Activation;
@@ -38,6 +39,7 @@ use App\Support\Arabic;
 use App\Support\Money;
 use App\Support\OpticalSignal;
 use App\Support\SubscriberStatus;
+use App\Support\SubscriberTimeline;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Ramsey\Uuid\Uuid;
@@ -419,7 +421,7 @@ class CommandExecutor
             'custody', 'advances' => 'employees.view',
             'sales_today', 'purchases_today', 'activated_today' => 'reports.view',
             'must_activate' => 'accounts.view',
-            'subscriber_app', 'subscriber_info' => 'subscribers.view',
+            'subscriber_app', 'subscriber_info', 'subscriber_history' => 'subscribers.view',
             default => 'debts.view',
         };
         if (! $user->can($permission)) {
@@ -475,6 +477,7 @@ class CommandExecutor
             })(),
             'subscriber_app' => $this->program($c->subscriber),
             'subscriber_info' => $this->profile($c->subscriber),
+            'subscriber_history' => $this->history($c->subscriber),
             default => self::help(),
         };
 
@@ -506,6 +509,51 @@ class CommandExecutor
     }
 
     /** «وضع فلان»: the subscriber's whole profile — numbers, program, and every account's details. */
+    /**
+     * «شنو صار وي فلان» / «فحص فلان»: «📜 شنو صار ويا هذا المشترك» from his page (SubscriberTimeline), as
+     * the linked user may see it (money lines need debts.view / payments.view). Read only.
+     */
+    private function history(?string $term): string
+    {
+        if ($term === null || trim($term) === '') {
+            return 'شنو صار ويا منو؟ اكتب الاسم.';
+        }
+        $account = $this->findAccount($term);
+        if (is_string($account)) {
+            return $account;
+        }
+        $subscriber = $account->subscriber;
+        $story = SubscriberTimeline::for($subscriber, 200);
+        $shown = 15;
+        $lines = ['📜 شنو صار ويا '.$subscriber->full_name];
+        if ($story['now'] !== []) {
+            $lines[] = '';
+            $lines[] = '📍 وضعه هسه:';
+            foreach ($story['now'] as $line) {
+                $lines[] = '• '.$line['text'];
+            }
+        }
+        $lines[] = '';
+        if ($story['events']->isEmpty()) {
+            $lines[] = 'ما مسجّل شي بعد على هذا المشترك.';
+        } else {
+            $lines[] = '🕘 اللي صار (الأحدث أول):';
+            foreach ($story['events']->take($shown) as $e) {
+                $lines[] = $e['icon'].' '.$e['at']->setTimezone(config('app.timezone'))->format('Y/m/d H:i').' — '.$e['text'];
+            }
+            if ($story['events']->count() > $shown) {
+                $lines[] = '… و'.($story['events']->count() - $shown).' حدث أقدم بصفحته بالنظام.';
+            }
+        }
+        // The link to his page, when the panel can build it here.
+        if ($url = rescue(fn () => SubscriberResource::getUrl('view', ['record' => $subscriber->id], panel: 'admin'), null, false)) {
+            $lines[] = '';
+            $lines[] = '🔗 '.$url;
+        }
+
+        return implode("\n", $lines);
+    }
+
     private function profile(?string $term): string
     {
         if ($term === null || trim($term) === '') {

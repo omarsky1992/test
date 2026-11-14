@@ -24,6 +24,7 @@ use App\Models\WhatsappMessage;
 use App\Models\WhatsappNumber;
 use App\Services\EmployeeFinance;
 use App\Services\Ledger;
+use App\Services\RenewalService;
 use App\Services\Settings;
 use App\Services\TreasuryService;
 use App\Support\SubscriberStatus;
@@ -371,6 +372,28 @@ class WhatsAppTest extends TestCase
         $this->assertStringContainsString('رقم البرنامج: F15', $reply);
         $this->assertStringContainsString($account->username, $reply);
         $this->assertSame(0, Debt::count());
+    }
+
+    public function test_what_happened_with_a_subscriber_is_told_with_who_decided(): void
+    {
+        $account = $this->subscriber('صادق حبيب');
+        $account->update(['external_ends_at' => now()->addDays(7), 'company_days_left' => 7]);
+        $renewal = app(RenewalService::class)->record($account->fresh(), 0, 7, now()->subDay()->toImmutable(), now()->addDays(7)->toImmutable());
+        app(RenewalService::class)->declineSecondary($renewal);
+
+        foreach (['شنو صار وي صادق حبيب', 'فحص صادق حبيب', 'ليش ما عليه دين صادق حبيب', 'شنو صار ويا صادق حبيب'] as $message) {
+            $this->assertSame('subscriber_history', (new RuleInterpreter)->interpret($message)?->query, $message);
+        }
+        $this->text('شنو صار وي صادق حبيب');
+        $reply = $this->wa->lastReply();
+        $this->assertStringContainsString('📜 شنو صار ويا صادق حبيب', $reply);
+        $this->assertStringContainsString('📍 وضعه هسه:', $reply);
+        $this->assertStringContainsString('ما عليه أي دين مفتوح هسه.', $reply);
+        $this->assertStringContainsString($this->admin->name.' ضغط «لا» بالمكتشف 7 أيام: ما انسجل دين ثانوي.', $reply);
+        $this->assertStringContainsString('/subscribers/'.$account->subscriber_id, $reply);
+        // Read only.
+        $this->assertSame(0, Debt::count());
+        $this->assertSame('no_debt', $renewal->fresh()->status);
     }
 
     public function test_a_name_written_with_other_spaces_is_the_same_subscriber(): void

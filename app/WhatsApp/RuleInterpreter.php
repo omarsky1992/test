@@ -92,6 +92,12 @@ class RuleInterpreter implements Interpreter
         if (preg_match('/^(?:امسح|احذف|الغي|شيل)\s+(?:دين|ديون)\s+(.+)$/u', $t, $m)) {
             return new Command('void_debt', subscriber: $m[1]);
         }
+        // «شنو صار وي محمد» / «فحص محمد» / «ليش ما عليه دين محمد»: his story, as on his page.
+        if (preg_match('/^(?:شنو|شني|شكو)\s+صار\s+(?:وي|ويا|ويه|ويّا|مع|ب|ل)\s*(?:بخصوص\s+)?(.+)$/u', $t, $m)
+            || preg_match('/^(?:فحص|افحص|افحصلي|تاريخ|قصه)\s+(?:عن\s+|بخصوص\s+|مال\s+)?(.+)$/u', $t, $m)
+            || preg_match('/^ليش\s+(?:ما\s+)?(?:عليه|متسجل|مسجل|منسجل|نازل)\s+(?:دين\s+)?(?:بخصوص\s+)?(.+)$/u', $t, $m)) {
+            return new Command('query', subscriber: $m[1], query: 'subscriber_history');
+        }
         // «وضع محمد» / «تفاصيل محمد» / «معلومات محمد» / «بيانات محمد»: the subscriber's whole profile.
         if (preg_match('/^(?:وضع|وضعيه|حاله|تفاصيل|معلومات|بيانات|كشف|بروفايل)\s+(?:عن\s+|بخصوص\s+)?(.+)$/u', $t, $m)) {
             return new Command('query', subscriber: $m[1], query: 'subscriber_info');

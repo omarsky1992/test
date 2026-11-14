@@ -40,7 +40,9 @@ class ClaudeInterpreter implements Interpreter
           subscriber_debt (how much a given subscriber owes; also set subscriber), must_activate (يجب التفعيل: paid their
           secondary debt and wait for the full activation), subscriber_app (which program/app a given subscriber
           uses, "برنامج محمد" with NO code: the number written in his notes; also set subscriber),
-          subscriber_info (كل تفاصيل المشترك، "وضع محمد", "تفاصيل محمد", "معلومات محمد": full profile; also set subscriber).
+          subscriber_info (كل تفاصيل المشترك، "وضع محمد", "تفاصيل محمد", "معلومات محمد": full profile; also set subscriber),
+          subscriber_history (what happened with a subscriber and why he has or has no debt: "شنو صار وي محمد", "فحص محمد",
+          "ليش ما عليه دين محمد", "منو نزل دين محمد"; also set subscriber).
         - clarify: a command whose required detail is missing or ambiguous (activation without days, payment
           without amount, purchase item without a price). Put one short question in Iraqi Arabic in "question".
         - unknown: anything else (greetings, unrelated text). Put a short Iraqi Arabic reply in "question"
