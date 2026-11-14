@@ -79,8 +79,10 @@ class AdminPanelProvider extends PanelProvider
                 <script>if ('serviceWorker' in navigator) { navigator.serviceWorker.register('/sw.js'); }</script>
             HTML))
             ->renderHook(PanelsRenderHook::HEAD_END, fn (): string => view('filament.interface.styles')->render())
+            ->renderHook(PanelsRenderHook::HEAD_END, fn (): string => view('filament.interface.back-trail')->render())
             ->renderHook(PanelsRenderHook::HEAD_END, fn (): string => view('filament.interface.location-map')->render())
             // Another client's managers see the platform's «اشتراكك سينتهي…» notice (never client 1).
+            ->renderHook(PanelsRenderHook::CONTENT_START, fn (): string => view('filament.interface.back-button')->render())
             ->renderHook(PanelsRenderHook::CONTENT_START, fn (): string => view('filament.interface.subscription-banner')->render())
             ->renderHook(PanelsRenderHook::USER_MENU_BEFORE, fn (): string => view('filament.interface.topbar')->render())
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => view('filament.interface.bottom-nav')->render())

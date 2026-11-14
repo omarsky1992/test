@@ -139,6 +139,9 @@ class SubscriberResource extends Resource
                 TextEntry::make('secondary_total')->label('دين ثانوي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Secondary)))->color('warning')->weight('bold'),
                 TextEntry::make('primary_total')->label('دين أولي')->state(fn (Subscriber $r) => Money::format(self::bucketTotal($r, DebtBucket::Primary)))->color('info')->weight('bold'),
             ]),
+            // «ليش ما عليه دين؟»: his story in sentences, from what the system recorded (SubscriberTimeline).
+            Section::make('📜 شنو صار ويا هذا المشترك')->collapsible()->compact()
+                ->schema([ViewEntry::make('timeline')->hiddenLabel()->view('filament.subscribers.timeline')]),
         ]);
     }
 
