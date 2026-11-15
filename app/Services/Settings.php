@@ -56,6 +56,8 @@ class Settings
         'subscriber_messages.debt' => true,
         'subscriber_messages.payment' => true,
         'subscriber_messages.expiring_hours' => 24,
+        // «قرب الانتهاء» goes to everyone at once, once a day at this hour (Baghdad).
+        'subscriber_messages.expiring_at_hour' => 10,
         'subscriber_messages.debt_every_days' => 3,
     ];
 

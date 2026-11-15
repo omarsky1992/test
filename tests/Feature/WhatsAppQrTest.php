@@ -302,6 +302,7 @@ class WhatsAppQrTest extends TestCase
         $this->travelTo(now()->addDays(2));
         $soon->update(['external_ends_at' => now()->addHours(20)]);
         $ended->update(['external_ends_at' => now()->subHours(3)]);
+        app(Settings::class)->set('subscriber_messages.expiring_at_hour', 11); // the day's «قرب الانتهاء» batch hour
 
         $notifier = app(Notifier::class);
         $notifier->scanSubscribers();
@@ -310,6 +311,41 @@ class WhatsAppQrTest extends TestCase
         $this->assertEqualsCanonicalizing(['sub_expiring', 'sub_expired', 'sub_debt'], WhatsappOutbox::pluck('kind')->all());
         $this->assertSame($owes->id, WhatsappOutbox::where('kind', 'sub_debt')->value('account_id'));
         $this->assertStringContainsString('انتهى اشتراككم', WhatsappOutbox::where('kind', 'sub_expired')->value('body'));
+    }
+
+    public function test_expiring_messages_go_together_once_a_day_at_least_a_day_before_the_end(): void
+    {
+        app(Settings::class)->set('subscriber_messages.enabled', true);
+        app(Settings::class)->set('subscriber_messages.renewal', false);
+        app(Settings::class)->set('subscriber_messages.debt', false);
+        app(Settings::class)->set('subscriber_messages.expired', false);
+        app(Settings::class)->set('subscriber_messages.expiring_at_hour', 10);
+        $this->travelToTime('2026-09-22 09:30:00');
+        $tomorrow = $this->account('ينتهي باجر', phone: '07901110001');
+        $tomorrow->update(['external_ends_at' => CarbonImmutable::parse('2026-09-23 08:00:00')]);   // 22.5 h after the batch
+        $dayAfter = $this->account('ينتهي عقب باجر', phone: '07901110002');
+        $dayAfter->update(['external_ends_at' => CarbonImmutable::parse('2026-09-24 09:00:00')]);   // 47 h after the batch
+        $later = $this->account('ينتهي بعدين', phone: '07901110003');
+        $later->update(['external_ends_at' => CarbonImmutable::parse('2026-09-24 12:00:00')]);      // 50 h: tomorrow's batch
+        $notifier = app(Notifier::class);
+
+        // Not before the hour.
+        $notifier->scanSubscribers();
+        $this->assertSame(0, WhatsappOutbox::count());
+
+        // At the hour: everyone ending before tomorrow's batch would still be a day ahead, all at once.
+        $this->travelToTime('2026-09-22 10:00:00');
+        $notifier->scanSubscribers();
+        $notifier->scanSubscribers();
+        $this->assertEqualsCanonicalizing([$tomorrow->id, $dayAfter->id], WhatsappOutbox::where('kind', 'sub_expiring')->pluck('account_id')->all());
+
+        // The rest of the day nothing more; the next day's batch tells the next one, 26 h ahead.
+        $this->travelToTime('2026-09-22 15:00:00');
+        $notifier->scanSubscribers();
+        $this->assertSame(2, WhatsappOutbox::count());
+        $this->travelToTime('2026-09-23 10:00:00');
+        $notifier->scanSubscribers();
+        $this->assertSame([$tomorrow->id, $dayAfter->id, $later->id], WhatsappOutbox::orderBy('id')->pluck('account_id')->all());
     }
 
     public function test_a_subscriber_with_a_secondary_debt_gets_no_message_at_the_end(): void
@@ -410,6 +446,7 @@ class WhatsAppQrTest extends TestCase
         $this->assertSame(0, WhatsappOutbox::count(), 'the 7-day subscriber is not told it ends');
 
         $this->travelTo(now()->addDays(23)->addHours(10));
+        app(Settings::class)->set('subscriber_messages.expiring_at_hour', (int) now()->setTimezone(config('app.timezone'))->format('G'));
         $notifier->scanSubscribers();
         $this->assertEqualsCanonicalizing([$full->id, $completed->id], WhatsappOutbox::where('kind', 'sub_expiring')->pluck('account_id')->all());
 

@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Models\WhatsappNumber;
 use App\Models\WhatsappOutbox;
+use App\Platform\TenantManager;
 use App\Services\Audit;
 use App\Services\Settings as SettingsService;
 use App\WhatsApp\ClaudeInterpreter;
@@ -68,6 +69,7 @@ class WhatsappSettings extends Page
         'sub_debt' => 'subscriber_messages.debt',
         'sub_payment' => 'subscriber_messages.payment',
         'sub_expiring_hours' => 'subscriber_messages.expiring_hours',
+        'sub_expiring_at_hour' => 'subscriber_messages.expiring_at_hour',
         'sub_debt_every_days' => 'subscriber_messages.debt_every_days',
         'send_from_hour' => 'whatsapp.send_from_hour',
         'send_until_hour' => 'whatsapp.send_until_hour',
@@ -75,7 +77,7 @@ class WhatsappSettings extends Page
         'daily_limit' => 'whatsapp.daily_limit',
     ];
 
-    private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
+    private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_expiring_at_hour', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
 
     private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'alert_expenses', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
 
@@ -161,7 +163,9 @@ class WhatsappSettings extends Page
                         Toggle::make('sub_expired')->label('عند انتهاء الاشتراك (لمفعّلي 30 يوماً فقط)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         Toggle::make('sub_debt')->label('تذكير بالديون')->disabled(fn (Get $get) => ! $get('sub_enabled')),
                         Toggle::make('sub_payment')->label('بعد استلام دفعة («تم استلام دفعتك»)')->disabled(fn (Get $get) => ! $get('sub_enabled')),
-                        TextInput::make('sub_expiring_hours')->label('«قرب الانتهاء» قبل (ساعة)')->integer()->minValue(1)->maxValue(168)->required(),
+                        TextInput::make('sub_expiring_hours')->label('«قرب الانتهاء» قبل الانتهاء بـ (ساعة) على الأقل')->integer()->minValue(1)->maxValue(168)->required(),
+                        TextInput::make('sub_expiring_at_hour')->label('يُرسل «قرب الانتهاء» للكل سوه الساعة')->integer()->minValue(0)->maxValue(23)->required()
+                            ->helperText('مرة باليوم، دفعة وحدة لكل اللي ينتهي اشتراكهم قبل الدفعة الجاية. خلّها ضمن ساعات الإرسال للمشتركين.'),
                         TextInput::make('sub_debt_every_days')->label('تذكير الدين كل (يوم)')->integer()->minValue(1)->maxValue(30)->required(),
                     ]),
                 Section::make('حماية الرقم من الحظر')
@@ -228,7 +232,7 @@ class WhatsappSettings extends Page
                 'failed' => WhatsappOutbox::where('status', 'failed')->count(),
             ],
             // Another client: its service is set up by the platform owner; no server keys to show.
-            'checks' => ! app(\App\Platform\TenantManager::class)->isHome() ? [
+            'checks' => ! app(TenantManager::class)->isHome() ? [
                 ['إدارة المنصة', 'خدمة الربط بالباركود (إن لم تكن جاهزة: تواصل مع إدارة المنصة لتجهيزها)', WahaGateway::configured() && filled(config('whatsapp.waha.webhook_secret'))],
                 ['whisper (مجاني على السيرفر)', 'تحويل الرسائل الصوتية إلى نص', LocalWhisperTranscriber::configured()],
             ] : [

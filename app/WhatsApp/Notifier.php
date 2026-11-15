@@ -297,9 +297,12 @@ class Notifier
         $ends = SubscriberStatus::ENDS;
         $count = 0;
 
-        if ($this->subscriberMessage('expiring')) {
+        // «قرب الانتهاء»: one batch a day at the chosen hour, to every subscription ending before the
+        // next batch would still be in time: at least `expiring_hours` (24) before its end, so the window
+        // runs to that plus a day. Ones that end sooner and were not told yet are told too.
+        if ($this->subscriberMessage('expiring') && $this->isExpiringBatchHour($now)) {
             $hours = max(1, (int) $this->settings->get('subscriber_messages.expiring_hours'));
-            foreach ($this->withoutSecondary(SubscriberStatus::base()->whereRaw("{$ends} > ? and {$ends} <= ?", [$now, $now->addHours($hours)]))->get() as $account) {
+            foreach ($this->withoutSecondary(SubscriberStatus::base()->whereRaw("{$ends} > ? and {$ends} <= ?", [$now, $now->addHours($hours + 24)]))->get() as $account) {
                 if ($this->shortActivation($account)) {
                     continue;
                 }
@@ -326,6 +329,12 @@ class Notifier
         }
 
         return $count;
+    }
+
+    /** The hour (Baghdad) when the day's «قرب الانتهاء» batch goes out. */
+    public function isExpiringBatchHour(CarbonImmutable $now): bool
+    {
+        return (int) $now->setTimezone(config('app.timezone'))->format('G') === (int) $this->settings->get('subscriber_messages.expiring_at_hour');
     }
 
     private function toSubscriber(Account $account, string $event, string $reference): bool
