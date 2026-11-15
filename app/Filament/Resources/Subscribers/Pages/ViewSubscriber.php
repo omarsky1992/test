@@ -79,11 +79,34 @@ class ViewSubscriber extends ViewRecord
         ])->label('واتساب')->icon(Heroicon::OutlinedChatBubbleLeftRight)->button()->color('gray')];
     }
 
+    /**
+     * «الاتجاه»: Google Maps directions to the house, only when its location is saved (the location page,
+     * else the GPS the company site gave the account); nothing otherwise.
+     */
+    private function directionsAction(): Action
+    {
+        $url = function (): ?string {
+            $location = $this->getRecord()->location;
+            if ($location?->hasCoordinates()) {
+                return $location->directionsUrl();
+            }
+            $gps = $this->getRecord()->accounts()->whereNotNull('gps')->orderBy('id')->value('gps');
+
+            return $gps && preg_match('/^\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)\s*$/', $gps, $m)
+                ? 'https://www.google.com/maps/dir/?api=1&destination='.$m[1].','.$m[2] : null;
+        };
+
+        return Action::make('directions')->label('الاتجاه')->icon(Heroicon::OutlinedMapPin)->color('success')
+            ->visible(fn () => auth()->user()->can('locations.directions') && $url() !== null)
+            ->url(fn () => $url(), shouldOpenInNewTab: true);
+    }
+
     protected function getHeaderActions(): array
     {
         return [
             NoteActions::open('subscriberNotes', $this->getRecord()),
             Operations::activate(),
+            $this->directionsAction(),
             ActivationReminderActions::set($this->getRecord()),
             ActivationReminderActions::cancel($this->getRecord()),
             Operations::pay(),

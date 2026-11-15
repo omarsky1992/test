@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\DebtBucket;
 use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
+use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
 use App\Filament\Resources\Subscribers\SubscriberResource;
 use App\Models\Account;
 use App\Models\AccountRenewal;
@@ -12,11 +13,13 @@ use App\Models\Debt;
 use App\Models\Subscriber;
 use App\Models\User;
 use App\Services\DebtService;
+use App\Services\LocationService;
 use App\Services\PaymentService;
 use App\Services\RenewalService;
 use App\Support\SubscriberTimeline;
 use App\Sync\CompanyClient;
 use App\Sync\CompanySync;
+use Livewire\Livewire;
 use Tests\Support\FakeCompanyClient;
 use Tests\TestCase;
 
@@ -91,6 +94,25 @@ class SubscriberTimelineTest extends TestCase
         $this->assertStringNotContainsString('20,000', $text);
         $this->assertSame(2, Debt::count());
         $this->assertSame(1, Account::count());
+    }
+
+    public function test_directions_show_only_when_the_house_location_is_known(): void
+    {
+        $none = $this->account('بدون موقع');
+        Livewire::test(ViewSubscriber::class, ['record' => $none->subscriber_id])
+            ->assertActionHidden('directions');
+
+        $saved = $this->account('موقع محفوظ');
+        app(LocationService::class)->save($saved->subscriber, 33.3128, 44.3615, 5, 'gps');
+        Livewire::test(ViewSubscriber::class, ['record' => $saved->subscriber_id])
+            ->assertActionVisible('directions')
+            ->assertActionHasUrl('directions', 'https://www.google.com/maps/dir/?api=1&destination=33.3128000,44.3615000');
+
+        // Without a saved location, the GPS the company site gave the account.
+        $company = $this->account('موقع الشركة');
+        $company->update(['gps' => '33.31,44.36']);
+        Livewire::test(ViewSubscriber::class, ['record' => $company->subscriber_id])
+            ->assertActionHasUrl('directions', 'https://www.google.com/maps/dir/?api=1&destination=33.31,44.36');
     }
 
     public function test_every_page_but_the_home_pages_has_a_back_button(): void
