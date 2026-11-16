@@ -8,6 +8,7 @@
 @endphp
 <x-filament-widgets::widget>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px">
+        @if ($showTotal)
         <x-filament::section>
             <div style="display:flex;align-items:center;gap:8px">
                 <span style="font-size:13px;font-weight:600;color:var(--subs-muted)">الرصيد الكلي</span>
@@ -25,8 +26,12 @@
                 <span>رصيد الشركة: <b>{{ $mask($company) }}</b></span>
                 <span>عهد الموظفين: <b>{{ $mask($custody) }}</b></span>
             </div>
-            {!! $more($links['boxes'], 'عرض الصناديق') !!}
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+                {!! $more($links['boxes'], 'عرض الصناديق') !!}
+                <div style="margin-top:8px">{{ $this->resetBalancesAction }}</div>
+            </div>
         </x-filament::section>
+        @endif
 
         @if ($showEmployees)
 @if ($links['custody'])<a href="{{ $links['custody'] }}" wire:navigate style="{{ $card }}" aria-label="عرض التفاصيل">@endif
@@ -78,4 +83,5 @@
 </x-filament::section>
 @if ($links['primary'])</a>@endif
     </div>
+    <x-filament-actions::modals />
 </x-filament-widgets::widget>

@@ -199,7 +199,7 @@ class PermissionsTransfersStockLocationsTest extends TestCase
         $this->assertSame([1, 100000], [MoneyAccountReset::count(), $reset->amount]);
         $statement = $treasury->statement($super);
         $this->assertCount(3, $statement['rows'], 'the old movements are still there, plus the reset');
-        $this->assertSame('تصفير رصيد بطاقة', $statement['rows']->last()['label']);
+        $this->assertSame('تصفير رصيد', $statement['rows']->last()['label']);
         $this->refused(fn () => $cards->resetCard($super, 'مرة ثانية'));
         $this->assertSame(1, AuditLog::where('action', 'money_account.reset')->count());
 

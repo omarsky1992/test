@@ -2,12 +2,15 @@
 
 namespace App\Filament\Pages;
 
+use App\Exceptions\BusinessRuleException;
 use App\Services\Audit;
 use App\Services\Settings as SettingsService;
+use App\Services\SystemReset;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
@@ -40,6 +43,7 @@ class Settings extends Page
         'full_days' => 'activation.full_days',
         'discount_rounding' => 'pricing.discount_rounding',
         'expiring_days' => 'subscribers.expiring_days',
+        'show_total_balance' => 'dashboard.show_total_balance',
     ];
 
     public static function canAccess(): bool
@@ -68,8 +72,8 @@ class Settings extends Page
                 ])
                 ->action(function (array $data, Action $action) {
                     try {
-                        $counts = app(\App\Services\SystemReset::class)->run(auth()->user(), $data['password'], (bool) ($data['with_subscribers'] ?? false));
-                    } catch (\App\Exceptions\BusinessRuleException $e) {
+                        $counts = app(SystemReset::class)->run(auth()->user(), $data['password'], (bool) ($data['with_subscribers'] ?? false));
+                    } catch (BusinessRuleException $e) {
                         Notification::make()->danger()->title($e->getMessage())->send();
                         $action->halt();
 
@@ -101,6 +105,10 @@ class Settings extends Page
                     TextInput::make('full_days')->label('مدة التفعيل الكامل (يوم)')->integer()->minValue(1)->required()->gt('partial_days'),
                     TextInput::make('discount_rounding')->label('تقريب خصم النسبة (د.ع)')->integer()->minValue(1)->required(),
                 ]),
+                Section::make('لوحة التحكم')->columns(3)->schema([
+                    Toggle::make('show_total_balance')->label('إظهار مربع «الرصيد الكلي» بلوحة التحكم')
+                        ->helperText('عند الإطفاء يختفي المربع وزر «تصفير الرصيد الكلي» من لوحة التحكم. الأرصدة نفسها ما تتغير.'),
+                ]),
                 Section::make('المشتركون')->columns(3)->schema([
                     TextInput::make('expiring_days')->label('«ينتهي قريباً»: خلال كم يوم')->integer()->minValue(1)->maxValue(60)->required()
                         ->helperText('يُستخدم في الرئيسية وبطاقات المشتركين وتذكير واتساب.'),
@@ -117,7 +125,11 @@ class Settings extends Page
         $settings = app(SettingsService::class);
         $old = array_map(fn (string $key) => $settings->get($key), self::KEYS);
         foreach (self::KEYS as $field => $key) {
-            $settings->set($key, in_array($field, ['partial_days', 'full_days', 'discount_rounding', 'expiring_days'], true) ? (int) $data[$field] : $data[$field]);
+            $settings->set($key, match (true) {
+                in_array($field, ['partial_days', 'full_days', 'discount_rounding', 'expiring_days'], true) => (int) $data[$field],
+                $field === 'show_total_balance' => (bool) $data[$field],
+                default => $data[$field],
+            });
         }
         app(Audit::class)->log('settings.updated', 'settings', $old, $data);
         Notification::make()->success()->title('تم الحفظ')->send();

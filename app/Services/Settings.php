@@ -28,6 +28,8 @@ class Settings
         // A device read within these hours is skipped, so a second press finishes the rest.
         'sync.rx_fresh_hours' => 6,
         'subscribers.expiring_days' => 7,
+        // The «الرصيد الكلي» tile (and its reset button) on the dashboard.
+        'dashboard.show_total_balance' => true,
         'periods.start_day' => 1,
         'periods.purchases_start' => null,
         'secondary_sales.reset_at' => null,

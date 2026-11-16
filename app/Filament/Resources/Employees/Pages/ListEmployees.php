@@ -24,6 +24,6 @@ class ListEmployees extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [EmployeeActions::handOver(), EmployeeActions::giveAdvance()];
+        return [EmployeeActions::handOver(), EmployeeActions::fundCustody(), EmployeeActions::giveAdvance()];
     }
 }

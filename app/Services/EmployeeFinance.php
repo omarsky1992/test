@@ -17,6 +17,7 @@ use App\Models\Payment;
 use App\Models\PaymentLine;
 use App\Models\User;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -86,6 +87,34 @@ class EmployeeFinance
             $this->audit->log('custody.settled', $transfer, ['custody' => $before, 'employee' => $employee->name], [
                 'custody' => $before - $amount, 'amount' => $amount, 'into' => $into->name, 'confirmed_by' => Auth::user()?->name,
             ], $notes);
+
+            return $transfer;
+        });
+    }
+
+    /**
+     * «إضافة إلى العهدة»: the company gives an employee money to hold (for purchases or any errand),
+     * from a cash box or a wallet into their custody: a transfer, never income or expense. Refused when
+     * the box does not cover it.
+     */
+    public function fundCustody(User $employee, int $amount, MoneyAccount $from, ?string $notes = null, ?string $idempotencyKey = null): FundTransfer
+    {
+        if (! Auth::user()?->can('funds.transfer')) {
+            throw new AuthorizationException('لا تملك صلاحية تحويل الأموال.');
+        }
+        if (! in_array($from->kind, [MoneyAccountKind::Cash, MoneyAccountKind::Electronic], true)) {
+            throw new BusinessRuleException('اختر القاصة أو محفظة الشركة التي خرج منها المبلغ.');
+        }
+        $custody = $this->custodyAccount($employee);
+
+        return DB::transaction(function () use ($employee, $amount, $from, $notes, $custody, $idempotencyKey) {
+            $before = $this->treasury->balance($custody);
+            $transfer = $this->treasury->transfer($from, $custody, $amount, null, $notes ?: "إضافة إلى عهدة {$employee->name}", $idempotencyKey);
+            if ($transfer->wasRecentlyCreated) {
+                $this->audit->log('custody.funded', $transfer, ['custody' => $before, 'employee' => $employee->name], [
+                    'custody' => $before + $amount, 'amount' => $amount, 'from' => $from->name,
+                ], $notes);
+            }
 
             return $transfer;
         });
@@ -302,6 +331,7 @@ class EmployeeFinance
                     $e->txn_type === 'fund_transfer' && $amount < 0 => ['handover', 'تسديد عهدة للصندوق'],
                     $e->txn_type === 'fund_transfer' => ['custody_in', 'تحويل إلى العهدة'],
                     $e->txn_type === 'reversal' => ['reversal', 'إلغاء عملية'],
+                    $e->txn_type === 'card_reset' => ['reset', 'تصفير رصيد العهدة'],
                     $e->txn_type === 'payment_box_change' => ['box_change', $amount < 0 ? 'تصحيح سند: نُقل من العهدة' : 'تصحيح سند: نُقل إلى العهدة'],
                     default => ['custody_other', $e->memo ?? $e->txn_type],
                 };

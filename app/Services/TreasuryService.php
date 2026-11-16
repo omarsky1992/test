@@ -140,7 +140,7 @@ class TreasuryService
         'advance_repayment' => 'تسديد سلفة',
         'activation_charge' => 'تفعيل',
         'reversal' => 'إلغاء عملية',
-        'card_reset' => 'تصفير رصيد بطاقة',
+        'card_reset' => 'تصفير رصيد',
     ];
 
     public function openingBalance(MoneyAccount $moneyAccount, int $amount, ?string $notes = null): FinancialTransaction

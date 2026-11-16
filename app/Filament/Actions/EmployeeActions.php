@@ -9,14 +9,17 @@ use App\Models\MoneyAccount;
 use App\Models\User;
 use App\Services\EmployeeFinance;
 use App\Support\Money;
+use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 /**
  * Custody handover, advances and advance repayments, shared by the employee screens.
@@ -50,7 +53,7 @@ class EmployeeActions
                 try {
                     $employee = $record instanceof User ? $record : User::findOrFail($data['user_id']);
                     $t = app(EmployeeFinance::class)->handOver($employee, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null);
-                    Notification::make()->success()->title("تم تسديد ".Money::format($t->amount)." من عهدة {$employee->name}")->send();
+                    Notification::make()->success()->title('تم تسديد '.Money::format($t->amount)." من عهدة {$employee->name}")->send();
                 } catch (BusinessRuleException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
                     $action->halt();
@@ -85,7 +88,7 @@ class EmployeeActions
                     $a = app(EmployeeFinance::class)->giveAdvance(
                         $employee, (int) $data['amount'], $data['reason'], MoneyAccount::findOrFail($data['money_account_id']),
                         $data['details'] ?? null, $data['notes'] ?? null,
-                        filled($data['advanced_at'] ?? null) ? \Carbon\CarbonImmutable::parse($data['advanced_at']) : null,
+                        filled($data['advanced_at'] ?? null) ? CarbonImmutable::parse($data['advanced_at']) : null,
                     );
                     Notification::make()->success()->title("سُجلت السلفة {$a->number} لـ {$employee->name}")->send();
                 } catch (BusinessRuleException $e) {
@@ -118,6 +121,81 @@ class EmployeeActions
                 try {
                     $r = app(EmployeeFinance::class)->repay($record, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null);
                     Notification::make()->success()->title("سُجل التسديد {$r->number}")->send();
+                } catch (BusinessRuleException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+                    $action->halt();
+                }
+            });
+    }
+
+    /** «إضافة إلى العهدة»: money from a cash box or wallet into an employee's custody (for purchases, errands…). */
+    public static function fundCustody(): Action
+    {
+        return Action::make('fundCustody')
+            ->label('إضافة إلى العهدة')
+            ->icon(Heroicon::OutlinedArrowUpOnSquare)
+            ->color('info')
+            ->authorize('funds.transfer')
+            ->modalHeading(fn (?Model $record) => $record instanceof User ? "إضافة مبلغ إلى عهدة {$record->name}" : 'إضافة مبلغ إلى عهدة موظف')
+            ->modalDescription('ينقص الصندوق المختار ويزيد عهدة الموظف بنفس المبلغ (للمشتريات أو أي شغل). ليس مصروفاً ولا دخلاً، ويظهر بكشف الموظف.')
+            ->fillForm(fn (?Model $record) => [
+                'user_id' => $record instanceof User ? $record->id : null,
+                'money_account_id' => MoneyAccount::where('kind', MoneyAccountKind::Cash)->where('is_active', true)->orderBy('id')->value('id'),
+                'idempotency_key' => (string) Str::uuid(),
+            ])
+            ->schema(fn (?Model $record) => [
+                Select::make('user_id')->label('الموظف')->options(fn () => self::employees())->required()->hidden($record instanceof User),
+                TextInput::make('amount')->label('المبلغ')->integer()->minValue(1)->suffix('د.ع')->required(),
+                Select::make('money_account_id')->label('خرج من')->options(fn () => self::boxes())->required(),
+                Textarea::make('notes')->label('الغرض / ملاحظات')->rows(2)->placeholder('مثال: لشراء كيبل وراوترات'),
+                Hidden::make('idempotency_key'),
+            ])
+            ->action(function (array $data, Action $action, ?Model $record) {
+                try {
+                    $employee = $record instanceof User ? $record : User::findOrFail($data['user_id']);
+                    $t = app(EmployeeFinance::class)->fundCustody($employee, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null, $data['idempotency_key'] ?? null);
+                    Notification::make()->success()->title('أُضيف '.Money::format($t->amount)." إلى عهدة {$employee->name}")->send();
+                } catch (BusinessRuleException $e) {
+                    Notification::make()->danger()->title($e->getMessage())->send();
+                    $action->halt();
+                }
+            });
+    }
+
+    /** «تسديد سلفة» from the employee's row: choose which of his open advances, the amount and the box. */
+    public static function repayForEmployee(): Action
+    {
+        $open = fn (User $user) => EmployeeAdvance::where('user_id', $user->id)->where('balance', '>', 0)->orderBy('advanced_at')->orderBy('id')->get();
+
+        return Action::make('repayAdvance')
+            ->label('تسديد سلفة')
+            ->icon(Heroicon::OutlinedBanknotes)
+            ->color('success')
+            ->authorize('advances.manage')
+            ->visible(fn (User $record) => $open($record)->isNotEmpty())
+            ->modalHeading(fn (User $record) => "تسديد سلفة {$record->name}")
+            ->fillForm(function (User $record) use ($open) {
+                $first = $open($record)->first();
+
+                return [
+                    'advance_id' => $first?->id,
+                    'amount' => $first?->balance,
+                    'money_account_id' => $first?->money_account_id ?? MoneyAccount::where('kind', MoneyAccountKind::Cash)->where('is_active', true)->orderBy('id')->value('id'),
+                ];
+            })
+            ->schema(fn (User $record) => [
+                Select::make('advance_id')->label('السلفة')->required()->live()
+                    ->options($open($record)->mapWithKeys(fn (EmployeeAdvance $a) => [$a->id => "{$a->number} — {$a->reason} — المتبقي ".Money::format($a->balance)])->all())
+                    ->afterStateUpdated(fn ($set, $state) => $set('amount', $state ? EmployeeAdvance::find($state)?->balance : null)),
+                TextInput::make('amount')->label('مبلغ التسديد')->integer()->minValue(1)->suffix('د.ع')->required(),
+                Select::make('money_account_id')->label('استُلم في')->options(fn () => self::boxes())->required(),
+                Textarea::make('notes')->label('ملاحظات')->rows(2),
+            ])
+            ->action(function (User $record, array $data, Action $action) {
+                try {
+                    $advance = EmployeeAdvance::where('user_id', $record->id)->findOrFail($data['advance_id']);
+                    $r = app(EmployeeFinance::class)->repay($advance, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null);
+                    Notification::make()->success()->title("سُجل التسديد {$r->number}: ".Money::format($r->amount))->send();
                 } catch (BusinessRuleException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
                     $action->halt();

@@ -72,7 +72,9 @@ class EmployeeResource extends Resource
                 Action::make('statement')->label('كشف الحساب')->icon(Heroicon::OutlinedDocumentText)->color('gray')
                     ->url(fn (User $record) => EmployeeStatement::getUrl(['user' => $record->id])),
                 EmployeeActions::handOver(),
+                EmployeeActions::fundCustody(),
                 EmployeeActions::giveAdvance(),
+                EmployeeActions::repayForEmployee(),
             ]);
     }
 

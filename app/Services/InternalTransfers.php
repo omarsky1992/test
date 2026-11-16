@@ -21,7 +21,7 @@ use Ramsey\Uuid\Uuid;
  */
 class InternalTransfers
 {
-    public function __construct(private TreasuryService $treasury, private EmployeeFinance $employees) {}
+    public function __construct(private TreasuryService $treasury, private EmployeeFinance $employees, private Audit $audit) {}
 
     public function betweenEmployees(User $from, User $to, int $amount, ?string $notes = null, ?string $idempotencyKey = null): FundTransfer
     {
@@ -94,6 +94,50 @@ class InternalTransfers
             if ($resets->isEmpty()) {
                 throw new BusinessRuleException('أرصدة البطاقات صفر أصلاً.');
             }
+
+            return $resets;
+        });
+    }
+
+    /**
+     * «تصفير الرصيد الكلي» (admin only): every box counted in the total balance (cash boxes, wallets and
+     * cards, the company balance, employees' custody) with a balance gets one documented reset against
+     * CARD_ADJUSTMENTS, so the total becomes 0. Old movements stay; each reset can be voided by a
+     * reversal. The same request ($idempotencyKey) repeated resets nothing more.
+     *
+     * @return Collection<int, MoneyAccountReset>
+     */
+    public function resetAllBalances(string $reason, ?string $idempotencyKey = null): Collection
+    {
+        if (! Auth::user()?->isAdmin()) {
+            throw new AuthorizationException('تصفير الرصيد الكلي للمدير فقط.');
+        }
+        if (trim($reason) === '') {
+            throw new BusinessRuleException('اكتب سبب التصفير.');
+        }
+
+        return DB::transaction(function () use ($reason, $idempotencyKey) {
+            $resets = collect();
+            $boxes = MoneyAccount::whereIn('kind', [MoneyAccountKind::Cash, MoneyAccountKind::Electronic, MoneyAccountKind::Company, MoneyAccountKind::Custody])
+                ->orderBy('kind')->orderBy('id')->get();
+            foreach ($boxes as $box) {
+                $key = $idempotencyKey ? Uuid::uuid5($idempotencyKey, 'box-'.$box->id)->toString() : null;
+                if ($key !== null && ($done = MoneyAccountReset::where('idempotency_key', $key)->first())) {
+                    $resets->push($done);
+
+                    continue;
+                }
+                if ($this->treasury->balance($box) === 0) {
+                    continue;
+                }
+                $resets->push($this->treasury->resetBalance($box, $reason, $key));
+            }
+            if ($resets->isEmpty()) {
+                throw new BusinessRuleException('الرصيد الكلي صفر أصلاً.');
+            }
+            $this->audit->log('balances.reset_all', 'money_accounts', null, [
+                'count' => $resets->count(), 'amount' => (int) $resets->sum('amount'),
+            ], $reason);
 
             return $resets;
         });
