@@ -162,40 +162,38 @@ class EmployeeActions
             });
     }
 
-    /** «تسديد سلفة» from the employee's row: choose which of his open advances, the amount and the box. */
+    /**
+     * «تسديد سلفة» from the employee's row: the total of his open advances is shown and the amount comes
+     * off that total (oldest advance first, `EmployeeFinance::repayTotal`).
+     */
     public static function repayForEmployee(): Action
     {
-        $open = fn (User $user) => EmployeeAdvance::where('user_id', $user->id)->where('balance', '>', 0)->orderBy('advanced_at')->orderBy('id')->get();
+        $owed = fn (User $user) => (int) EmployeeAdvance::where('user_id', $user->id)->where('balance', '>', 0)->sum('balance');
+        $count = fn (User $user) => EmployeeAdvance::where('user_id', $user->id)->where('balance', '>', 0)->count();
 
         return Action::make('repayAdvance')
             ->label('تسديد سلفة')
             ->icon(Heroicon::OutlinedBanknotes)
             ->color('success')
             ->authorize('advances.manage')
-            ->visible(fn (User $record) => $open($record)->isNotEmpty())
-            ->modalHeading(fn (User $record) => "تسديد سلفة {$record->name}")
-            ->fillForm(function (User $record) use ($open) {
-                $first = $open($record)->first();
-
-                return [
-                    'advance_id' => $first?->id,
-                    'amount' => $first?->balance,
-                    'money_account_id' => $first?->money_account_id ?? MoneyAccount::where('kind', MoneyAccountKind::Cash)->where('is_active', true)->orderBy('id')->value('id'),
-                ];
-            })
+            ->visible(fn (User $record) => $owed($record) > 0)
+            ->modalHeading(fn (User $record) => "تسديد سلف {$record->name}")
+            ->modalDescription(fn (User $record) => 'مجموع السلف المتبقية عليه: '.Money::format($owed($record)).' ('.$count($record).' سلفة). التسديد ينقص من المجموع، من أقدم سلفة.')
+            ->fillForm(fn (User $record) => [
+                'amount' => $owed($record),
+                'money_account_id' => MoneyAccount::where('kind', MoneyAccountKind::Cash)->where('is_active', true)->orderBy('id')->value('id'),
+            ])
             ->schema(fn (User $record) => [
-                Select::make('advance_id')->label('السلفة')->required()->live()
-                    ->options($open($record)->mapWithKeys(fn (EmployeeAdvance $a) => [$a->id => "{$a->number} — {$a->reason} — المتبقي ".Money::format($a->balance)])->all())
-                    ->afterStateUpdated(fn ($set, $state) => $set('amount', $state ? EmployeeAdvance::find($state)?->balance : null)),
-                TextInput::make('amount')->label('مبلغ التسديد')->integer()->minValue(1)->suffix('د.ع')->required(),
+                TextInput::make('amount')->label('مبلغ التسديد')->integer()->minValue(1)->maxValue($owed($record))->suffix('د.ع')->required()
+                    ->helperText('المجموع: '.Money::format($owed($record)).' · اكتب أقل منه للتسديد الجزئي.'),
                 Select::make('money_account_id')->label('استُلم في')->options(fn () => self::boxes())->required(),
                 Textarea::make('notes')->label('ملاحظات')->rows(2),
             ])
-            ->action(function (User $record, array $data, Action $action) {
+            ->action(function (User $record, array $data, Action $action) use ($owed) {
                 try {
-                    $advance = EmployeeAdvance::where('user_id', $record->id)->findOrFail($data['advance_id']);
-                    $r = app(EmployeeFinance::class)->repay($advance, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null);
-                    Notification::make()->success()->title("سُجل التسديد {$r->number}: ".Money::format($r->amount))->send();
+                    $repayments = app(EmployeeFinance::class)->repayTotal($record, (int) $data['amount'], MoneyAccount::findOrFail($data['money_account_id']), $data['notes'] ?? null);
+                    Notification::make()->success()->title('سُجل تسديد '.Money::format((int) $repayments->sum('amount'))." من سلف {$record->name}")
+                        ->body('المتبقي عليه: '.Money::format($owed($record)))->send();
                 } catch (BusinessRuleException $e) {
                     Notification::make()->danger()->title($e->getMessage())->send();
                     $action->halt();

@@ -6,7 +6,6 @@ use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
 use App\Filament\Resources\Employees\Pages\ListEmployees;
 use App\Filament\Widgets\BalanceOverview;
-use App\Models\EmployeeAdvance;
 use App\Models\MoneyAccountReset;
 use App\Models\User;
 use App\Services\EmployeeFinance;
@@ -62,22 +61,29 @@ class EmployeeFundsAndBalanceResetTest extends TestCase
         $finance->fundCustody($hasan, 1000, $this->cash());
     }
 
-    public function test_an_advance_is_repaid_from_the_employees_row(): void
+    public function test_advances_are_repaid_off_the_employees_total_oldest_first(): void
     {
         $this->treasury()->openingBalance($this->cash(), 100000);
         $hasan = $this->employee();
         $nobody = $this->employee('بلا سلفة');
-        $advance = app(EmployeeFinance::class)->giveAdvance($hasan, 50000, 'سلفة شخصية', $this->cash());
+        $finance = app(EmployeeFinance::class);
+        $old = $finance->giveAdvance($hasan, 30000, 'سلفة أولى', $this->cash(), at: now()->subDays(5)->toImmutable());
+        $new = $finance->giveAdvance($hasan, 20000, 'سلفة ثانية', $this->cash());
 
         Livewire::test(ListEmployees::class)
             ->assertTableActionHidden('repayAdvance', $nobody)
-            ->assertTableActionVisible('repayAdvance', $hasan)
-            ->callTableAction('repayAdvance', $hasan, data: ['advance_id' => $advance->id, 'amount' => 20000, 'money_account_id' => $this->cash()->id])
-            ->assertHasNoTableActionErrors()->assertNotified();
+            ->mountTableAction('repayAdvance', $hasan)
+            ->assertTableActionDataSet(['amount' => 50000])
+            ->setTableActionData(['amount' => 40000, 'money_account_id' => $this->cash()->id])
+            ->callMountedTableAction()->assertHasNoTableActionErrors()->assertNotified();
 
-        $this->assertSame(30000, $advance->fresh()->balance);
-        $this->assertSame(70000, $this->treasury()->balance($this->cash()));
-        $this->assertSame(1, EmployeeAdvance::count());
+        // 40,000 off the 50,000: the older advance is paid off, the newer one owes 10,000.
+        $this->assertSame([0, 10000], [$old->fresh()->balance, $new->fresh()->balance]);
+        $this->assertSame(90000, $this->treasury()->balance($this->cash()));
+
+        // More than the total is refused.
+        $this->expectException(BusinessRuleException::class);
+        $finance->repayTotal($hasan, 20000, $this->cash());
     }
 
     public function test_the_total_balance_is_reset_box_by_box_and_each_reset_can_be_undone(): void

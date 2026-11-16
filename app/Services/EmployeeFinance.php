@@ -267,6 +267,39 @@ class EmployeeFinance
     }
 
     /**
+     * «تسديد سلفة» against the employee's total: the amount comes off his open advances oldest first
+     * (one repayment per advance it reaches), never more than he owes in all.
+     *
+     * @return Collection<int, EmployeeAdvanceRepayment>
+     */
+    public function repayTotal(User $employee, int $amount, MoneyAccount $into, ?string $notes = null): Collection
+    {
+        return DB::transaction(function () use ($employee, $amount, $into, $notes) {
+            $open = EmployeeAdvance::where('user_id', $employee->id)->where('balance', '>', 0)
+                ->orderBy('advanced_at')->orderBy('id')->lockForUpdate()->get();
+            $owed = (int) $open->sum('balance');
+            if ($amount <= 0) {
+                throw new BusinessRuleException('مبلغ التسديد يجب أن يكون أكبر من صفر.');
+            }
+            if ($amount > $owed) {
+                throw new BusinessRuleException('المبلغ أكبر من مجموع سلف الموظف ('.number_format($owed).' د.ع).');
+            }
+            $left = $amount;
+            $repayments = collect();
+            foreach ($open as $advance) {
+                if ($left === 0) {
+                    break;
+                }
+                $take = min($left, (int) $advance->balance);
+                $repayments->push($this->repay($advance, $take, $into, $notes));
+                $left -= $take;
+            }
+
+            return $repayments;
+        });
+    }
+
+    /**
      * Totals for one employee. Custody and advances are kept apart.
      *
      * @return array{collections: int, handed_over: int, custody: int, advances: int, repaid: int, advances_remaining: int}
