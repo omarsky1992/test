@@ -438,7 +438,9 @@ const subsAuto = () => {
   const box = subsBox();
   box.textContent = 'مزامنة المشتركين: سجّل الدخول لموقع الشركة، وتبدأ المزامنة تلقائياً بعده.';
 
-  const fail = (e) => { box.textContent = 'مزامنة المشتركين: فشلت: ' + e.message; box.style.background = '#b91c1c'; tell({ type: 'progress', text: 'فشلت: ' + e.message }); };
+  // Which run failed, and which copy of the extension ran it (an old copy keeps old mistakes).
+  const version = (() => { try { return ' (الإضافة ' + chrome.runtime.getManifest().version + ')'; } catch (e) { return ''; } })();
+  const fail = (e) => { box.textContent = (run === subsOntSync ? 'القدرة المستلمة' : 'مزامنة المشتركين') + ': فشلت: ' + e.message + version; box.style.background = '#b91c1c'; tell({ type: 'progress', text: 'فشلت: ' + e.message }); };
   const start = () => {
     sessionStorage.removeItem(KEY);
     if (opener && !opener.closed) {
