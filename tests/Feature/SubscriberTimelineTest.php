@@ -7,11 +7,14 @@ use App\Enums\PaymentMethod;
 use App\Enums\PaymentType;
 use App\Filament\Resources\Subscribers\Pages\ViewSubscriber;
 use App\Filament\Resources\Subscribers\SubscriberResource;
+use App\Filament\Widgets\DetectedShortActivations;
+use App\Filament\Widgets\RecentlyActivated;
 use App\Models\Account;
 use App\Models\AccountRenewal;
 use App\Models\Debt;
 use App\Models\Subscriber;
 use App\Models\User;
+use App\Services\ActivationReminderService;
 use App\Services\DebtService;
 use App\Services\LocationService;
 use App\Services\PaymentService;
@@ -19,6 +22,8 @@ use App\Services\RenewalService;
 use App\Support\SubscriberTimeline;
 use App\Sync\CompanyClient;
 use App\Sync\CompanySync;
+use App\WhatsApp\CommandExecutor;
+use App\WhatsApp\NumberRegistry;
 use Livewire\Livewire;
 use Tests\Support\FakeCompanyClient;
 use Tests\TestCase;
@@ -122,5 +127,27 @@ class SubscriberTimelineTest extends TestCase
         $this->get('/debts?tab=secondary')->assertOk()->assertSee('class="subs-back"', false);
         $this->get('/')->assertOk()->assertDontSee('class="subs-back"', false);
         $this->get('/home')->assertOk()->assertDontSee('class="subs-back"', false);
+    }
+
+    public function test_activations_of_a_qardah_subscriber_are_marked_and_still_wait_for_the_owner(): void
+    {
+        app(NumberRegistry::class)->add('07709998877', $this->admin, 'هاتف التنبيهات');
+        $short = $this->synced('LOAN7', 7);
+        $month = $this->synced('LOAN30', 30);
+        $plain = $this->synced('PLAIN7', 7);
+        foreach ([$short, $month] as $renewal) {
+            app(ActivationReminderService::class)->set($renewal->account, null, 7, CommandExecutor::LOAN_HOURS_BEFORE, CommandExecutor::LOAN_TITLE);
+        }
+        // An ordinary reminder is not a «قرضه».
+        app(ActivationReminderService::class)->set($plain->account);
+
+        $this->assertSame([true, true, false], [ActivationReminderService::isLoan($short), ActivationReminderService::isLoan($month), ActivationReminderService::isLoan($plain)]);
+        Livewire::test(DetectedShortActivations::class)->assertSee('🤝 قرضة فراس')->assertSee('PLAIN7');
+        Livewire::test(RecentlyActivated::class)->assertSee('🤝 قرضة فراس');
+
+        // A label only: both still wait for the owner, no debt is recorded.
+        $this->assertSame(['pending_debt', 'pending_debt'], [$short->fresh()->status, $plain->fresh()->status]);
+        $this->assertNull($month->fresh()->decision);
+        $this->assertSame(0, Debt::count());
     }
 }

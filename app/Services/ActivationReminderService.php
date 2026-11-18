@@ -4,9 +4,11 @@ namespace App\Services;
 
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
+use App\Models\AccountRenewal;
 use App\Models\ActivationReminder;
 use App\Models\WhatsappNumber;
 use App\Support\SubscriberStatus;
+use App\WhatsApp\CommandExecutor;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Auth;
@@ -63,6 +65,35 @@ class ActivationReminderService
         }
         $reminder->update(['cancelled_at' => now(), 'cancelled_by' => Auth::id()]);
         $this->audit->log('activation_reminder.cancelled', $reminder, null, null, subscriberId: $reminder->subscriber_id);
+    }
+
+    /** How close (days) a «قرضه» reminder must be to an activation for it to be marked «قرضة فراس». */
+    public const LOAN_WINDOW_DAYS = 15;
+
+    /**
+     * «قرضه فلان»: the subscriber paid in full, Firas activated the 7 days and took the money as a loan,
+     * and he activates the month himself. A renewal on that account near the reminder (its 7 days or the
+     * month) is marked so the owner does not record a debt by mistake. A label only: nothing is decided.
+     */
+    public static function isLoan(AccountRenewal $renewal): bool
+    {
+        $at = CarbonImmutable::instance($renewal->detected_at ?? $renewal->created_at ?? now());
+
+        return ActivationReminder::where('account_id', $renewal->account_id)
+            ->where('title', CommandExecutor::LOAN_TITLE)->whereNull('cancelled_at')
+            ->whereBetween('created_at', [$at->subDays(self::LOAN_WINDOW_DAYS), $at->addDays(self::LOAN_WINDOW_DAYS)])
+            ->exists();
+    }
+
+    /** The line under the subscriber's name in the activation lists: a new subscriber, a «قرضه». */
+    public static function renewalNote(AccountRenewal $renewal): ?string
+    {
+        $notes = array_filter([
+            $renewal->is_new ? '🆕 مشترك جديد' : null,
+            self::isLoan($renewal) ? '🤝 قرضة فراس (المشترك دافع كامل)' : null,
+        ]);
+
+        return $notes ? implode(' · ', $notes) : null;
     }
 
     private function authorize(): void

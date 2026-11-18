@@ -4,6 +4,7 @@ namespace App\Filament\Widgets;
 
 use App\Filament\Actions\NoteActions;
 use App\Models\AccountRenewal;
+use App\Services\ActivationReminderService;
 use App\Services\RenewalService;
 use App\Support\Money;
 use App\Support\SubscriberFlags;
@@ -45,7 +46,7 @@ class DetectedShortActivations extends TableWidget
             ->columns([
                 SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
                     ->url(fn (AccountRenewal $r) => SubscriberFlags::subscriberUrl($r->subscriber_id))
-                    ->description(fn (AccountRenewal $r) => $r->is_new ? '🆕 مشترك جديد' : null), fn (AccountRenewal $r) => $r->subscriber_id),
+                    ->description(fn (AccountRenewal $r) => ActivationReminderService::renewalNote($r)), fn (AccountRenewal $r) => $r->subscriber_id),
                 TextColumn::make('account.username')->label('الجهاز')->placeholder('—')
                     ->description(fn (AccountRenewal $r) => $r->subscriber?->phone),
                 TextColumn::make('plan_name')->label('الفئة')->placeholder('—')
@@ -58,7 +59,7 @@ class DetectedShortActivations extends TableWidget
                 NoteActions::open(),
                 Action::make('yes')->label('نعم: دين ثانوي')->icon(Heroicon::OutlinedCheck)->color('danger')->button()
                     ->modalHeading(fn (AccountRenewal $r) => 'تسجيل دين ثانوي على '.$r->subscriber?->full_name)
-                    ->modalDescription(fn (AccountRenewal $r) => "تفعيل {$r->new_days} أيام اكتشفته المزامنة. يُسجَّل ديناً ثانوياً.")
+                    ->modalDescription(fn (AccountRenewal $r) => (ActivationReminderService::isLoan($r) ? '⚠️ عليه «قرضة فراس»: المشترك دافع كامل. ' : '')."تفعيل {$r->new_days} أيام اكتشفته المزامنة. يُسجَّل ديناً ثانوياً.")
                     ->fillForm(fn (AccountRenewal $r) => ['amount' => $r->amount ?: ($r->account?->currentPlan?->price ?: null)])
                     ->schema([TextInput::make('amount')->label('مبلغ الدين (د.ع)')->integer()->minValue(1)->required()])
                     ->modalSubmitActionLabel('تسجيل الدين الثانوي')

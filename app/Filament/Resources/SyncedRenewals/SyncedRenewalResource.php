@@ -4,6 +4,7 @@ namespace App\Filament\Resources\SyncedRenewals;
 
 use App\Filament\Resources\SyncedRenewals\Pages\ListSyncedRenewals;
 use App\Models\AccountRenewal;
+use App\Services\ActivationReminderService;
 use App\Support\Money;
 use App\Support\SubscriberFlags;
 use BackedEnum;
@@ -65,7 +66,7 @@ class SyncedRenewalResource extends Resource
                 TextColumn::make('detected_at')->label('اكتُشف')->dateTime('Y/m/d H:i')->sortable(),
                 SubscriberFlags::mark(TextColumn::make('subscriber.full_name')->label('المشترك')->weight('bold')
                     ->url(fn (AccountRenewal $r) => SubscriberFlags::subscriberUrl($r->subscriber_id))
-                    ->description(fn (AccountRenewal $r) => $r->is_new ? '🆕 مشترك جديد' : null)
+                    ->description(fn (AccountRenewal $r) => ActivationReminderService::renewalNote($r))
                     ->searchable(query: fn (Builder $query, string $search) => $query
                         ->whereHas('subscriber', fn ($q) => $q->where('full_name', 'ilike', '%'.addcslashes($search, '%_\\').'%'))
                         ->orWhereHas('account', fn ($q) => $q->where('username', 'ilike', '%'.addcslashes($search, '%_\\').'%'))),
