@@ -24,6 +24,7 @@ use App\Services\PaymentService;
 use App\Services\Settings;
 use App\Sync\CompanySync;
 use App\Sync\FtthApiClient;
+use App\WhatsApp\CustodyReminders;
 use App\WhatsApp\Gateway;
 use App\WhatsApp\Inbox;
 use App\WhatsApp\Notifier;
@@ -338,7 +339,7 @@ Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway
 // (pauses between messages) never holds them back; the dispatch below still queues them too (each is
 // queued once: sent_at and the outbox reference keep it so).
 Artisan::command('whatsapp:reminders', function (Notifier $notifier) {
-    $queued = $notifier->noteReminders() + $notifier->activationReminders();
+    $queued = $notifier->noteReminders() + $notifier->activationReminders() + app(CustodyReminders::class)->queueDue();
     if ($queued > 0) {
         $this->info("Queued {$queued} reminders.");
     }

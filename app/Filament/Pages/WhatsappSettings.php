@@ -60,6 +60,8 @@ class WhatsappSettings extends Page
         'alert_secondary_expiring' => 'alerts.secondary_expiring',
         'alert_hours_before' => 'alerts.hours_before',
         'alert_expenses' => 'alerts.expenses',
+        'alert_custody' => 'alerts.custody',
+        'alert_custody_hour' => 'alerts.custody_hour',
         'alert_expenses_numbers' => 'alerts.expenses_numbers',
         'notify_separate' => 'whatsapp.notify_separate',
         'sub_enabled' => 'subscriber_messages.enabled',
@@ -77,9 +79,9 @@ class WhatsappSettings extends Page
         'daily_limit' => 'whatsapp.daily_limit',
     ];
 
-    private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_expiring_at_hour', 'sub_debt_every_days', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
+    private const INTEGERS = ['duplicate_hours', 'alert_hours_before', 'sub_expiring_hours', 'sub_expiring_at_hour', 'sub_debt_every_days', 'alert_custody_hour', 'send_from_hour', 'send_until_hour', 'batch_size', 'daily_limit'];
 
-    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'alert_expenses', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
+    private const BOOLEANS = ['notify_separate', 'enabled', 'voice_enabled', 'alert_must_activate', 'alert_secondary_expiring', 'alert_expenses', 'alert_custody', 'sub_enabled', 'sub_renewal', 'sub_expiring', 'sub_expired', 'sub_debt', 'sub_payment'];
 
     public static function canAccess(): bool
     {
@@ -143,6 +145,12 @@ class WhatsappSettings extends Page
                         Toggle::make('alert_must_activate')->label('يجب التفعيل (عند تسديد الدين الثانوي)'),
                         Toggle::make('alert_secondary_expiring')->label('دين ثانوي ينتهي اشتراكه قريباً'),
                         TextInput::make('alert_hours_before')->label('قبل الانتهاء بـ (ساعة)')->integer()->minValue(1)->maxValue(168)->required(),
+                    ]),
+                Section::make('تذكير تنزيل العهدة')
+                    ->description('كل يوم رسالة لرقم المدير عن كل موظف عنده عهدة. ترد عليها بـ«نعم» تنزل كاملة للصندوق النقدي الرئيسي، أو تكتب مبلغ أقل ينزل المبلغ المكتوب.')
+                    ->columns(2)->schema([
+                        Toggle::make('alert_custody')->label('تشغيل تذكير تنزيل العهدة'),
+                        TextInput::make('alert_custody_hour')->label('يوصل كل يوم الساعة')->integer()->minValue(0)->maxValue(23)->required(),
                     ]),
                 Section::make('تنبيه المشتريات والمصروفات')
                     ->description('رسالة عند كل مشترى أو مصروف جديد: الوصف والمبلغ ومن أين دُفع ومن سجّله، مع مجموع المشتريات منذ آخر تصفير.')

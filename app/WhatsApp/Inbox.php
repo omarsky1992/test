@@ -168,7 +168,21 @@ class Inbox
             $previous = null;
         }
 
-        $command = $this->complete($text, $previous) ?? $this->interpreter->interpret($text, $previous ? [
+        $command = $this->complete($text, $previous);
+        // «نعم» or an amount in reply to «تذكير تنزيل العهدة».
+        if ($command === null && $record->transcript === null && ($number = WhatsappNumber::find($record->whatsapp_number_id))) {
+            $custody = $this->asUser($user, fn () => app(CustodyReminders::class)->answer($number, $user, $text, $message['context']['quoted_body'] ?? null));
+            if ($custody !== null) {
+                $record->update(['intent' => 'custody_handover']);
+                $this->audit->log('whatsapp.command', $record, null, [
+                    'phone' => $record->from_phone, 'command' => $text, 'voice' => false, 'intent' => 'custody_handover',
+                    'status' => $custody->status, 'changes' => $custody->changes, 'reply' => $custody->reply,
+                ], null, null, 'whatsapp');
+
+                return $custody;
+            }
+        }
+        $command ??= $this->interpreter->interpret($text, $previous ? [
             'text' => (string) ($previous->transcript ?? $previous->body),
             'question' => (string) $previous->reply,
         ] : null) ?? new Command('unknown');

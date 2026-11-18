@@ -46,6 +46,8 @@ class WahaInbox
             'type' => $isAudio ? 'audio' : (filled($payload['body'] ?? null) ? 'text' : 'other'),
             'text' => $isAudio ? null : ['body' => (string) ($payload['body'] ?? '')],
             'audio' => $isAudio ? ['id' => (string) ($media['url'] ?? ''), 'mime_type' => (string) ($media['mimetype'] ?? '')] : null,
+            // The text of the message this one replies to (WhatsApp «رد»), e.g. which custody reminder.
+            'context' => filled($payload['replyTo']['body'] ?? null) ? ['quoted_body' => mb_substr((string) $payload['replyTo']['body'], 0, 2000)] : null,
         ], fn ($v) => $v !== null));
     }
 

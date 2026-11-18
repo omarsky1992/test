@@ -49,6 +49,8 @@ class Settings
         'alerts.hours_before' => 24,
         // A WhatsApp message on every new purchase/expense, to the chosen authorized numbers (none chosen = all).
         'alerts.expenses' => false,
+        'alerts.custody' => true,
+        'alerts.custody_hour' => 9,
         'alerts.expenses_numbers' => [],
         'subscriber_messages.enabled' => false,
         'whatsapp.notify_separate' => false,
