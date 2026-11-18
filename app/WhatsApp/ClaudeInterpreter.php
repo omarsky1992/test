@@ -34,6 +34,8 @@ class ClaudeInterpreter implements Interpreter
         - void_debt: delete/cancel a subscriber's debt ("امسح دين محمد"). subscriber; amount only if stated.
         - set_app: record a subscriber's program/app ("برنامج محمد F15", "تطبيق محمد رقم 9"): subscriber and the
           program code in "text" (e.g. "F15", "9"); it is appended to his notes beside the old one.
+        - loan_reminder: «فراس قرضه محمد» / «قرضه محمد»: set the alert «فعله ابو حسن» for a subscriber, 5 hours
+          before his subscription ends. subscriber only.
         - query: a question. query = secondary_debts (الديون الثانوية), primary_debts (الديون الأولية),
           late (المتأخرين), activated_today (المفعلين اليوم), sales_today (مبيعات اليوم),
           purchases_today (مشتريات/مصاريف اليوم), custody (عهد الموظفين), advances (سلف الموظفين),

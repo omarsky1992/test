@@ -81,8 +81,11 @@ class Outbox
             'notify' => $query->where(fn ($q) => $q->where('kind', 'like', 'sub\\_%')->orWhere('kind', 'reminder')),
             default => $query,
         };
-        $sentToday = $scope(WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', $now->startOfDay()))->count();
-        $room = min((int) $this->settings->get('whatsapp.batch_size'), (int) $this->settings->get('whatsapp.daily_limit') - $sentToday);
+        // The daily cap protects the number from bulk sending to subscribers; the few staff alerts
+        // (alert_*) never count towards it and are never held back by it.
+        $sentToday = $scope(WhatsappOutbox::where('status', 'sent')->where('sent_at', '>=', $now->startOfDay())->where('kind', 'not like', 'alert\\_%'))->count();
+        $room = (int) $this->settings->get('whatsapp.batch_size');
+        $capLeft = max(0, (int) $this->settings->get('whatsapp.daily_limit') - $sentToday);
         if ($room <= 0) {
             return [0, 0];
         }
@@ -92,14 +95,25 @@ class Outbox
             ->where(fn ($q) => $q->where('kind', 'like', 'sub\\_%')->orWhere('kind', 'reminder'))->where('kind', '<>', 'sub_test')
             ->update(['status' => 'skipped', 'error' => 'رسائل الواتساب موقوفة لهذا المشترك']);
 
-        $query = $scope(WhatsappOutbox::where('status', 'pending')->orderBy('id'));
-        if (! $this->duringDay($now)) {
-            // At night only the staff alerts go out; subscribers are never messaged at night.
-            $query->where('kind', 'like', 'alert_%');
+        // Staff alerts first (an activation reminder never waits behind a batch of subscriber messages), then the rest in order.
+        $query = $scope(WhatsappOutbox::where('status', 'pending'))
+            ->orderByRaw("case when kind like 'alert\\_%' then 0 else 1 end")->orderBy('id');
+        if (! $this->duringDay($now) || $capLeft === 0) {
+            // At night (or once the day's cap is reached) only the staff alerts go out.
+            $query->where('kind', 'like', 'alert\\_%');
         }
         [$sent, $failed] = [0, 0];
         [$min, $max] = config('whatsapp.send_delay');
-        foreach ($query->limit($room)->get() as $i => $message) {
+        $messages = $query->limit($room)->get()
+            // Subscriber messages beyond what is left of the day's cap wait for tomorrow.
+            ->filter(function (WhatsappOutbox $m) use (&$capLeft) {
+                if (str_starts_with($m->kind, 'alert_')) {
+                    return true;
+                }
+
+                return $capLeft-- > 0;
+            })->values();
+        foreach ($messages as $i => $message) {
             if ($i > 0 && $max > 0) {
                 sleep(random_int(max(0, $min), max($min, $max)));
             }

@@ -21,7 +21,11 @@ class ActivationReminderService
 {
     public function __construct(private Audit $audit) {}
 
-    public function set(Account $account, ?array $numberIds = null, int $days = 7): ActivationReminder
+    /**
+     * @param  int  $hoursBefore  0 = once the subscription has ended; more = that many hours before its end
+     * @param  string|null  $title  the reminder's own heading (default «تذكير»)
+     */
+    public function set(Account $account, ?array $numberIds = null, int $days = 7, int $hoursBefore = 0, ?string $title = null): ActivationReminder
     {
         $this->authorize();
         $numberIds = array_values(array_unique(array_map('intval', array_filter((array) $numberIds)))) ?: null;
@@ -32,7 +36,7 @@ class ActivationReminderService
             throw new BusinessRuleException('لا توجد أرقام مخولة مفعّلة يصلها التذكير.');
         }
 
-        return DB::transaction(function () use ($account, $numberIds, $days) {
+        return DB::transaction(function () use ($account, $numberIds, $days, $hoursBefore, $title) {
             Account::whereKey($account->id)->lockForUpdate()->first();
             // A new reminder replaces the one still waiting on this account.
             ActivationReminder::where('account_id', $account->id)->whereNull('sent_at')->whereNull('cancelled_at')
@@ -41,9 +45,10 @@ class ActivationReminderService
             $reminder = ActivationReminder::create([
                 'account_id' => $account->id, 'subscriber_id' => $account->subscriber_id, 'days' => $days, 'number_ids' => $numberIds,
                 'ends_at_when_set' => $ends, 'created_by' => Auth::id(),
+                'hours_before' => max(0, $hoursBefore), 'title' => $title !== null ? mb_substr(trim($title), 0, 100) : null,
             ]);
             $this->audit->log('activation_reminder.set', $reminder, null, [
-                'account' => $account->username, 'days' => $days, 'numbers' => $numberIds, 'ends_at' => $ends ? CarbonImmutable::instance($ends)->toIso8601String() : null,
+                'account' => $account->username, 'days' => $days, 'numbers' => $numberIds, 'title' => $title, 'hours_before' => $hoursBefore ?: null, 'ends_at' => $ends ? CarbonImmutable::instance($ends)->toIso8601String() : null,
             ], subscriberId: $account->subscriber_id);
 
             return $reminder;

@@ -21,11 +21,14 @@ use App\Models\DeviceType;
 use App\Models\EmployeeAdvance;
 use App\Models\Expense;
 use App\Models\ExpenseCategory;
+use App\Models\MessageTemplate;
 use App\Models\MoneyAccount;
 use App\Models\Subscriber;
 use App\Models\SubscriberNote;
 use App\Models\User;
+use App\Models\WhatsappNumber;
 use App\Services\ActivationDueService;
+use App\Services\ActivationReminderService;
 use App\Services\Audit;
 use App\Services\DebtService;
 use App\Services\EmployeeFinance;
@@ -88,6 +91,7 @@ class CommandExecutor
                 'sale' => $this->sale($command, $user),
                 'void_debt' => $this->voidDebt($command, $user),
                 'set_app' => $this->setApp($command, $user),
+                'loan_reminder' => $this->loanReminder($command, $user),
                 'query' => $this->query($command, $user),
                 'clarify' => Result::clarify($command->question ?? 'ما فهمت الطلب تماماً، وضّحه أكثر.'),
                 default => Result::clarify($command->question ?? self::help()),
@@ -508,7 +512,44 @@ class CommandExecutor
         ]);
     }
 
-    /** «وضع فلان»: the subscriber's whole profile — numbers, program, and every account's details. */
+    /**
+     * «فراس قرضه فلان»: an activation reminder titled «فعله ابو حسن» to every alert number, 5 hours
+     * before his subscription ends (its end as it is then, so a renewal moves it). A reminder only:
+     * no debt, no activation, no money.
+     */
+    private function loanReminder(Command $c, User $user): Result
+    {
+        if (! $user->can('reminders.activation')) {
+            return Result::denied();
+        }
+        if ($c->subscriber === null || trim($c->subscriber) === '') {
+            return Result::clarify('اكتب: فراس قرضه ثم اسم المشترك.');
+        }
+        $account = $this->findAccount($c->subscriber);
+        if (is_string($account)) {
+            return Result::clarify($account);
+        }
+        $numbers = WhatsappNumber::where('is_active', true)->where('receives_alerts', true)->pluck('id')->all();
+        $reminder = app(ActivationReminderService::class)->set($account, $numbers ?: null, 7, self::LOAN_HOURS_BEFORE, self::LOAN_TITLE);
+        $name = $account->subscriber->full_name;
+        $ends = SubscriberStatus::endsAt($account);
+        $at = $ends ? CarbonImmutable::instance($ends)->subHours(self::LOAN_HOURS_BEFORE) : null;
+        $when = match (true) {
+            $at === null => 'ما معروف تاريخ انتهاء اشتراكه، فيوصل التنبيه هسه',
+            $at->isPast() => 'اشتراكه ينتهي خلال أقل من '.self::LOAN_HOURS_BEFORE.' ساعات، فيوصل التنبيه هسه',
+            default => 'يوصل '.$at->setTimezone(config('app.timezone'))->format('Y/m/d').' الساعة '.MessageTemplate::hour($at)
+                .' (قبل انتهاء اشتراكه بـ'.self::LOAN_HOURS_BEFORE.' ساعات)',
+        };
+
+        return Result::done('⏰ تم: تنبيه «'.self::LOAN_TITLE."» على {$name} ({$account->username}) لأرقام التنبيهات.\n{$when}.", [
+            'reminder_id' => $reminder->id, 'account_id' => $account->id,
+        ]);
+    }
+
+    public const LOAN_TITLE = 'فعله ابو حسن';
+
+    public const LOAN_HOURS_BEFORE = 5;
+
     /**
      * «شنو صار وي فلان» / «فحص فلان»: «📜 شنو صار ويا هذا المشترك» from his page (SubscriberTimeline), as
      * the linked user may see it (money lines need debts.view / payments.view). Read only.
@@ -554,6 +595,7 @@ class CommandExecutor
         return implode("\n", $lines);
     }
 
+    /** «وضع فلان»: the subscriber's whole profile — numbers, program, and every account's details. */
     private function profile(?string $term): string
     {
         if ($term === null || trim($term) === '') {

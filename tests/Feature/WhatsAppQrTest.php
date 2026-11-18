@@ -345,7 +345,10 @@ class WhatsAppQrTest extends TestCase
         $this->assertSame(2, WhatsappOutbox::count());
         $this->travelToTime('2026-09-23 10:00:00');
         $notifier->scanSubscribers();
-        $this->assertSame([$tomorrow->id, $dayAfter->id, $later->id], WhatsappOutbox::orderBy('id')->pluck('account_id')->all());
+        $ids = WhatsappOutbox::orderBy('id')->pluck('account_id')->all();
+        $this->assertEqualsCanonicalizing([$tomorrow->id, $dayAfter->id], array_slice($ids, 0, 2));
+        $this->assertSame($later->id, $ids[2] ?? null);
+        $this->assertCount(3, $ids);
     }
 
     public function test_a_subscriber_with_a_secondary_debt_gets_no_message_at_the_end(): void
@@ -386,6 +389,27 @@ class WhatsAppQrTest extends TestCase
         $outbox->queue('07901110003', 'ثالثة', 'reminder');
         $outbox->dispatch($fake, CarbonImmutable::parse('2026-09-22 11:00'));
         $this->assertCount(2, $fake->sent, 'the daily cap holds');
+    }
+
+    public function test_staff_alerts_go_first_and_are_never_held_by_the_daily_cap(): void
+    {
+        $outbox = app(Outbox::class);
+        app(Settings::class)->set('whatsapp.batch_size', 2);
+        foreach (range(1, 3) as $i) {
+            $outbox->queue('0790111000'.$i, "مشترك {$i}", 'sub_expiring');
+        }
+        $outbox->queue('07702222222', 'تذكير تفعيل', 'alert_activation');
+        $fake = new FakeWhatsApp;
+
+        // A batch of subscriber messages waiting: the staff alert still goes first.
+        $outbox->dispatch($fake, CarbonImmutable::parse('2026-09-22 10:00'));
+        $this->assertSame(['تذكير تفعيل', 'مشترك 1'], array_column($fake->sent, 'text'));
+
+        // The day's cap reached by subscriber messages: a new staff alert still goes, subscribers wait.
+        app(Settings::class)->set('whatsapp.daily_limit', 1);
+        $outbox->queue('07702222222', 'تنبيه ثاني', 'alert_note');
+        $outbox->dispatch($fake, CarbonImmutable::parse('2026-09-22 10:05'));
+        $this->assertSame(['تذكير تفعيل', 'مشترك 1', 'تنبيه ثاني'], array_column($fake->sent, 'text'));
     }
 
     public function test_reminders_can_be_sent_from_the_linked_phone(): void

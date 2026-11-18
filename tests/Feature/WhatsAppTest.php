@@ -12,6 +12,7 @@ use App\Filament\Resources\WhatsappMessages\Pages\ListWhatsappMessages;
 use App\Filament\Resources\WhatsappNumbers\Pages\ManageWhatsappNumbers;
 use App\Models\Account;
 use App\Models\AccountRenewal;
+use App\Models\ActivationReminder;
 use App\Models\AuditLog;
 use App\Models\CommandPattern;
 use App\Models\Debt;
@@ -22,6 +23,7 @@ use App\Models\Payment;
 use App\Models\User;
 use App\Models\WhatsappMessage;
 use App\Models\WhatsappNumber;
+use App\Models\WhatsappOutbox;
 use App\Services\EmployeeFinance;
 use App\Services\Ledger;
 use App\Services\RenewalService;
@@ -36,9 +38,11 @@ use App\WhatsApp\CustomPatterns;
 use App\WhatsApp\Gateway;
 use App\WhatsApp\HttpTranscriber;
 use App\WhatsApp\LocalWhisperTranscriber;
+use App\WhatsApp\Notifier;
 use App\WhatsApp\NumberRegistry;
 use App\WhatsApp\RuleInterpreter;
 use App\WhatsApp\Transcriber;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 use Tests\Support\FakeClaude;
@@ -394,6 +398,36 @@ class WhatsAppTest extends TestCase
         // Read only.
         $this->assertSame(0, Debt::count());
         $this->assertSame('no_debt', $renewal->fresh()->status);
+    }
+
+    public function test_qardah_sets_the_abu_hassan_alert_five_hours_before_the_end(): void
+    {
+        $account = $this->subscriber('صادق حبيب');
+        $account->update(['external_ends_at' => now()->addDays(2)->setTime(20, 0)]);
+        $alerts = app(NumberRegistry::class)->add('07709998877', $this->admin, 'هاتف التنبيهات');
+        $alerts->update(['receives_alerts' => true]);
+
+        $this->assertSame('loan_reminder', (new RuleInterpreter)->interpret('فراس قرضه صادق حبيب')?->intent);
+        $this->text('فراس قرضه صادق حبيب');
+        $this->assertStringContainsString('تنبيه «فعله ابو حسن» على صادق حبيب', $this->wa->lastReply());
+        $this->assertStringContainsString('قبل انتهاء اشتراكه بـ5 ساعات', $this->wa->lastReply());
+
+        $reminder = ActivationReminder::sole();
+        $this->assertSame([5, 'فعله ابو حسن', [$alerts->id]], [$reminder->hours_before, $reminder->title, $reminder->number_ids]);
+        $notifier = app(Notifier::class);
+
+        // 6 hours before the end: not yet. 5 hours before: once, to the alert numbers only.
+        $ends = SubscriberStatus::endsAt($account->fresh());
+        $this->assertSame(0, $notifier->activationReminders(CarbonImmutable::instance($ends)->subHours(6)));
+        $this->assertSame(1, $notifier->activationReminders(CarbonImmutable::instance($ends)->subHours(5)));
+        $this->assertSame(0, $notifier->activationReminders(CarbonImmutable::instance($ends)->subHours(4)));
+        $message = WhatsappOutbox::where('kind', 'alert_activation')->sole();
+        $this->assertSame($alerts->phone, $message->to_phone);
+        $this->assertStringContainsString('⏰ فعله ابو حسن: صادق حبيب', $message->body);
+        $this->assertStringContainsString('ينتهي اشتراكه', $message->body);
+        // A reminder only.
+        $this->assertSame(0, Debt::count());
+        $this->assertSame(0, AccountRenewal::count());
     }
 
     public function test_a_name_written_with_other_spaces_is_the_same_subscriber(): void

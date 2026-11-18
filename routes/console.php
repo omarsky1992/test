@@ -334,6 +334,19 @@ Artisan::command('whatsapp:dispatch', function (Outbox $outbox, Gateway $gateway
     return 0;
 })->purpose('Send queued WhatsApp messages slowly from the linked phone');
 
+// Note, activation and «قرضه» reminders are queued on their own every minute, so a long sending run
+// (pauses between messages) never holds them back; the dispatch below still queues them too (each is
+// queued once: sent_at and the outbox reference keep it so).
+Artisan::command('whatsapp:reminders', function (Notifier $notifier) {
+    $queued = $notifier->noteReminders() + $notifier->activationReminders();
+    if ($queued > 0) {
+        $this->info("Queued {$queued} reminders.");
+    }
+
+    return 0;
+})->purpose('Queue the WhatsApp reminders that are due now');
+
+Schedule::command('tenants:each', ['whatsapp:reminders'])->everyMinute()->withoutOverlapping(5);
 Schedule::command('tenants:each', ['whatsapp:scan'])->everyFifteenMinutes()->withoutOverlapping(10);
 // In the background so the pauses between messages never hold up the other scheduled tasks.
 Schedule::command('tenants:each', ['whatsapp:dispatch'])->everyMinute()->withoutOverlapping(10)->runInBackground();

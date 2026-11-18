@@ -7,7 +7,7 @@ namespace App\WhatsApp;
  */
 final class Command
 {
-    public const INTENTS = ['activate', 'payment', 'purchase', 'sale', 'add_debt', 'transfer', 'void_debt', 'set_app', 'query', 'clarify', 'unknown'];
+    public const INTENTS = ['activate', 'payment', 'purchase', 'sale', 'add_debt', 'transfer', 'void_debt', 'set_app', 'loan_reminder', 'query', 'clarify', 'unknown'];
 
     public const BUCKETS = ['primary', 'secondary'];
 

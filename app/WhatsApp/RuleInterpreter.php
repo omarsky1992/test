@@ -92,6 +92,10 @@ class RuleInterpreter implements Interpreter
         if (preg_match('/^(?:امسح|احذف|الغي|شيل)\s+(?:دين|ديون)\s+(.+)$/u', $t, $m)) {
             return new Command('void_debt', subscriber: $m[1]);
         }
+        // «فراس قرضه محمد»: the alert «فعله ابو حسن» 5 hours before his subscription ends.
+        if (preg_match('/^(?:فراس\s+)?(?:قرضه|اقرضه|قرض)\s+(?:بخصوص\s+|ل)?(.+)$/u', $t, $m)) {
+            return new Command('loan_reminder', subscriber: $m[1]);
+        }
         // «شنو صار وي محمد» / «فحص محمد» / «ليش ما عليه دين محمد»: his story, as on his page.
         if (preg_match('/^(?:شنو|شني|شكو)\s+صار\s+(?:وي|ويا|ويه|ويّا|مع|ب|ل)\s*(?:بخصوص\s+)?(.+)$/u', $t, $m)
             || preg_match('/^(?:فحص|افحص|افحصلي|تاريخ|قصه)\s+(?:عن\s+|بخصوص\s+|مال\s+)?(.+)$/u', $t, $m)

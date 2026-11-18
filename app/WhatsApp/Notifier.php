@@ -145,7 +145,8 @@ class Notifier
         foreach ($pending as $reminder) {
             $account = $reminder->account;
             $ends = $account ? SubscriberStatus::endsAt($account) : null;
-            if ($account === null || ($ends !== null && $ends->getTimestamp() > $now->getTimestamp())) {
+            // Due once the end (as it is now, so a renewal moves it) minus its hours before has come.
+            if ($account === null || ($ends !== null && $ends->getTimestamp() - 3600 * (int) $reminder->hours_before > $now->getTimestamp())) {
                 continue;
             }
             DB::transaction(function () use ($reminder, $account, $now, &$queued) {
@@ -153,8 +154,12 @@ class Notifier
                     return;
                 }
                 $name = $reminder->subscriber?->full_name;
-                $text = "⏰ تذكير: {$name}".($account->username ? " ({$account->username})" : '').self::programLine($reminder->subscriber)
-                    ."\nفعّل {$name} {$reminder->days} أيام\nانتهى اشتراكه — ".($reminder->creator?->name ?? '—');
+                $ends = SubscriberStatus::endsAt($account);
+                $when = (int) $reminder->hours_before > 0 && $ends !== null && $ends->getTimestamp() > $now->getTimestamp()
+                    ? 'ينتهي اشتراكه '.CarbonImmutable::instance($ends)->setTimezone(config('app.timezone'))->format('Y/m/d').' الساعة '.MessageTemplate::hour($ends)
+                    : 'انتهى اشتراكه';
+                $text = '⏰ '.($reminder->title ?: 'تذكير').": {$name}".($account->username ? " ({$account->username})" : '').self::programLine($reminder->subscriber)
+                    ."\nفعّل {$name} {$reminder->days} أيام\n{$when} — ".($reminder->creator?->name ?? '—');
                 foreach ($reminder->numbers() as $number) {
                     $queued += $this->outbox->queue($number->phone, $text, 'alert_activation', "act:remind:{$reminder->id}:{$number->id}", $account->id) ? 1 : 0;
                 }
