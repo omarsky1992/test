@@ -27,7 +27,7 @@ class BrowserScripts
         return json_encode([
             'manifest_version' => 3,
             'name' => 'مزامنة المشتركين – '.parse_url($appUrl, PHP_URL_HOST),
-            'version' => '1.5.0',
+            'version' => '1.5.1',
             'description' => 'يقرأ قائمة الاشتراكات من موقع الشركة بجلستك ويرسلها لنظام المشتركين. قراءة فقط.',
             'content_scripts' => [[
                 'matches' => [BrowserSyncController::PANEL_ORIGIN.'/*'],
@@ -262,15 +262,29 @@ async function subsOntSync(target, ready) {
   let base = subsLearnOnt();
   try { base = base || localStorage.getItem('subs_ont_api'); } catch (e) {}
   const bases = [...new Set([base, SUBS_ONT_PATH, '/api/subscriptions/ont', '/api/ont'].filter(Boolean))];
-  let working = null;
-  for (const b of bases) {
-    try { const body = await get(b + '?username=' + encodeURIComponent(names[0])); working = b; if (!empty(body)) keep(names[0], body); break; } catch (e) { if (sessionLost(e)) { clearInterval(ticker); throw e; } }
+  // The address is checked on several devices, not only the first: one device the site cannot read
+  // (unplugged, no data) stays first in the list every time and must not stop the whole run.
+  let working = null, lastError = '', gotName = null;
+  const probe = names.slice(0, 8), tried = new Set();
+  for (const name of probe) {
+    for (const b of bases) {
+      try { const body = await get(b + '?username=' + encodeURIComponent(name)); working = b; tried.add(name); if (!empty(body)) { keep(name, body); gotName = name; } break; }
+      catch (e) { if (sessionLost(e)) { clearInterval(ticker); throw e; } lastError = e.message; }
+    }
+    if (working) break;
+    tried.add(name);
   }
-  if (!working) { clearInterval(ticker); throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.'); }
+  // Nothing answered, but the panel itself showed which address it uses: keep it and count the failures.
+  if (!working && base) working = base;
+  if (!working) { clearInterval(ticker); throw new Error('لم أجد عنوان القراءة: افتح «معلومات تقنية» لأي مشترك مرة واحدة ثم أعد المحاولة.' + (lastError ? ' (' + lastError + ')' : '')); }
   try { localStorage.setItem('subs_ont_api', working); } catch (e) {}
+  // The devices checked above and not read go to the end, to be tried again after the others.
+  const failedProbe = probe.filter((n) => tried.has(n) && n !== gotName);
+  const order = [...probe.filter((n) => !tried.has(n)), ...names.slice(probe.length), ...failedProbe];
+  names.splice(0, names.length, ...(gotName ? [gotName] : []), ...order);
 
   // Gently: two at a time with a short pause, since each reading asks the fibre equipment live.
-  let next = 1, done = 1;
+  let next = gotName ? 1 : 0, done = next;
   const read = async (name) => {
     const url = working + '?username=' + encodeURIComponent(name);
     for (let attempt = 0; attempt < 3; attempt++) {

@@ -132,7 +132,7 @@
                 heard = false;
                 autoShow('جارٍ فتح موقع الشركة… سجّل الدخول إذا طُلب منك.');
                 clearTimeout(watchdog);
-                watchdog = setTimeout(() => { if (!heard) autoShow('لم تستجب الإضافة. نزّل الإضافة الجديدة (1.5.0) وبدّلها، ثم أعد المحاولة.'); }, 30000);
+                watchdog = setTimeout(() => { if (!heard) autoShow('لم تستجب الإضافة. نزّل الإضافة الجديدة (1.5.1) وبدّلها، ثم أعد المحاولة.'); }, 30000);
             }
             if (stop) {
                 // The panel tab by its name; a blank tab means it was already closed.
