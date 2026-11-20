@@ -123,4 +123,17 @@ class CustodyReminderTest extends TestCase
         app(Settings::class)->set('alerts.custody', false);
         $this->assertSame(0, app(CustodyReminders::class)->queueDue($this->at(10)->addDay()));
     }
+
+    public function test_the_check_command_tells_why_a_reminder_went_or_not(): void
+    {
+        app(TreasuryService::class)->openingBalance($this->cash(), 500000);
+        $this->employee('علي الجابي', 50000);
+        app(CustodyReminders::class)->queueDue($this->at(10));
+
+        $this->artisan('custody:check')->assertExitCode(0)
+            ->expectsOutputToContain('التذكير مشغّل: نعم')
+            ->expectsOutputToContain(self::ADMIN_PHONE)
+            ->expectsOutputToContain('علي الجابي: 50,000')
+            ->expectsOutputToContain('علي الجابي: sent · الرسالة: pending');
+    }
 }

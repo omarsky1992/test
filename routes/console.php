@@ -1,13 +1,17 @@
 <?php
 
+use App\Enums\MoneyAccountKind;
 use App\Exceptions\BusinessRuleException;
 use App\Models\Account;
+use App\Models\CustodyReminder;
 use App\Models\Debt;
 use App\Models\FinancialTransaction;
 use App\Models\LedgerEntry;
+use App\Models\MoneyAccount;
 use App\Models\PaymentAllocation;
 use App\Models\SyncRun;
 use App\Models\User;
+use App\Models\WhatsappOutbox;
 use App\Platform\ClientBackups;
 use App\Platform\Php;
 use App\Platform\PlatformAdmin;
@@ -22,6 +26,7 @@ use App\Services\BackupService;
 use App\Services\Ledger;
 use App\Services\PaymentService;
 use App\Services\Settings;
+use App\Services\TreasuryService;
 use App\Sync\CompanySync;
 use App\Sync\FtthApiClient;
 use App\WhatsApp\CustodyReminders;
@@ -346,6 +351,40 @@ Artisan::command('whatsapp:reminders', function (Notifier $notifier) {
 
     return 0;
 })->purpose('Queue the WhatsApp reminders that are due now');
+
+// Read only: why «تذكير تنزيل العهدة» did or did not go out today.
+Artisan::command('custody:check', function (Settings $settings, TreasuryService $treasury) {
+    if (! Schema::hasTable('custody_reminders')) {
+        $this->error('التحديث مالت تذكير العهدة ما وصل للسيرفر بعد: شغّل bash ~/subs/deploy/update.sh');
+
+        return 1;
+    }
+    $now = CarbonImmutable::now(config('app.timezone'));
+    $this->line('الوقت هسه (بغداد): '.$now->format('Y/m/d H:i'));
+    $this->line('التذكير مشغّل: '.($settings->get('alerts.custody') ? 'نعم' : 'لا ← شغّله من إعدادات الواتساب'));
+    $hour = (int) $settings->get('alerts.custody_hour');
+    $this->line("الساعة: {$hour}".((int) $now->format('G') < $hour ? ' ← بعد ما وصل وقته اليوم' : ''));
+    $this->line('لوحة تحكم الواتساب (حتى ينقرا ردّك «نعم»): '.($settings->get('whatsapp.enabled') ? 'مشغّلة' : 'متوقفة ← شغّلها من إعدادات الواتساب'));
+    $box = CustodyReminders::box();
+    $this->line('صندوق الاستلام: '.($box?->name ?? 'ما اكو صندوق نقدي مفعّل ← ما يوصل شي'));
+    $numbers = CustodyReminders::adminNumbers();
+    $this->line('أرقام المدير: '.($numbers->isEmpty() ? 'ولا رقم ← أضف رقم المدير بـ«الأرقام المصرح لها» واربطه بحساب المدير' : $numbers->map(fn ($n) => $n->phone.' ('.$n->user->name.')')->implode('، ')));
+    $custodies = MoneyAccount::with('user')->where('kind', MoneyAccountKind::Custody)->whereNotNull('user_id')->get();
+    $this->line('العهد:');
+    foreach ($custodies as $c) {
+        $this->line('  '.$c->user?->name.': '.number_format($treasury->balance($c)).($c->user?->is_active ? '' : ' (الموظف غير فعّال)'));
+    }
+    if ($custodies->isEmpty()) {
+        $this->line('  ما اكو أي عهدة');
+    }
+    $this->line('تذكيرات اليوم:');
+    foreach (CustodyReminder::with('user')->whereDate('reminded_on', $now->toDateString())->get() as $r) {
+        $out = WhatsappOutbox::where('reference', "custody:{$r->id}")->first();
+        $this->line("  {$r->user->name}: {$r->status} · الرسالة: ".($out ? $out->status.($out->error ? ' ('.mb_substr($out->error, 0, 120).')' : '') : 'ما انضافت'));
+    }
+
+    return 0;
+})->purpose('Show why the custody handover reminder did or did not go out (read only)');
 
 Schedule::command('tenants:each', ['whatsapp:reminders'])->everyMinute()->withoutOverlapping(5);
 Schedule::command('tenants:each', ['whatsapp:scan'])->everyFifteenMinutes()->withoutOverlapping(10);
