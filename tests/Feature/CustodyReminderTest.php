@@ -136,4 +136,41 @@ class CustodyReminderTest extends TestCase
             ->expectsOutputToContain('علي الجابي: 50,000')
             ->expectsOutputToContain('علي الجابي: sent · الرسالة: pending');
     }
+
+    public function test_asking_for_a_custody_by_whatsapp_then_1_or_an_amount(): void
+    {
+        app(TreasuryService::class)->openingBalance($this->cash(), 500000);
+        $ahmed = $this->employee('أحمد الجابي', 120000);
+        $this->employee('أحمد علي', 1000);
+        $finance = app(EmployeeFinance::class);
+
+        // Two «أحمد»: asked for the full name; nothing opens.
+        $this->reply('تنزيل عهده احمد');
+        $this->assertStringContainsString('اكتب الاسم كامل', $this->wa->lastReply());
+        $this->assertSame(0, CustodyReminder::count());
+
+        $this->reply('تنزيل عهدة احمد الجابي');
+        $this->assertStringContainsString('💼 عهدة أحمد الجابي: 120,000', $this->wa->lastReply());
+        $this->assertStringContainsString('ارسل 1 تنزل كاملة', $this->wa->lastReply());
+
+        // An amount: just that much.
+        $this->reply('20 الف');
+        $this->assertStringContainsString('✅ نزلت من عهدة أحمد الجابي 20,000', $this->wa->lastReply());
+        $this->assertSame(100000, $finance->custodyBalance($ahmed));
+
+        // Asked again (beside today's daily reminder too), «1» hands over all of it.
+        app(CustodyReminders::class)->queueDue($this->at(10));
+        $this->reply('نزل عهدة الجابي');
+        $this->assertStringContainsString('عهدة أحمد الجابي: 100,000', $this->wa->lastReply());
+        $this->reply('1');
+        $this->assertStringContainsString('ما بقى شي بعهدته', $this->wa->lastReply());
+        $this->assertSame(0, $finance->custodyBalance($ahmed));
+        $this->assertSame(499000, app(TreasuryService::class)->balance($this->cash()));
+
+        // Nothing left; an unknown name.
+        $this->reply('تنزيل عهده احمد الجابي');
+        $this->assertStringContainsString('ما اكو شي ينزل', $this->wa->lastReply());
+        $this->reply('تنزيل عهده زيد');
+        $this->assertStringContainsString('ما لكيت موظف عنده عهدة', $this->wa->lastReply());
+    }
 }

@@ -170,12 +170,15 @@ class Inbox
 
         $command = $this->complete($text, $previous);
         // «نعم» or an amount in reply to «تذكير تنزيل العهدة».
-        if ($command === null && $record->transcript === null && ($number = WhatsappNumber::find($record->whatsapp_number_id))) {
-            $custody = $this->asUser($user, fn () => app(CustodyReminders::class)->answer($number, $user, $text, $message['context']['quoted_body'] ?? null));
+        // «تنزيل عهدة فلان» (also by voice); the reply with the amount only in writing.
+        if ($command === null && ($number = WhatsappNumber::find($record->whatsapp_number_id))) {
+            $custodies = app(CustodyReminders::class);
+            $custody = $this->asUser($user, fn () => $custodies->request($number, $user, $text)
+                ?? ($record->transcript === null ? $custodies->answer($number, $user, $text, $message['context']['quoted_body'] ?? null) : null));
             if ($custody !== null) {
                 $record->update(['intent' => 'custody_handover']);
                 $this->audit->log('whatsapp.command', $record, null, [
-                    'phone' => $record->from_phone, 'command' => $text, 'voice' => false, 'intent' => 'custody_handover',
+                    'phone' => $record->from_phone, 'command' => $text, 'voice' => $record->transcript !== null, 'intent' => 'custody_handover',
                     'status' => $custody->status, 'changes' => $custody->changes, 'reply' => $custody->reply,
                 ], null, null, 'whatsapp');
 

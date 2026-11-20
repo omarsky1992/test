@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\DB;
  */
 class CustodyReminders
 {
-    private const YES = '/^(?:نعم|اي|ايه|ايي|ايوه|اكيد|صح|تمام|اوك|نزلها|نزل|ok|yes)$/iu';
+    private const YES = '/^(?:1|نعم|اي|ايه|ايي|ايوه|اكيد|صح|تمام|اوك|نزلها|نزل|ok|yes)$/iu';
 
     private const CODE = '/عهد[ةه]\s+رقم\s*([0-9٠-٩]+)/u';
 
@@ -71,7 +71,7 @@ class CustodyReminders
             }
             foreach ($numbers as $number) {
                 $reminder = CustodyReminder::firstOrCreate(
-                    ['user_id' => $employee->id, 'whatsapp_number_id' => $number->id, 'reminded_on' => $today],
+                    ['user_id' => $employee->id, 'whatsapp_number_id' => $number->id, 'reminded_on' => $today, 'source' => 'daily'],
                     ['balance' => $balance],
                 );
                 if (! $reminder->wasRecentlyCreated) {
@@ -81,7 +81,7 @@ class CustodyReminders
                 CustodyReminder::where('user_id', $employee->id)->where('whatsapp_number_id', $number->id)
                     ->where('status', 'sent')->whereKeyNot($reminder->id)->update(['status' => 'expired']);
                 $body = "💼 تذكير تنزيل عهدة\nعهدة {$employee->name}: ".Money::format($balance)
-                    ."\nرد على هذه الرسالة بـ«نعم» تنزل كاملة إلى «{$box->name}»، أو اكتب مبلغ أقل ينزل المبلغ المكتوب."
+                    ."\nرد على هذه الرسالة بـ«نعم» أو 1 تنزل كاملة إلى «{$box->name}»، أو اكتب مبلغ أقل ينزل المبلغ المكتوب."
                     ."\n(عهدة رقم {$reminder->id})";
                 if ($this->outbox->queue($number->phone, $body, 'alert_custody', "custody:{$reminder->id}")) {
                     $queued++;
@@ -90,6 +90,68 @@ class CustodyReminders
         }
 
         return $queued;
+    }
+
+    /** «تنزيل عهدة فلان» / «نزل عهدة فلان». */
+    private const REQUEST = '/^(?:تنزيل|نزل|تنزل|نزّل)\s+(?:ال)?عهد[ةه]\s+(.+)$/u';
+
+    /**
+     * «تنزيل عهدة احمد» from an authorized number: shows what the employee holds and opens a reply
+     * («1» = all of it, an amount = that much), answered by answer() like the daily reminder.
+     * Null when the message is not such a request.
+     */
+    public function request(WhatsappNumber $number, User $user, string $text): ?Result
+    {
+        if (! preg_match(self::REQUEST, RuleInterpreter::clean($text), $m)) {
+            return null;
+        }
+        if (! $user->can('custody.settle')) {
+            return Result::denied();
+        }
+        $box = self::box();
+        if ($box === null) {
+            return Result::failed('ما اكو صندوق نقدي مفعّل تنزل له العهدة.');
+        }
+        $query = trim($m[1]);
+        $custodies = MoneyAccount::with('user')->where('kind', MoneyAccountKind::Custody)->whereNotNull('user_id')->orderBy('id')->get()
+            ->filter(fn (MoneyAccount $c) => $c->user !== null);
+        $exact = $custodies->filter(fn (MoneyAccount $c) => RuleInterpreter::clean($c->user->name) === $query);
+        $matches = $exact->isNotEmpty() ? $exact : $custodies->filter(function (MoneyAccount $c) use ($query) {
+            $name = RuleInterpreter::clean($c->user->name);
+            foreach (preg_split('/\s+/u', $query) as $word) {
+                if (! str_contains($name, $word)) {
+                    return false;
+                }
+            }
+
+            return true;
+        });
+        if ($matches->isEmpty()) {
+            return Result::failed("ما لكيت موظف عنده عهدة باسم «{$query}».");
+        }
+        if ($matches->count() > 1) {
+            return Result::clarify("اكو اكثر من موظف بهذا الاسم، اكتب الاسم كامل:\n".$matches->map(fn (MoneyAccount $c) => '• '.$c->user->name)->implode("\n"));
+        }
+        $custody = $matches->first();
+        $employee = $custody->user;
+        $balance = $this->treasury->balance($custody);
+        if ($balance <= 0) {
+            return Result::done("💼 عهدة {$employee->name}: ".Money::format($balance)."\nما اكو شي ينزل.");
+        }
+
+        return DB::transaction(function () use ($number, $employee, $balance, $box) {
+            // The latest question for this employee on this number is the one a reply answers.
+            CustodyReminder::where('user_id', $employee->id)->where('whatsapp_number_id', $number->id)->where('status', 'sent')
+                ->update(['status' => 'expired']);
+            $reminder = CustodyReminder::create([
+                'user_id' => $employee->id, 'whatsapp_number_id' => $number->id, 'reminded_on' => now()->toDateString(),
+                'balance' => $balance, 'source' => 'request',
+            ]);
+
+            return Result::done("💼 عهدة {$employee->name}: ".Money::format($balance)
+                ."\nارسل 1 تنزل كاملة إلى «{$box->name}»، أو اكتب المبلغ اللي تريد تنزله."
+                ."\n(عهدة رقم {$reminder->id})", ['custody' => $employee->name, 'balance' => $balance, 'reminder' => $reminder->id]);
+        });
     }
 
     /**
